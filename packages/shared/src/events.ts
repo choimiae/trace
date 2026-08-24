@@ -21,6 +21,64 @@ export const eventTypeSchema = z.enum([
 
 export const isoDateStringSchema = z.string().datetime();
 
+const redactedQueryValue = "[redacted]";
+const sensitiveEmailPattern = /[^\s@]+@[^\s@]+\.[^\s@]+/;
+const koreanPhonePattern = /01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}/;
+const longNumberPattern = /\d{9,}/;
+
+const safeMetadataStringSchema = z.string().refine(
+  (value) =>
+    !sensitiveEmailPattern.test(value) &&
+    !koreanPhonePattern.test(value) &&
+    !longNumberPattern.test(value),
+  "Metadata contains a sensitive string",
+);
+
+const safeMetadataValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    safeMetadataStringSchema,
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+    z.array(safeMetadataValueSchema),
+    z.record(safeMetadataValueSchema),
+  ]),
+);
+
+const redactedUrlSchema = z.string().url().superRefine((value, context) => {
+  const url = new URL(value);
+
+  for (const queryValue of url.searchParams.values()) {
+    if (queryValue !== redactedQueryValue) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "URL query values must be redacted",
+      });
+      return;
+    }
+  }
+});
+
+const redactedQuerySchema = z.string().superRefine((value, context) => {
+  if (!value.startsWith("?") || value.length === 1) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Query must start with ? and contain redacted values",
+    });
+    return;
+  }
+
+  for (const queryValue of new URLSearchParams(value).values()) {
+    if (queryValue !== redactedQueryValue) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "URL query values must be redacted",
+      });
+      return;
+    }
+  }
+});
+
 export const traceEventSchema = z.object({
   eventId: z.string().min(1),
   sessionId: z.string().min(1),
@@ -28,7 +86,7 @@ export const traceEventSchema = z.object({
   timestamp: isoDateStringSchema,
   type: eventTypeSchema,
   urlPath: z.string().min(1),
-  urlQueryRedacted: z.string().optional(),
+  urlQueryRedacted: redactedQuerySchema.optional(),
   titleMasked: z.string().max(120).optional(),
   elementSelectorHash: z.string().optional(),
   elementRole: z.string().optional(),
@@ -37,7 +95,7 @@ export const traceEventSchema = z.object({
   y: z.number().finite().optional(),
   viewportX: z.number().int().positive().optional(),
   viewportY: z.number().int().positive().optional(),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(safeMetadataValueSchema).default({}),
 });
 
 export const eventBatchSchema = z.object({
@@ -46,7 +104,7 @@ export const eventBatchSchema = z.object({
   sessionId: z.string().min(1),
   sentAt: isoDateStringSchema,
   sdkVersion: z.string().min(1),
-  url: z.string().url(),
+  url: redactedUrlSchema,
   events: z.array(traceEventSchema).min(1).max(100),
 });
 
