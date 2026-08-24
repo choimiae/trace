@@ -172,7 +172,7 @@ describe("eventBatchSchema", () => {
             feature: "report_export",
             target: "permission_button",
             metric: "api_error",
-            errorType: "api_error",
+            errorType: "rage_click",
             durationMs: 20000,
             source: "auto",
           },
@@ -185,7 +185,7 @@ describe("eventBatchSchema", () => {
       feature: "report_export",
       target: "permission_button",
       metric: "api_error",
-      errorType: "api_error",
+      errorType: "rage_click",
       durationMs: 20000,
       source: "auto",
     });
@@ -224,6 +224,41 @@ describe("eventBatchSchema", () => {
         }),
       ).toThrow();
     }
+  });
+
+  it.each([
+    { eventName: "sk_live_abcdef" },
+    { metric: "metric_123456789" },
+    { target: "user_42_click" },
+    { eventName: "checkout_token_failed" },
+    { eventName: "export_secret_failed" },
+    { metric: "api_key_error" },
+    { target: "password_reset_button" },
+    { errorType: "auth_failure" },
+    { eventName: "session_started" },
+    { target: "cookie_banner_clicked" },
+  ])("rejects reviewer analytics identifier example: %o", (metadata) => {
+    expect(() =>
+      eventBatchSchema.parse({
+        projectId: "proj_123",
+        anonymousUserId: "anon_123",
+        sessionId: "sess_123",
+        sentAt: "2026-08-24T00:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_123",
+            pageId: "page_1",
+            timestamp: "2026-08-24T00:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata,
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it("rejects identity-like metadata strings and route paths", () => {

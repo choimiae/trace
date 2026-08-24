@@ -24,8 +24,29 @@ export const isoDateStringSchema = z.string().datetime();
 const redactedQueryValue = "[redacted]";
 const sensitiveQueryKeyPattern =
   /(?:email|token|password|secret|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|phone|address|input|value|name|user|ssn|credit|card)/i;
-const identityLikeAnalyticsIdentifierPattern =
-  /(?:^|_)(?:user|member|customer|account|profile|person)_[a-z0-9]+$/;
+const sensitiveAnalyticsIdentifierSegments = new Set([
+  "token",
+  "secret",
+  "key",
+  "password",
+  "auth",
+  "session",
+  "cookie",
+]);
+const hasSensitiveAnalyticsIdentifierSegments = (value: string) => {
+  const segments = value.split("_");
+
+  return segments.some((segment, index) => {
+    const nextSegment = segments[index + 1];
+
+    return (
+      sensitiveAnalyticsIdentifierSegments.has(segment) ||
+      /\d{9,}/.test(segment) ||
+      (segment === "sk" && nextSegment === "live") ||
+      (segment === "user" && nextSegment !== undefined && /^\d+$/.test(nextSegment))
+    );
+  });
+};
 const analyticsIdentifierSchema = z
   .string()
   .max(64)
@@ -34,8 +55,8 @@ const analyticsIdentifierSchema = z
     "Metadata must be a lowercase snake_case analytics identifier",
   )
   .refine(
-    (value) => !identityLikeAnalyticsIdentifierPattern.test(value),
-    "Metadata must not contain an identity-like analytics identifier",
+    (value) => !hasSensitiveAnalyticsIdentifierSegments(value),
+    "Metadata must not contain sensitive or identity-like segments",
   );
 
 const safeMetadataSchema = z.object({
