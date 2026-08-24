@@ -22,39 +22,31 @@ export const eventTypeSchema = z.enum([
 export const isoDateStringSchema = z.string().datetime();
 
 const redactedQueryValue = "[redacted]";
-const sensitiveEmailPattern = /[^\s@]+@[^\s@]+\.[^\s@]+/;
-const koreanPhonePattern = /01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}/;
-const longNumberPattern = /\d{9,}/;
-const safeLabelPattern = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,63}$/;
 const sensitiveQueryKeyPattern =
   /(?:email|token|password|secret|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|phone|address|input|value|name|user|ssn|credit|card)/i;
-const safeMetadataStringSchema = (maxLength: number, message: string) =>
-  z.string().max(maxLength).refine(
-    (value) =>
-      !sensitiveEmailPattern.test(value) &&
-      !koreanPhonePattern.test(value) &&
-      !longNumberPattern.test(value),
-    "Metadata contains a sensitive string",
-  ).refine((value) => safeLabelPattern.test(value), message);
-
-const safeIdentifierSchema = safeMetadataStringSchema(64, "Metadata must be a safe identifier");
-const safeStatusSchema = safeMetadataStringSchema(32, "Metadata status must be a safe identifier");
-const endpointSchema = z.string().max(120).refine(
-  (value) => /^\/[A-Za-z0-9._:/-]*$/.test(value),
-  "Metadata endpoint must be a query-free path",
-);
+const identityLikeAnalyticsIdentifierPattern =
+  /(?:^|_)(?:user|member|customer|account|profile|person)_[a-z0-9]+$/;
+const analyticsIdentifierSchema = z
+  .string()
+  .max(64)
+  .regex(
+    /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/,
+    "Metadata must be a lowercase snake_case analytics identifier",
+  )
+  .refine(
+    (value) => !identityLikeAnalyticsIdentifierPattern.test(value),
+    "Metadata must not contain an identity-like analytics identifier",
+  );
 
 const safeMetadataSchema = z.object({
   source: z.enum(["auto", "manual", "sdk"]).optional(),
-  eventName: safeIdentifierSchema.optional(),
-  feature: safeIdentifierSchema.optional(),
-  target: safeIdentifierSchema.optional(),
-  errorType: safeIdentifierSchema.optional(),
-  message: safeIdentifierSchema.optional(),
-  status: safeStatusSchema.optional(),
+  eventName: analyticsIdentifierSchema.optional(),
+  feature: analyticsIdentifierSchema.optional(),
+  target: analyticsIdentifierSchema.optional(),
+  errorType: analyticsIdentifierSchema.optional(),
+  status: z.enum(["success", "failure", "timeout", "cancelled"]).optional(),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-  endpoint: endpointSchema.optional(),
-  metric: safeIdentifierSchema.optional(),
+  metric: analyticsIdentifierSchema.optional(),
   durationMs: z.number().int().nonnegative().max(600000).optional(),
   responseMs: z.number().int().nonnegative().max(600000).optional(),
   score: z.number().finite().min(0).max(100).optional(),

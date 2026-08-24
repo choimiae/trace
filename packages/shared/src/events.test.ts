@@ -167,13 +167,25 @@ describe("eventBatchSchema", () => {
           timestamp: "2026-08-24T00:00:00.000Z",
           type: "click",
           urlPath: "/settings",
-          metadata: { eventName: "report_export_clicked", durationMs: 20000, source: "auto" },
+          metadata: {
+            eventName: "report_export_clicked",
+            feature: "report_export",
+            target: "permission_button",
+            metric: "api_error",
+            errorType: "api_error",
+            durationMs: 20000,
+            source: "auto",
+          },
         },
       ],
     });
 
     expect(parsed.events[0]?.metadata).toEqual({
       eventName: "report_export_clicked",
+      feature: "report_export",
+      target: "permission_button",
+      metric: "api_error",
+      errorType: "api_error",
       durationMs: 20000,
       source: "auto",
     });
@@ -189,6 +201,40 @@ describe("eventBatchSchema", () => {
       { score: 101 },
       { endpoint: "/api/reports?format=json" },
       { feature: { durationMs: 123456789012 } },
+    ]) {
+      expect(() =>
+        eventBatchSchema.parse({
+          projectId: "proj_123",
+          anonymousUserId: "anon_123",
+          sessionId: "sess_123",
+          sentAt: "2026-08-24T00:00:00.000Z",
+          sdkVersion: "0.1.0",
+          url: "https://example.com/settings",
+          events: [
+            {
+              eventId: "evt_1",
+              sessionId: "sess_123",
+              pageId: "page_1",
+              timestamp: "2026-08-24T00:00:00.000Z",
+              type: "click",
+              urlPath: "/settings",
+              metadata,
+            },
+          ],
+        }),
+      ).toThrow();
+    }
+  });
+
+  it("rejects identity-like metadata strings and route paths", () => {
+    for (const metadata of [
+      { message: "sk-live-abcDEF" },
+      { feature: "alice" },
+      { target: "user_42" },
+      { eventName: "sk-live-abcDEF" },
+      { metric: "123456789" },
+      { endpoint: "/users/alice" },
+      { endpoint: "/123456789" },
     ]) {
       expect(() =>
         eventBatchSchema.parse({
@@ -245,7 +291,7 @@ describe("eventBatchSchema", () => {
     }
   });
 
-  it("rejects sensitive strings in nested metadata", () => {
+  it("rejects nested metadata values", () => {
     expect(() =>
       eventBatchSchema.parse({
         projectId: "proj_123",
