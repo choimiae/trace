@@ -9,7 +9,7 @@ describe("eventBatchSchema", () => {
       sessionId: "sess_123",
       sentAt: "2026-08-24T00:00:00.000Z",
       sdkVersion: "0.1.0",
-      url: "https://example.com/settings?email=[redacted]",
+      url: "https://example.com/settings?filter=[redacted]",
       events: [
         {
           eventId: "evt_1",
@@ -18,7 +18,7 @@ describe("eventBatchSchema", () => {
           timestamp: "2026-08-24T00:00:00.000Z",
           type: "click",
           urlPath: "/settings",
-          urlQueryRedacted: "?email=[redacted]",
+          urlQueryRedacted: "?filter=[redacted]",
           elementSelectorHash: "abc123",
           elementRole: "button",
           elementTextMaskedOrLimited: "멤버 초대",
@@ -104,6 +104,112 @@ describe("eventBatchSchema", () => {
     ).toThrow();
   });
 
+  it("rejects sensitive query keys", () => {
+    expect(() =>
+      eventBatchSchema.parse({
+        projectId: "proj_123",
+        anonymousUserId: "anon_123",
+        sessionId: "sess_123",
+        sentAt: "2026-08-24T00:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://example.com/settings?choi@example.com=[redacted]",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_123",
+            pageId: "page_1",
+            timestamp: "2026-08-24T00:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+          },
+        ],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      eventBatchSchema.parse({
+        projectId: "proj_123",
+        anonymousUserId: "anon_123",
+        sessionId: "sess_123",
+        sentAt: "2026-08-24T00:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_123",
+            pageId: "page_1",
+            timestamp: "2026-08-24T00:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            urlQueryRedacted: "?token=[redacted]",
+            metadata: {},
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("accepts allowlisted safe metadata", () => {
+    const parsed = eventBatchSchema.parse({
+      projectId: "proj_123",
+      anonymousUserId: "anon_123",
+      sessionId: "sess_123",
+      sentAt: "2026-08-24T00:00:00.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [
+        {
+          eventId: "evt_1",
+          sessionId: "sess_123",
+          pageId: "page_1",
+          timestamp: "2026-08-24T00:00:00.000Z",
+          type: "click",
+          urlPath: "/settings",
+          metadata: { eventName: "report_export_clicked", durationMs: 20000, source: "auto" },
+        },
+      ],
+    });
+
+    expect(parsed.events[0]?.metadata).toEqual({
+      eventName: "report_export_clicked",
+      durationMs: 20000,
+      source: "auto",
+    });
+  });
+
+  it("rejects unapproved metadata keys", () => {
+    for (const metadata of [
+      { name: "Alice" },
+      { token: "abc" },
+      { inputValue: "safe_label" },
+      { "user@example.com": "safe_label" },
+    ]) {
+      expect(() =>
+        eventBatchSchema.parse({
+          projectId: "proj_123",
+          anonymousUserId: "anon_123",
+          sessionId: "sess_123",
+          sentAt: "2026-08-24T00:00:00.000Z",
+          sdkVersion: "0.1.0",
+          url: "https://example.com/settings",
+          events: [
+            {
+              eventId: "evt_1",
+              sessionId: "sess_123",
+              pageId: "page_1",
+              timestamp: "2026-08-24T00:00:00.000Z",
+              type: "click",
+              urlPath: "/settings",
+              metadata,
+            },
+          ],
+        }),
+      ).toThrow();
+    }
+  });
+
   it("rejects sensitive strings in nested metadata", () => {
     expect(() =>
       eventBatchSchema.parse({
@@ -122,10 +228,10 @@ describe("eventBatchSchema", () => {
             type: "click",
             urlPath: "/settings",
             metadata: {
-              nested: [
-                { email: "user@example.com" },
-                { phone: "010-1234-5678" },
-                { accountId: "123456789" },
+              feature: [
+                { message: "user@example.com" },
+                { status: "010-1234-5678" },
+                { target: "123456789" },
               ],
             },
           },

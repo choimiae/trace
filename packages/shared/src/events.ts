@@ -25,6 +25,32 @@ const redactedQueryValue = "[redacted]";
 const sensitiveEmailPattern = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const koreanPhonePattern = /01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}/;
 const longNumberPattern = /\d{9,}/;
+const safeLabelPattern = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,63}$/;
+const sensitiveQueryKeyPattern =
+  /(?:email|token|password|secret|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|phone|address|input|value|name|user|ssn|credit|card)/i;
+const safeMetadataKeys = new Set([
+  "source",
+  "durationMs",
+  "message",
+  "status",
+  "method",
+  "endpoint",
+  "responseMs",
+  "score",
+  "metric",
+  "eventName",
+  "feature",
+  "target",
+  "errorType",
+]);
+
+type SafeMetadataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | SafeMetadataValue[]
+  | { [key: string]: SafeMetadataValue };
 
 const safeMetadataStringSchema = z.string().refine(
   (value) =>
@@ -32,23 +58,40 @@ const safeMetadataStringSchema = z.string().refine(
     !koreanPhonePattern.test(value) &&
     !longNumberPattern.test(value),
   "Metadata contains a sensitive string",
-);
+).refine((value) => safeLabelPattern.test(value), "Metadata strings must be short safe labels");
 
-const safeMetadataValueSchema: z.ZodType<unknown> = z.lazy(() =>
+const validateMetadataKeys = (metadata: Record<string, unknown>, context: z.RefinementCtx) => {
+  for (const key of Object.keys(metadata)) {
+    if (!safeMetadataKeys.has(key)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Metadata key is not allowlisted: ${key}`,
+      });
+    }
+  }
+};
+
+const safeMetadataValueSchema: z.ZodType<SafeMetadataValue> = z.lazy(() =>
   z.union([
     safeMetadataStringSchema,
     z.number().finite(),
     z.boolean(),
     z.null(),
     z.array(safeMetadataValueSchema),
-    z.record(safeMetadataValueSchema),
+    z.record(safeMetadataValueSchema).superRefine(validateMetadataKeys),
   ]),
 );
 
-const redactedUrlSchema = z.string().url().superRefine((value, context) => {
-  const url = new URL(value);
+const validateRedactedQuery = (query: URLSearchParams, context: z.RefinementCtx) => {
+  for (const [queryKey, queryValue] of query.entries()) {
+    if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(queryKey) || sensitiveQueryKeyPattern.test(queryKey)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "URL query keys must be non-sensitive safe labels",
+      });
+      return;
+    }
 
-  for (const queryValue of url.searchParams.values()) {
     if (queryValue !== redactedQueryValue) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -57,6 +100,12 @@ const redactedUrlSchema = z.string().url().superRefine((value, context) => {
       return;
     }
   }
+};
+
+const redactedUrlSchema = z.string().url().superRefine((value, context) => {
+  const url = new URL(value);
+
+  validateRedactedQuery(url.searchParams, context);
 });
 
 const redactedQuerySchema = z.string().superRefine((value, context) => {
@@ -68,15 +117,7 @@ const redactedQuerySchema = z.string().superRefine((value, context) => {
     return;
   }
 
-  for (const queryValue of new URLSearchParams(value).values()) {
-    if (queryValue !== redactedQueryValue) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "URL query values must be redacted",
-      });
-      return;
-    }
-  }
+  validateRedactedQuery(new URLSearchParams(value), context);
 });
 
 export const traceEventSchema = z.object({
@@ -95,7 +136,7 @@ export const traceEventSchema = z.object({
   y: z.number().finite().optional(),
   viewportX: z.number().int().positive().optional(),
   viewportY: z.number().int().positive().optional(),
-  metadata: z.record(safeMetadataValueSchema).default({}),
+  metadata: z.record(safeMetadataValueSchema).superRefine(validateMetadataKeys).default({}),
 });
 
 export const eventBatchSchema = z.object({
