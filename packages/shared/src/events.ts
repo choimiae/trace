@@ -28,59 +28,37 @@ const longNumberPattern = /\d{9,}/;
 const safeLabelPattern = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,63}$/;
 const sensitiveQueryKeyPattern =
   /(?:email|token|password|secret|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|phone|address|input|value|name|user|ssn|credit|card)/i;
-const safeMetadataKeys = new Set([
-  "source",
-  "durationMs",
-  "message",
-  "status",
-  "method",
-  "endpoint",
-  "responseMs",
-  "score",
-  "metric",
-  "eventName",
-  "feature",
-  "target",
-  "errorType",
-]);
+const safeMetadataStringSchema = (maxLength: number, message: string) =>
+  z.string().max(maxLength).refine(
+    (value) =>
+      !sensitiveEmailPattern.test(value) &&
+      !koreanPhonePattern.test(value) &&
+      !longNumberPattern.test(value),
+    "Metadata contains a sensitive string",
+  ).refine((value) => safeLabelPattern.test(value), message);
 
-type SafeMetadataValue =
-  | string
-  | number
-  | boolean
-  | null
-  | SafeMetadataValue[]
-  | { [key: string]: SafeMetadataValue };
-
-const safeMetadataStringSchema = z.string().refine(
-  (value) =>
-    !sensitiveEmailPattern.test(value) &&
-    !koreanPhonePattern.test(value) &&
-    !longNumberPattern.test(value),
-  "Metadata contains a sensitive string",
-).refine((value) => safeLabelPattern.test(value), "Metadata strings must be short safe labels");
-
-const validateMetadataKeys = (metadata: Record<string, unknown>, context: z.RefinementCtx) => {
-  for (const key of Object.keys(metadata)) {
-    if (!safeMetadataKeys.has(key)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Metadata key is not allowlisted: ${key}`,
-      });
-    }
-  }
-};
-
-const safeMetadataValueSchema: z.ZodType<SafeMetadataValue> = z.lazy(() =>
-  z.union([
-    safeMetadataStringSchema,
-    z.number().finite(),
-    z.boolean(),
-    z.null(),
-    z.array(safeMetadataValueSchema),
-    z.record(safeMetadataValueSchema).superRefine(validateMetadataKeys),
-  ]),
+const safeIdentifierSchema = safeMetadataStringSchema(64, "Metadata must be a safe identifier");
+const safeStatusSchema = safeMetadataStringSchema(32, "Metadata status must be a safe identifier");
+const endpointSchema = z.string().max(120).refine(
+  (value) => /^\/[A-Za-z0-9._:/-]*$/.test(value),
+  "Metadata endpoint must be a query-free path",
 );
+
+const safeMetadataSchema = z.object({
+  source: z.enum(["auto", "manual", "sdk"]).optional(),
+  eventName: safeIdentifierSchema.optional(),
+  feature: safeIdentifierSchema.optional(),
+  target: safeIdentifierSchema.optional(),
+  errorType: safeIdentifierSchema.optional(),
+  message: safeIdentifierSchema.optional(),
+  status: safeStatusSchema.optional(),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+  endpoint: endpointSchema.optional(),
+  metric: safeIdentifierSchema.optional(),
+  durationMs: z.number().int().nonnegative().max(600000).optional(),
+  responseMs: z.number().int().nonnegative().max(600000).optional(),
+  score: z.number().finite().min(0).max(100).optional(),
+}).strict().default({});
 
 const validateRedactedQuery = (query: URLSearchParams, context: z.RefinementCtx) => {
   for (const [queryKey, queryValue] of query.entries()) {
@@ -136,7 +114,7 @@ export const traceEventSchema = z.object({
   y: z.number().finite().optional(),
   viewportX: z.number().int().positive().optional(),
   viewportY: z.number().int().positive().optional(),
-  metadata: z.record(safeMetadataValueSchema).superRefine(validateMetadataKeys).default({}),
+  metadata: safeMetadataSchema,
 });
 
 export const eventBatchSchema = z.object({

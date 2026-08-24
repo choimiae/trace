@@ -179,6 +179,41 @@ describe("eventBatchSchema", () => {
     });
   });
 
+  it("rejects metadata values outside key-specific contracts", () => {
+    for (const metadata of [
+      { source: 1012345678 },
+      { source: true },
+      { status: null },
+      { durationMs: 600001 },
+      { responseMs: -1 },
+      { score: 101 },
+      { endpoint: "/api/reports?format=json" },
+      { feature: { durationMs: 123456789012 } },
+    ]) {
+      expect(() =>
+        eventBatchSchema.parse({
+          projectId: "proj_123",
+          anonymousUserId: "anon_123",
+          sessionId: "sess_123",
+          sentAt: "2026-08-24T00:00:00.000Z",
+          sdkVersion: "0.1.0",
+          url: "https://example.com/settings",
+          events: [
+            {
+              eventId: "evt_1",
+              sessionId: "sess_123",
+              pageId: "page_1",
+              timestamp: "2026-08-24T00:00:00.000Z",
+              type: "click",
+              urlPath: "/settings",
+              metadata,
+            },
+          ],
+        }),
+      ).toThrow();
+    }
+  });
+
   it("rejects unapproved metadata keys", () => {
     for (const metadata of [
       { name: "Alice" },
