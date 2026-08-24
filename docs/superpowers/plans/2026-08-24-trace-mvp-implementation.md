@@ -48,7 +48,6 @@ Create:
 - `apps/api/package.json`: API app manifest.
 - `apps/api/src/app.ts`: Fastify app factory.
 - `apps/api/src/server.ts`: HTTP server entrypoint.
-- `apps/api/src/config.ts`: env parsing.
 - `apps/api/src/db/schema.sql`: PostgreSQL schema.
 - `apps/api/src/store/types.ts`: store interface.
 - `apps/api/src/store/memory-store.ts`: 테스트와 로컬 MVP용 in-memory store.
@@ -350,6 +349,18 @@ export const eventBatchSchema = z.object({
   events: z.array(traceEventSchema).min(1).max(100),
 });
 
+export const adminProjectSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1),
+  allowedDomains: z.array(z.string().url()),
+  privacyConfig: z.object({
+    strictMasking: z.literal(true),
+    queryRedaction: z.literal(true),
+    inputCapture: z.literal(false),
+  }),
+  createdAt: isoDateStringSchema,
+});
+
 export const issueStatusSchema = z.enum(["new", "reviewing", "ignored", "resolved"]);
 export const issueTypeSchema = z.enum([
   "dead_click_cluster",
@@ -392,6 +403,7 @@ export const dashboardSummarySchema = z.object({
 export type EventType = z.infer<typeof eventTypeSchema>;
 export type TraceEvent = z.infer<typeof traceEventSchema>;
 export type EventBatch = z.infer<typeof eventBatchSchema>;
+export type AdminProject = z.infer<typeof adminProjectSchema>;
 export type Issue = z.infer<typeof issueSchema>;
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
 export type SessionTimelineEvent = TraceEvent;
@@ -1268,11 +1280,20 @@ export function scoreIssue(input: {
 }
 ```
 
+Create `apps/api/src/detection/url.ts`:
+
+```ts
+export function issueTargetKey(input: { urlPath: string; selectorHash?: string; issueType: string }): string {
+  return [input.urlPath, input.selectorHash ?? "page", input.issueType].join("|").replace(/[^a-z0-9|:_-]+/gi, "_");
+}
+```
+
 Create `apps/api/src/detection/detect.ts`:
 
 ```ts
 import type { Issue, TraceEvent } from "@trace/shared";
 import { scoreIssue } from "./severity";
+import { issueTargetKey } from "./url";
 
 interface DetectInput {
   projectId: string;
@@ -1392,7 +1413,7 @@ function makeIssue(input: {
   now: string;
 }): Issue {
   return {
-    issueId: `issue_${input.issueType}_${input.relatedUrlPath.replace(/[^a-z0-9]+/gi, "_")}`,
+    issueId: `issue_${issueTargetKey({ urlPath: input.relatedUrlPath, issueType: input.issueType })}`,
     projectId: input.projectId,
     issueType: input.issueType,
     title: input.title,
