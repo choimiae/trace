@@ -49,7 +49,7 @@ http://localhost:5174/?projectId=<projectId>
 브라우저용 fake OAuth 서버는 제공하지 않습니다. 대신 API route 테스트가 fake Google client로 Google redirect, callback, 세션 쿠키, `/auth/me`, 그리고 세션 쿠키를 사용하는 Admin BFF를 검증합니다.
 
 ```bash
-PATH=/Users/choimiae/.nvm/versions/node/v22.17.0/bin:$PATH npm run test --workspace @trace/api -- src/routes/auth.test.ts src/routes/admin.test.ts
+npm run test --workspace @trace/api -- src/routes/auth.test.ts src/routes/admin.test.ts
 ```
 
 예상 결과:
