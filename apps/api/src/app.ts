@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import type { AdminAuthConfig } from "./auth/config.js";
 import { createGoogleOAuthClient, type GoogleOAuthClient } from "./auth/google.js";
-import { registerAdminRoutes } from "./routes/admin.js";
+import { registerAdminProxyRoutes } from "./routes/admin-proxy.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
 import type { TraceStore } from "./store/types.js";
@@ -32,8 +32,8 @@ export function createApp(options: {
       config: options.authConfig,
       googleOAuthClient: options.googleOAuthClient ?? createGoogleOAuthClient(options.authConfig),
     });
+    app.register(registerAdminProxyRoutes, { store: options.store, config: options.authConfig });
   }
-  app.register(registerAdminRoutes, { store: options.store, adminToken: options.adminToken });
   app.register(registerIngestionRoutes, { store: options.store });
   return app;
 }

@@ -1,100 +1,136 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
+import { createAdminSessionForUser } from "../auth/session.js";
+import type { AdminAuthConfig } from "../auth/config.js";
 import { MemoryStore } from "../store/memory-store.js";
 
-describe("admin routes", () => {
-  const adminToken = "admin_test_token";
+const authConfig: AdminAuthConfig = {
+  googleClientId: "client.apps.googleusercontent.com",
+  googleClientSecret: "client_secret",
+  googleRedirectUri: "http://localhost:4000/auth/google/callback",
+  adminAppOrigin: "http://localhost:5173",
+  sessionSecret: "0123456789abcdef0123456789abcdef",
+  cookieSecure: false,
+  allowedEmails: new Set(["admin@example.com"]),
+  sessionTtlSeconds: 28800,
+  loginRateLimitWindowSeconds: 300,
+  loginRateLimitMax: 20,
+  oauthCookieName: "__trace_oauth",
+  sessionCookieName: "__trace_admin_session",
+  csrfCookieName: "__trace_csrf",
+};
 
-  it("creates a project and returns an install snippet", async () => {
-    const app = createApp({ store: new MemoryStore(), adminToken });
+async function signedInStore() {
+  const store = new MemoryStore();
+  const user = await store.upsertAdminUserFromGoogle({
+    googleSub: "google_sub_1",
+    email: "admin@example.com",
+    emailVerified: true,
+    now: "2026-08-25T00:00:00.000Z",
+  });
+  const session = await createAdminSessionForUser({ store, config: authConfig, user, now: new Date("2026-08-25T00:00:00.000Z") });
+  return { store, user, cookie: `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`, csrfToken: session.csrfToken };
+}
+
+describe("admin bff routes", () => {
+  it("rejects Admin BFF requests without a session cookie", async () => {
+    const app = createApp({ store: new MemoryStore(), authConfig });
+    const response = await app.inject({ method: "GET", url: "/admin/api/projects/proj_missing/summary" });
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "admin_auth_required" });
+  });
+
+  it("creates a project and grants owner membership to the creator", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const app = createApp({ store, authConfig });
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/projects",
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: {
-        name: "Demo SaaS",
-        allowedDomains: ["https://demo.example.com"],
-      },
+      url: "/admin/api/projects",
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: { name: "Demo SaaS", allowedDomains: ["https://demo.example.com"] },
     });
 
     expect(response.statusCode).toBe(201);
     const body = response.json();
     expect(body.projectId).toMatch(/^proj_/);
-    expect(body.installSnippet).toContain("data-project-id");
-    expect(body.allowedDomains).toEqual(["https://demo.example.com"]);
+    expect(await store.getProjectMembership(body.projectId, user.adminUserId)).toMatchObject({ role: "owner" });
+    expect(await store.listAuditLogs()).toEqual([expect.objectContaining({
+      adminUserId: user.adminUserId,
+      action: "project.created",
+      projectId: body.projectId,
+      metadata: { name: "Demo SaaS" },
+    })]);
   });
 
-  it("rejects admin requests without the configured token", async () => {
-    const app = createApp({ store: new MemoryStore(), adminToken });
+  it("returns 403 when the signed-in admin lacks project membership", async () => {
+    const { store, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Private", allowedDomains: ["https://private.example.com"] });
+    const app = createApp({ store, authConfig });
 
-    const response = await app.inject({ method: "GET", url: "/api/projects/proj_missing/summary" });
+    const response = await app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/summary`, headers: { cookie } });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toEqual({ error: "admin_auth_required" });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_access_denied" });
   });
 
-  it("returns dashboard summary, issues, issue detail, and session timeline", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
+  it("does not leak issue detail or session timeline across project scope", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const memberProject = await store.createProject({ name: "Member", allowedDomains: ["https://member.example.com"] });
+    const otherProject = await store.createProject({ name: "Other", allowedDomains: ["https://other.example.com"] });
+    await store.addProjectMembership({
+      projectId: memberProject.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    });
     await store.saveBatch({
-      projectId: project.projectId,
+      projectId: memberProject.projectId,
       anonymousUserId: "anon_1",
       sessionId: "sess_1",
-      sentAt: "2026-08-24T00:00:03.000Z",
+      sentAt: "2026-08-25T00:00:03.000Z",
       sdkVersion: "0.1.0",
-      url: "https://demo.example.com/settings",
-      events: [
-        {
-          eventId: "evt_1",
-          sessionId: "sess_1",
-          pageId: "page_1",
-          timestamp: "2026-08-24T00:00:00.000Z",
-          type: "click",
-          urlPath: "/settings",
-          elementSelectorHash: "button_hash",
-          metadata: {},
-        },
-      ],
+      url: "https://member.example.com/settings",
+      events: [{
+        eventId: "evt_1",
+        sessionId: "sess_1",
+        pageId: "page_1",
+        timestamp: "2026-08-25T00:00:00.000Z",
+        type: "click",
+        urlPath: "/settings",
+        metadata: {},
+      }],
     });
-    await store.upsertIssues(project.projectId, [
-      {
-        issueId: "issue_1",
-        projectId: project.projectId,
-        issueType: "rage_click",
-        title: "설정 화면에서 반복 클릭",
-        summary: "같은 버튼을 반복 클릭했습니다.",
-        affectedSessionsCount: 1,
-        affectedUsersCount: 1,
-        severityScore: 70,
-        firstSeenAt: "2026-08-24T00:00:00.000Z",
-        lastSeenAt: "2026-08-24T00:00:00.000Z",
-        trend: "flat",
-        relatedUrlPath: "/settings",
-        exampleSessionIds: ["sess_1"],
-        status: "new",
-      },
-    ]);
-    const app = createApp({ store, adminToken });
-    const headers = { authorization: `Bearer ${adminToken}` };
+    await store.upsertIssues(memberProject.projectId, [{
+      issueId: "issue_1",
+      projectId: memberProject.projectId,
+      issueType: "rage_click",
+      title: "설정 화면에서 반복 클릭",
+      summary: "같은 버튼을 반복 클릭했습니다.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 70,
+      firstSeenAt: "2026-08-25T00:00:00.000Z",
+      lastSeenAt: "2026-08-25T00:00:00.000Z",
+      trend: "flat",
+      relatedUrlPath: "/settings",
+      exampleSessionIds: ["sess_1"],
+      status: "new",
+    }]);
+    const app = createApp({ store, authConfig });
 
-    const summaryResponse = await app.inject({ method: "GET", url: `/api/projects/${project.projectId}/summary`, headers });
-    const issuesResponse = await app.inject({ method: "GET", url: `/api/projects/${project.projectId}/issues`, headers });
     const issueResponse = await app.inject({
       method: "GET",
-      url: `/api/issues/issue_1?projectId=${project.projectId}`,
-      headers,
+      url: `/admin/api/issues/issue_1?projectId=${otherProject.projectId}`,
+      headers: { cookie },
     });
     const timelineResponse = await app.inject({
       method: "GET",
-      url: `/api/sessions/sess_1/timeline?projectId=${project.projectId}`,
-      headers,
+      url: `/admin/api/sessions/sess_1/timeline?projectId=${otherProject.projectId}`,
+      headers: { cookie },
     });
 
-    expect(summaryResponse.statusCode).toBe(200);
-    expect(summaryResponse.json().frictionScore).toBe(70);
-    expect(issuesResponse.json()[0].issueId).toBe("issue_1");
-    expect(issueResponse.json().title).toBe("설정 화면에서 반복 클릭");
-    expect(timelineResponse.json()[0].eventId).toBe("evt_1");
+    expect(issueResponse.statusCode).toBe(404);
+    expect(timelineResponse.statusCode).toBe(403);
   });
 });
