@@ -27,8 +27,17 @@ export function loadAdminAuthConfig(env: NodeJS.ProcessEnv): AdminAuthConfig | u
   const adminAppOrigin = required(env.ADMIN_APP_ORIGIN);
   const allowedEmails = required(env.ADMIN_ALLOWED_EMAILS);
   const googleAllowedDomain = required(env.GOOGLE_ALLOWED_DOMAIN);
+  const allowedEmailSet = new Set(allowedEmails?.split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
 
-  if (!googleClientId || !googleClientSecret || !googleRedirectUri || !sessionSecret || !adminAppOrigin || !allowedEmails) {
+  if (
+    !googleClientId ||
+    !googleClientSecret ||
+    !googleRedirectUri ||
+    !sessionSecret ||
+    !adminAppOrigin ||
+    !allowedEmails ||
+    allowedEmailSet.size === 0
+  ) {
     return undefined;
   }
 
@@ -39,7 +48,7 @@ export function loadAdminAuthConfig(env: NodeJS.ProcessEnv): AdminAuthConfig | u
     adminAppOrigin,
     sessionSecret,
     cookieSecure: env.COOKIE_SECURE !== "false",
-    allowedEmails: new Set(allowedEmails.split(",").map((email) => email.trim().toLowerCase()).filter(Boolean)),
+    allowedEmails: allowedEmailSet,
     ...(googleAllowedDomain ? { googleAllowedDomain } : {}),
     sessionTtlSeconds: numberEnv(env.SESSION_TTL_SECONDS, DEFAULT_SESSION_TTL_SECONDS),
     loginRateLimitWindowSeconds: numberEnv(
@@ -54,8 +63,8 @@ export function loadAdminAuthConfig(env: NodeJS.ProcessEnv): AdminAuthConfig | u
 }
 
 export function assertDeployableAdminAuthConfig(config: AdminAuthConfig, env: NodeJS.ProcessEnv): void {
-  if (env.NODE_ENV === "production" && !config.cookieSecure) {
-    throw new Error("COOKIE_SECURE must be true in production");
+  if (!config.cookieSecure && env.NODE_ENV !== "development" && env.NODE_ENV !== "test") {
+    throw new Error("COOKIE_SECURE must be true outside local development and test");
   }
 }
 

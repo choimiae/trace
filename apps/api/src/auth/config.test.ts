@@ -41,4 +41,32 @@ describe("admin auth config", () => {
 
     expect(() => assertDeployableAdminAuthConfig(config!, { NODE_ENV: "production" })).toThrow("COOKIE_SECURE");
   });
+
+  it("requires secure cookies for staging and preview deployments", () => {
+    const config = loadAdminAuthConfig({
+      GOOGLE_CLIENT_ID: "client.apps.googleusercontent.com",
+      GOOGLE_CLIENT_SECRET: "client_secret",
+      GOOGLE_REDIRECT_URI: "https://api.trace.example/auth/google/callback",
+      SESSION_SECRET: "0123456789abcdef0123456789abcdef",
+      ADMIN_APP_ORIGIN: "https://admin.trace.example",
+      ADMIN_ALLOWED_EMAILS: "admin@example.com",
+      COOKIE_SECURE: "false",
+    });
+
+    expect(() => assertDeployableAdminAuthConfig(config!, { NODE_ENV: "staging" })).toThrow("COOKIE_SECURE");
+    expect(() => assertDeployableAdminAuthConfig(config!, { NODE_ENV: "preview" })).toThrow("COOKIE_SECURE");
+  });
+
+  it("returns undefined when the admin email allowlist is empty", () => {
+    expect(
+      loadAdminAuthConfig({
+        GOOGLE_CLIENT_ID: "client.apps.googleusercontent.com",
+        GOOGLE_CLIENT_SECRET: "client_secret",
+        GOOGLE_REDIRECT_URI: "http://localhost:4000/auth/google/callback",
+        SESSION_SECRET: "0123456789abcdef0123456789abcdef",
+        ADMIN_APP_ORIGIN: "http://localhost:5173",
+        ADMIN_ALLOWED_EMAILS: ",,,",
+      }),
+    ).toBeUndefined();
+  });
 });
