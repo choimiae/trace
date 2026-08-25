@@ -183,6 +183,7 @@ export function createGoogleOAuthClient(
       const { payload } = await jwtVerify(input.idToken, jwks, {
         issuer: ["https://accounts.google.com", "accounts.google.com"],
         audience: config.googleClientId,
+        requiredClaims: ["exp"],
       });
       if (payload.nonce !== input.nonce) throw new Error("Google ID token nonce mismatch");
       if (payload.email_verified !== true) throw new Error("Google ID token email_verified claim is required");

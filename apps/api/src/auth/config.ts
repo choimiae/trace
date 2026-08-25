@@ -50,19 +50,29 @@ export function loadAdminAuthConfig(env: NodeJS.ProcessEnv): AdminAuthConfig | u
     cookieSecure: env.COOKIE_SECURE !== "false",
     allowedEmails: allowedEmailSet,
     ...(googleAllowedDomain ? { googleAllowedDomain } : {}),
-    sessionTtlSeconds: numberEnv(env.SESSION_TTL_SECONDS, DEFAULT_SESSION_TTL_SECONDS),
-    loginRateLimitWindowSeconds: numberEnv(
+    sessionTtlSeconds: positiveSafeIntegerEnv(
+      "SESSION_TTL_SECONDS",
+      env.SESSION_TTL_SECONDS,
+      DEFAULT_SESSION_TTL_SECONDS,
+    ),
+    loginRateLimitWindowSeconds: positiveSafeIntegerEnv(
+      "LOGIN_RATE_LIMIT_WINDOW_SECONDS",
       env.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
       DEFAULT_LOGIN_RATE_LIMIT_WINDOW_SECONDS,
     ),
-    loginRateLimitMax: numberEnv(env.LOGIN_RATE_LIMIT_MAX, DEFAULT_LOGIN_RATE_LIMIT_MAX),
+    loginRateLimitMax: positiveSafeIntegerEnv("LOGIN_RATE_LIMIT_MAX", env.LOGIN_RATE_LIMIT_MAX, DEFAULT_LOGIN_RATE_LIMIT_MAX),
     oauthCookieName: "__trace_oauth",
     sessionCookieName: "__trace_admin_session",
     csrfCookieName: "__trace_csrf",
   };
 }
 
-export function assertDeployableAdminAuthConfig(config: AdminAuthConfig, env: NodeJS.ProcessEnv): void {
+export function assertDeployableAdminAuthConfig(config: AdminAuthConfig | undefined, env: NodeJS.ProcessEnv): void {
+  if (!config) {
+    if (env.NODE_ENV === "production") throw new Error("ADMIN_OAUTH_CONFIG_REQUIRED");
+    return;
+  }
+
   if (!config.cookieSecure && env.NODE_ENV !== "development" && env.NODE_ENV !== "test") {
     throw new Error("COOKIE_SECURE must be true outside local development and test");
   }
@@ -73,9 +83,12 @@ function required(value: string | undefined): string | undefined {
   return trimmed || undefined;
 }
 
-function numberEnv(value: string | undefined, defaultValue: number): number {
+function positiveSafeIntegerEnv(name: string, value: string | undefined, defaultValue: number): number {
   if (value === undefined) return defaultValue;
 
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : defaultValue;
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive safe integer`);
+  }
+  return parsed;
 }

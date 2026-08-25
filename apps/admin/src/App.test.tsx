@@ -69,6 +69,30 @@ describe("App auth state", () => {
     expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
   });
 
+  it("renders an access denied screen on auth/me 403", async () => {
+    api.getAuthMe.mockRejectedValue(new api.ApiError(403, "project_access_denied"));
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "접근 권한이 없습니다." })).toBeInTheDocument();
+  });
+
+  it("retries after a network failure", async () => {
+    api.getAuthMe
+      .mockRejectedValueOnce(new Error("network unavailable"))
+      .mockResolvedValueOnce({
+        user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+        projects: [{ projectId: "proj_demo", role: "owner" }],
+        csrfToken: "csrf_1",
+      });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "연결할 수 없습니다." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
+  });
+
   it("renders dashboard after auth/me succeeds", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },

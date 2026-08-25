@@ -160,7 +160,7 @@ async function signedGoogleIdToken(overrides: Record<string, unknown> = {}) {
   const jwks = createLocalJWKSet({ keys: [{ ...jwk, kid: "test-key" }] });
   const now = Math.floor(Date.now() / 1000);
   const { aud, exp, iss, ...claimOverrides } = overrides;
-  const idToken = await new SignJWT({
+  const token = new SignJWT({
     nonce: "nonce_1",
     email: "admin@example.com",
     email_verified: true,
@@ -172,9 +172,11 @@ async function signedGoogleIdToken(overrides: Record<string, unknown> = {}) {
     .setIssuer(String(iss ?? "https://accounts.google.com"))
     .setAudience(String(aud ?? config.googleClientId))
     .setSubject("google_sub_1")
-    .setIssuedAt(now)
-    .setExpirationTime(Number(exp ?? now + 60))
-    .sign(privateKey);
+    .setIssuedAt(now);
+  if (exp !== undefined) token.setExpirationTime(Number(exp));
+  if (!Object.hasOwn(overrides, "exp")) token.setExpirationTime(now + 60);
+
+  const idToken = await token.sign(privateKey);
 
   return { idToken, jwks };
 }
@@ -215,6 +217,15 @@ describe("Google ID token verification", () => {
       idToken: unverified.idToken,
       nonce: "nonce_1",
     })).rejects.toThrow("email_verified");
+  });
+
+  it("rejects a signed token without an expiration claim", async () => {
+    const { idToken, jwks } = await signedGoogleIdToken({ exp: undefined });
+
+    await expect(createGoogleOAuthClient(config, undefined, { jwks }).verifyIdToken({
+      idToken,
+      nonce: "nonce_1",
+    })).rejects.toThrow();
   });
 
   it("rejects a token from an untrusted issuer", async () => {

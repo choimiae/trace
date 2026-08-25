@@ -11,7 +11,6 @@ export function createApp(options: {
   store: TraceStore;
   authConfig?: AdminAuthConfig | undefined;
   googleOAuthClient?: GoogleOAuthClient | undefined;
-  adminToken?: string | undefined;
 }) {
   const app = Fastify({ logger: false });
   app.register(cors, {

@@ -28,6 +28,22 @@ npm run dev:api
 
 Google Cloud Console에서 위 callback URL을 OAuth redirect URI로 등록하고, `ADMIN_ALLOWED_EMAILS`에 로그인할 관리자 이메일을 설정합니다.
 
+`MemoryStore`는 빈 상태로 시작합니다. 첫 프로젝트는 Google 로그인으로 세션을 만든 뒤, Admin origin(`http://localhost:5173`)의 브라우저 개발자 도구 Console에서 아래 요청으로 생성합니다. `auth/me`가 세션의 CSRF token을 반환하고, 브라우저가 `Origin`과 HttpOnly session cookie를 자동으로 포함합니다.
+
+```js
+const apiBase = "http://localhost:4000";
+const me = await fetch(`${apiBase}/auth/me`, { credentials: "include" }).then((response) => response.json());
+const project = await fetch(`${apiBase}/admin/api/projects`, {
+  method: "POST",
+  credentials: "include",
+  headers: { "content-type": "application/json", "x-trace-csrf": me.csrfToken },
+  body: JSON.stringify({ name: "Local Trace", allowedDomains: ["http://localhost:5174"] }),
+}).then((response) => response.json());
+console.log(project.projectId);
+```
+
+출력된 `projectId`를 `VITE_PROJECT_ID`에 설정하거나, Admin UI를 새로고침해 첫 연결 프로젝트로 사용합니다.
+
 관리자 페이지를 실행합니다.
 
 ```bash
