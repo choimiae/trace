@@ -9,6 +9,7 @@ import {
 import type { EventBatch, TraceEvent } from "@trace/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { detectIssues } from "../detection/detect";
 import type { TraceStore } from "../store/types";
 
 const rawTraceEventSchema = z.object({
@@ -59,6 +60,14 @@ export async function registerIngestionRoutes(app: FastifyInstance, options: { s
     }) satisfies EventBatch;
 
     await options.store.saveBatch(sanitizedBatch);
+    const projectEvents = await options.store.listEvents(sanitizedBatch.projectId);
+    const issues = detectIssues({
+      projectId: sanitizedBatch.projectId,
+      events: projectEvents,
+      now: new Date().toISOString(),
+    });
+    await options.store.upsertIssues(sanitizedBatch.projectId, issues);
+
     return reply.code(202).send({ accepted: sanitizedBatch.events.length });
   });
 }

@@ -83,4 +83,66 @@ describe("ingestion routes", () => {
 
     expect(response.statusCode).toBe(403);
   });
+
+  it("detects and stores friction issues after accepting a batch", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-08-24T00:00:04.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-24T00:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            elementSelectorHash: "button_hash",
+            metadata: {},
+          },
+          {
+            eventId: "evt_2",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-24T00:00:01.000Z",
+            type: "click",
+            urlPath: "/settings",
+            elementSelectorHash: "button_hash",
+            metadata: {},
+          },
+          {
+            eventId: "evt_3",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-24T00:00:02.000Z",
+            type: "click",
+            urlPath: "/settings",
+            elementSelectorHash: "button_hash",
+            metadata: {},
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const issues = await store.listIssues(project.projectId);
+    expect(issues[0]).toMatchObject({
+      issueType: "rage_click",
+      relatedUrlPath: "/settings",
+    });
+  });
 });
