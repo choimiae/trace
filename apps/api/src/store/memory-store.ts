@@ -79,6 +79,10 @@ export class MemoryStore implements TraceStore {
     return user;
   }
 
+  async getAdminUser(adminUserId: string): Promise<AdminUserRecord | undefined> {
+    return [...this.adminUsers.values()].find((user) => user.adminUserId === adminUserId);
+  }
+
   async createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord> {
     this.adminSessions.set(input.sessionIdHash, input);
     return input;

@@ -92,6 +92,7 @@ export interface TraceStore {
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
   upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord>;
+  getAdminUser(adminUserId: string): Promise<AdminUserRecord | undefined>;
   createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord>;
   getAdminSession(sessionIdHash: string): Promise<AdminSessionRecord | undefined>;
   revokeAdminSession(sessionIdHash: string, revokedAt: string): Promise<void>;
