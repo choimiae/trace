@@ -44,7 +44,31 @@ npm run dev:demo
 http://localhost:5174/?projectId=<projectId>
 ```
 
-프로덕션 배포에는 HTTPS, `COOKIE_SECURE=true`, 고정된 `ADMIN_APP_ORIGIN` 및 다중 인스턴스 배포 전 durable shared session store가 필요합니다.
+### 로컬 fake OAuth smoke
+
+브라우저용 fake OAuth 서버는 제공하지 않습니다. 대신 API route 테스트가 fake Google client로 Google redirect, callback, 세션 쿠키, `/auth/me`, 그리고 세션 쿠키를 사용하는 Admin BFF를 검증합니다.
+
+```bash
+PATH=/Users/choimiae/.nvm/versions/node/v22.17.0/bin:$PATH npm run test --workspace @trace/api -- src/routes/auth.test.ts src/routes/admin.test.ts
+```
+
+예상 결과:
+
+- `/auth/google/start`는 Google authorization URL로 `302` redirect하고 OAuth state cookie를 설정합니다.
+- fake Google client callback은 code를 교환하고 `__trace_admin_session` cookie를 생성한 뒤 Admin origin으로 `302` redirect합니다.
+- 세션 cookie를 포함한 `/auth/me`는 `200`과 사용자 및 CSRF token을 반환하고, cookie가 없으면 `401`을 반환합니다.
+- 세션 cookie를 포함한 Admin BFF 요청은 인증을 사용하며, cookie가 없으면 `401`, project membership이 없으면 `403`을 반환합니다.
+
+### 프로덕션 배포 체크리스트
+
+현재 `MemoryStore`는 `isDurable === false`이므로 production에 배포할 수 없습니다. 모든 `NODE_ENV=production` 배포에는 `isDurable === true`인 durable `TraceStore`가 필요합니다.
+
+- HTTPS를 사용합니다.
+- `COOKIE_SECURE=true`를 설정합니다.
+- `ADMIN_APP_ORIGIN`을 고정된 Admin origin으로 설정합니다.
+- Google OAuth redirect URI가 배포된 `/auth/google/callback` URL과 정확히 일치하도록 등록합니다.
+- `ADMIN_ALLOWED_EMAILS`에 허용할 관리자 이메일을 설정합니다.
+- durable `TraceStore`를 구성하고 `isDurable === true`를 보장합니다.
 
 ## MVP 1차 범위
 
