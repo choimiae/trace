@@ -92,7 +92,7 @@ Trace는 사용자가 각자 자기 서버에서 운영하는 self-hosted 제품
 
 ### 스키마
 
-`apps/api/src/db/schema.sql`을 SQLite 문법으로 옮긴 `apps/api/src/db/schema.sqlite.sql`을 만든다. PostgreSQL 스키마 파일은 나중에 `PostgresStore`를 추가할 때를 위해 남긴다.
+`apps/api/src/db/schema.sql`을 SQLite 문법으로 옮긴다. 다만 `.sql` 파일이 아니라 `apps/api/src/db/schema.sqlite.ts`에 문자열 상수로 둔다. `tsc`가 `.sql` 파일을 `dist`로 복사하지 않으므로 빌드 후 런타임에 스키마를 읽지 못하기 때문이다. PostgreSQL 스키마 파일(`schema.sql`)은 나중에 `PostgresStore`를 추가할 때를 위해 남긴다.
 
 타입 대응:
 
@@ -148,7 +148,15 @@ SDK의 import를 다음 두 형태로 정리한다.
 - 런타임 값: `import { redactUrl, redactMetadata } from "@trace/shared/privacy"` — `privacy.ts`는 zod를 사용하지 않는다.
 - 타입: `import type { EventBatch, TraceEvent } from "@trace/shared"` — 타입 전용 import는 esbuild가 제거하므로 zod가 유입되지 않는다.
 
-`client.ts`와 `collectors.ts` 양쪽을 함께 수정한다. 두 파일 모두 현재 `@trace/shared`에서 런타임 값을 가져온다. 트리 셰이킹에 의존하지 않고 import 경계로 보장하며, 번들 크기 테스트가 회귀를 잡는다.
+SDK의 세 파일을 함께 수정한다. 현재 각각 `@trace/shared`에서 런타임 값을 가져온다.
+
+| 파일 | 가져오는 런타임 값 |
+| --- | --- |
+| `client.ts` | `redactUrl`, `redactMetadata` (그리고 제거 대상인 `eventBatchSchema`) |
+| `collectors.ts` | `redactUrl` |
+| `dom.ts` | `isSensitiveField`, `redactText` |
+
+네 함수 모두 `privacy.ts`에 있고 이 파일은 zod를 사용하지 않는다. 트리 셰이킹에 의존하지 않고 import 경계로 보장하며, 번들 크기 테스트가 회귀를 잡는다.
 
 `redactUrl`과 `redactMetadata`는 런타임에 필요하므로 번들에 유지한다. 개인정보 마스킹은 제품의 핵심 약속이며 서버 검증으로 대체할 수 없다.
 
