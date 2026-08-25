@@ -1,8 +1,8 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
 import { useEffect, useState } from "react";
-import { getDashboardData } from "./api";
-import { DashboardPage } from "./pages/DashboardPage";
-import { IssueDetailPage } from "./pages/IssueDetailPage";
+import { getDashboardData } from "./api.js";
+import { DashboardPage } from "./pages/DashboardPage.js";
+import { IssueDetailPage } from "./pages/IssueDetailPage.js";
 import "./styles.css";
 
 export function App() {

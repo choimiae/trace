@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { createApp } from "../app";
-import { MemoryStore } from "../store/memory-store";
+import { createApp } from "../app.js";
+import { MemoryStore } from "../store/memory-store.js";
 
 describe("admin routes", () => {
+  const adminToken = "admin_test_token";
+
   it("creates a project and returns an install snippet", async () => {
-    const app = createApp({ store: new MemoryStore() });
+    const app = createApp({ store: new MemoryStore(), adminToken });
 
     const response = await app.inject({
       method: "POST",
       url: "/api/projects",
+      headers: { authorization: `Bearer ${adminToken}` },
       payload: {
         name: "Demo SaaS",
         allowedDomains: ["https://demo.example.com"],
@@ -20,6 +23,15 @@ describe("admin routes", () => {
     expect(body.projectId).toMatch(/^proj_/);
     expect(body.installSnippet).toContain("data-project-id");
     expect(body.allowedDomains).toEqual(["https://demo.example.com"]);
+  });
+
+  it("rejects admin requests without the configured token", async () => {
+    const app = createApp({ store: new MemoryStore(), adminToken });
+
+    const response = await app.inject({ method: "GET", url: "/api/projects/proj_missing/summary" });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "admin_auth_required" });
   });
 
   it("returns dashboard summary, issues, issue detail, and session timeline", async () => {
@@ -63,14 +75,20 @@ describe("admin routes", () => {
         status: "new",
       },
     ]);
-    const app = createApp({ store });
+    const app = createApp({ store, adminToken });
+    const headers = { authorization: `Bearer ${adminToken}` };
 
-    const summaryResponse = await app.inject({ method: "GET", url: `/api/projects/${project.projectId}/summary` });
-    const issuesResponse = await app.inject({ method: "GET", url: `/api/projects/${project.projectId}/issues` });
-    const issueResponse = await app.inject({ method: "GET", url: "/api/issues/issue_1" });
+    const summaryResponse = await app.inject({ method: "GET", url: `/api/projects/${project.projectId}/summary`, headers });
+    const issuesResponse = await app.inject({ method: "GET", url: `/api/projects/${project.projectId}/issues`, headers });
+    const issueResponse = await app.inject({
+      method: "GET",
+      url: `/api/issues/issue_1?projectId=${project.projectId}`,
+      headers,
+    });
     const timelineResponse = await app.inject({
       method: "GET",
       url: `/api/sessions/sess_1/timeline?projectId=${project.projectId}`,
+      headers,
     });
 
     expect(summaryResponse.statusCode).toBe(200);

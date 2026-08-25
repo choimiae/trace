@@ -3,10 +3,15 @@ const REDACTED = "[redacted]";
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const PHONE_PATTERN = /\b(?:\+?82[-.\s]?)?0?1[016789][-\s.]?\d{3,4}[-.\s]?\d{4}\b/g;
 const LONG_NUMBER_PATTERN = /\b\d{9,}\b/g;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TOKEN_LIKE_PATH_PATTERN = /^(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9_-]+$|^[A-Za-z0-9_-]{32,}$/;
 const SAFE_QUERY_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 const SENSITIVE_QUERY_KEY_PATTERN =
   /(?:email|token|password|secret|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|phone|address|input|value|name|user|ssn|credit|card)/i;
 const SENSITIVE_FIELD_HINTS = ["email", "phone", "tel", "password", "card", "address", "name", "ssn"];
+const TRACE_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_-]{1,64}$/;
+const ELEMENT_SELECTOR_HASH_PATTERN = /^[0-9a-f]{1,16}$/i;
+const SAFE_ELEMENT_ROLE_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
 const SENSITIVE_ANALYTICS_IDENTIFIER_SEGMENTS = new Set([
   "token",
   "secret",
@@ -15,6 +20,35 @@ const SENSITIVE_ANALYTICS_IDENTIFIER_SEGMENTS = new Set([
   "auth",
   "session",
   "cookie",
+]);
+const DYNAMIC_PARENT_PATH_SEGMENTS = new Set([
+  "account",
+  "accounts",
+  "customer",
+  "customers",
+  "invite",
+  "invites",
+  "invitation",
+  "invitations",
+  "member",
+  "members",
+  "org",
+  "orgs",
+  "organization",
+  "organizations",
+  "people",
+  "person",
+  "profile",
+  "profiles",
+  "project",
+  "projects",
+  "reset",
+  "session",
+  "sessions",
+  "team",
+  "teams",
+  "user",
+  "users",
 ]);
 const SAFE_SOURCE_VALUES = new Set(["auto", "manual", "sdk"]);
 const SAFE_STATUS_VALUES = new Set(["success", "failure", "timeout", "cancelled"]);
@@ -64,14 +98,28 @@ export function redactUrl(rawUrl: string): RedactedUrl {
 }
 
 export function normalizePath(pathname: string): string {
-  return pathname
-    .split("/")
-    .map((segment) => {
-      if (/^\d+$/.test(segment)) return ":id";
-      if (/^[0-9a-f]{8,}$/i.test(segment)) return ":id";
-      return segment;
+  const segments = pathname.split("/");
+
+  return segments
+    .map((segment, index) => {
+      if (shouldRedactPathSegment(segment, segments[index - 1])) return ":id";
+      return safeDecodePathSegment(segment);
     })
     .join("/");
+}
+
+export function isSafeTraceIdentifier(value: string, prefix?: string): boolean {
+  if (!TRACE_IDENTIFIER_PATTERN.test(value)) return false;
+  if (prefix && !value.startsWith(`${prefix}_`)) return false;
+  return !containsSensitiveText(value) && !TOKEN_LIKE_PATH_PATTERN.test(value) && !hasSensitiveIdentifierSegments(value);
+}
+
+export function isSafeElementSelectorHash(value: string): boolean {
+  return ELEMENT_SELECTOR_HASH_PATTERN.test(value);
+}
+
+export function isSafeElementRole(value: string): boolean {
+  return SAFE_ELEMENT_ROLE_PATTERN.test(value) && !containsSensitiveText(value);
 }
 
 export function redactMetadata(metadata: Record<string, unknown>): SafeMetadata {
@@ -124,6 +172,52 @@ export function isSensitiveField(element: Pick<HTMLInputElement, "tagName" | "ty
 
 function isSafeQueryKey(queryKey: string): boolean {
   return SAFE_QUERY_KEY_PATTERN.test(queryKey) && !SENSITIVE_QUERY_KEY_PATTERN.test(queryKey);
+}
+
+function shouldRedactPathSegment(segment: string, previousSegment: string | undefined): boolean {
+  if (segment.length === 0) return false;
+
+  const decodedSegment = safeDecodePathSegment(segment);
+  const previousDecodedSegment = previousSegment ? safeDecodePathSegment(previousSegment).toLowerCase() : undefined;
+
+  return (
+    containsSensitiveText(decodedSegment) ||
+    /^\d+$/.test(decodedSegment) ||
+    /^[0-9a-f]{8,}$/i.test(decodedSegment) ||
+    UUID_PATTERN.test(decodedSegment) ||
+    TOKEN_LIKE_PATH_PATTERN.test(decodedSegment) ||
+    (previousDecodedSegment !== undefined && DYNAMIC_PARENT_PATH_SEGMENTS.has(previousDecodedSegment))
+  );
+}
+
+function safeDecodePathSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+function containsSensitiveText(value: string): boolean {
+  const hasSensitiveText = EMAIL_PATTERN.test(value) || PHONE_PATTERN.test(value) || LONG_NUMBER_PATTERN.test(value);
+  EMAIL_PATTERN.lastIndex = 0;
+  PHONE_PATTERN.lastIndex = 0;
+  LONG_NUMBER_PATTERN.lastIndex = 0;
+  return hasSensitiveText;
+}
+
+function hasSensitiveIdentifierSegments(value: string): boolean {
+  const segments = value.toLowerCase().split("_").slice(1);
+
+  return segments.some((segment, index) => {
+    const nextSegment = segments[index + 1];
+
+    return (
+      SENSITIVE_ANALYTICS_IDENTIFIER_SEGMENTS.has(segment) ||
+      /\d{9,}/.test(segment) ||
+      (segment === "sk" && nextSegment === "live")
+    );
+  });
 }
 
 function isSafeAnalyticsIdentifier(value: string): boolean {

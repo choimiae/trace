@@ -1,8 +1,8 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
-import { FrictionTrendChart } from "../components/FrictionTrendChart";
-import { IssueTable } from "../components/IssueTable";
-import { IssueTypeChart } from "../components/IssueTypeChart";
-import { MetricStrip } from "../components/MetricStrip";
+import { FrictionTrendChart } from "../components/FrictionTrendChart.js";
+import { IssueTable } from "../components/IssueTable.js";
+import { IssueTypeChart } from "../components/IssueTypeChart.js";
+import { MetricStrip } from "../components/MetricStrip.js";
 
 export function DashboardPage({
   summary,

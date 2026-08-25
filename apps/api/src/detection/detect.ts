@@ -1,6 +1,6 @@
 import type { Issue, TraceEvent } from "@trace/shared";
-import { scoreIssue } from "./severity";
-import { issueTargetKey } from "./url";
+import { scoreIssue } from "./severity.js";
+import { issueTargetKey } from "./url.js";
 
 interface DetectInput {
   projectId: string;

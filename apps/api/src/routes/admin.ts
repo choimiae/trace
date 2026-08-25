@@ -1,13 +1,24 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { TraceStore } from "../store/types";
+import type { TraceStore } from "../store/types.js";
 
 const createProjectSchema = z.object({
   name: z.string().min(1),
   allowedDomains: z.array(z.string().url()).min(1),
 });
 
-export async function registerAdminRoutes(app: FastifyInstance, options: { store: TraceStore }) {
+export async function registerAdminRoutes(
+  app: FastifyInstance,
+  options: { store: TraceStore; adminToken?: string | undefined },
+) {
+  app.addHook("preHandler", async (request, reply) => {
+    if (isAuthorizedAdminRequest(request.headers.authorization, request.headers["x-trace-admin-token"], options.adminToken)) {
+      return;
+    }
+
+    return reply.code(401).send({ error: "admin_auth_required" });
+  });
+
   app.post("/api/projects", async (request, reply) => {
     const input = createProjectSchema.parse(request.body);
     const project = await options.store.createProject(input);
@@ -36,8 +47,9 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
 
   app.get("/api/issues/:issueId", async (request, reply) => {
     const params = z.object({ issueId: z.string() }).parse(request.params);
+    const query = z.object({ projectId: z.string() }).parse(request.query);
     const issue = await options.store.getIssue(params.issueId);
-    if (!issue) return reply.code(404).send({ error: "issue_not_found" });
+    if (!issue || issue.projectId !== query.projectId) return reply.code(404).send({ error: "issue_not_found" });
 
     return issue;
   });
@@ -48,4 +60,14 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
 
     return options.store.getSessionTimeline(query.projectId, params.sessionId);
   });
+}
+
+function isAuthorizedAdminRequest(
+  authorization: string | undefined,
+  tokenHeader: string | string[] | undefined,
+  adminToken: string | undefined,
+): boolean {
+  if (!adminToken) return false;
+  const headerToken = Array.isArray(tokenHeader) ? tokenHeader[0] : tokenHeader;
+  return authorization === `Bearer ${adminToken}` || headerToken === adminToken;
 }

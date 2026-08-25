@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getElementMetadata } from "./dom";
+import { getElementMetadata } from "./dom.js";
 
 describe("getElementMetadata", () => {
   it("returns safe button metadata", () => {

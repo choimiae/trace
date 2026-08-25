@@ -1,6 +1,6 @@
 import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
-import type { CreateProjectInput, ProjectRecord, TraceStore } from "./types";
+import type { CreateProjectInput, ProjectRecord, TraceStore } from "./types.js";
 
 export class MemoryStore implements TraceStore {
   private projects = new Map<string, ProjectRecord>();

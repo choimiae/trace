@@ -1,8 +1,8 @@
 import type { Issue, SessionTimelineEvent } from "@trace/shared";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getSessionTimeline } from "../api";
-import { SessionTimeline } from "../components/SessionTimeline";
+import { getSessionTimeline } from "../api.js";
+import { SessionTimeline } from "../components/SessionTimeline.js";
 
 export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () => void }) {
   const [timeline, setTimeline] = useState<SessionTimelineEvent[]>([]);

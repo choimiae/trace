@@ -1,5 +1,5 @@
-import { TraceClient } from "./client";
-import { installCollectors } from "./collectors";
+import { TraceClient } from "./client.js";
+import { installCollectors } from "./collectors.js";
 
 let client: TraceClient | undefined;
 

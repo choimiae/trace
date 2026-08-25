@@ -1,16 +1,20 @@
 import {
   eventBatchSchema,
   eventTypeSchema,
+  isSafeElementRole,
+  isSafeElementSelectorHash,
+  isSafeTraceIdentifier,
   isoDateStringSchema,
   redactMetadata,
   redactText,
   redactUrl,
 } from "@trace/shared";
-import type { EventBatch, TraceEvent } from "@trace/shared";
+import type { EventBatch, RedactedUrl, TraceEvent } from "@trace/shared";
 import type { FastifyInstance } from "fastify";
+import { nanoid } from "nanoid";
 import { z } from "zod";
-import { detectIssues } from "../detection/detect";
-import type { TraceStore } from "../store/types";
+import { detectIssues } from "../detection/detect.js";
+import type { TraceStore } from "../store/types.js";
 
 const rawTraceEventSchema = z.object({
   eventId: z.string().min(1),
@@ -53,10 +57,13 @@ export async function registerIngestionRoutes(app: FastifyInstance, options: { s
       return reply.code(403).send({ error: "domain_not_allowed" });
     }
 
+    const sessionId = sanitizeTraceIdentifier(rawBatch.sessionId, "sess");
     const sanitizedBatch = eventBatchSchema.parse({
       ...rawBatch,
+      anonymousUserId: sanitizeTraceIdentifier(rawBatch.anonymousUserId, "anon"),
+      sessionId,
       url: `${redactedUrl.origin}${redactedUrl.urlPath}${redactedUrl.urlQueryRedacted}`,
-      events: rawBatch.events.map((event) => sanitizeEvent(event, redactedUrl.urlPath, redactedUrl.urlQueryRedacted)),
+      events: rawBatch.events.map((event) => sanitizeEvent(event, redactedUrl, sessionId)),
     }) satisfies EventBatch;
 
     await options.store.saveBatch(sanitizedBatch);
@@ -74,20 +81,24 @@ export async function registerIngestionRoutes(app: FastifyInstance, options: { s
 
 function sanitizeEvent(
   event: z.infer<typeof rawTraceEventSchema>,
-  urlPath: string,
-  urlQueryRedacted: string,
+  batchUrl: RedactedUrl,
+  batchSessionId: string,
 ): TraceEvent {
+  const eventUrl = sanitizeEventUrl(event, batchUrl);
+
   return {
-    eventId: event.eventId,
-    sessionId: event.sessionId,
-    pageId: event.pageId,
+    eventId: sanitizeTraceIdentifier(event.eventId, "evt"),
+    sessionId: isSafeTraceIdentifier(event.sessionId, "sess") ? event.sessionId : batchSessionId,
+    pageId: sanitizeTraceIdentifier(event.pageId, "page"),
     timestamp: event.timestamp,
     type: event.type,
-    urlPath,
-    ...(urlQueryRedacted ? { urlQueryRedacted } : {}),
+    urlPath: eventUrl.urlPath,
+    ...(eventUrl.urlQueryRedacted ? { urlQueryRedacted: eventUrl.urlQueryRedacted } : {}),
     ...(event.titleMasked ? { titleMasked: redactText(event.titleMasked) } : {}),
-    ...(event.elementSelectorHash ? { elementSelectorHash: event.elementSelectorHash } : {}),
-    ...(event.elementRole ? { elementRole: event.elementRole } : {}),
+    ...(event.elementSelectorHash && isSafeElementSelectorHash(event.elementSelectorHash)
+      ? { elementSelectorHash: event.elementSelectorHash }
+      : {}),
+    ...(event.elementRole && isSafeElementRole(event.elementRole) ? { elementRole: event.elementRole } : {}),
     ...(event.elementTextMaskedOrLimited ? { elementTextMaskedOrLimited: redactText(event.elementTextMaskedOrLimited) } : {}),
     ...(event.x === undefined ? {} : { x: event.x }),
     ...(event.y === undefined ? {} : { y: event.y }),
@@ -95,4 +106,19 @@ function sanitizeEvent(
     ...(event.viewportY === undefined ? {} : { viewportY: event.viewportY }),
     metadata: redactMetadata(event.metadata),
   };
+}
+
+function sanitizeTraceIdentifier(value: string, prefix: "anon" | "evt" | "page" | "sess"): string {
+  if (isSafeTraceIdentifier(value, prefix)) return value;
+  return `${prefix}_${nanoid(10)}`;
+}
+
+function sanitizeEventUrl(event: z.infer<typeof rawTraceEventSchema>, batchUrl: RedactedUrl): RedactedUrl {
+  if (!event.urlPath?.startsWith("/")) return batchUrl;
+
+  try {
+    return redactUrl(`${batchUrl.origin}${event.urlPath}${event.urlQueryRedacted ?? ""}`);
+  } catch {
+    return batchUrl;
+  }
 }

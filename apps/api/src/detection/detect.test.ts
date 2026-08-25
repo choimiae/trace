@@ -1,6 +1,6 @@
 import type { TraceEvent } from "@trace/shared";
 import { describe, expect, it } from "vitest";
-import { detectIssues } from "./detect";
+import { detectIssues } from "./detect.js";
 
 function click(partial: Partial<TraceEvent>): TraceEvent {
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventBatchSchema } from "./events";
+import { eventBatchSchema } from "./events.js";
 
 describe("eventBatchSchema", () => {
   it("accepts a valid click batch", () => {

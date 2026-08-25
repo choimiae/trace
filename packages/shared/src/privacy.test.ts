@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { eventBatchSchema } from "./events";
-import { isSensitiveField, redactMetadata, redactText, redactUrl } from "./privacy";
+import { eventBatchSchema } from "./events.js";
+import { isSafeTraceIdentifier, isSensitiveField, redactMetadata, redactText, redactUrl } from "./privacy.js";
 
 describe("privacy redaction", () => {
   it("redacts emails, phone numbers, and long numeric values from text", () => {
@@ -17,6 +17,15 @@ describe("privacy redaction", () => {
       urlQueryRedacted: "?redacted_param_1=[redacted]&tab=[redacted]",
       urlQueryKeys: ["redacted_param_1", "tab"],
     });
+  });
+
+  it("redacts identity-like and token-like URL path segments", () => {
+    expect(
+      redactUrl(
+        "https://app.example.com/users/choi@example.com/reset/sk_live_abcDEF/orders/550e8400-e29b-41d4-a716-446655440000",
+      ).urlPath,
+    ).toBe("/users/:id/reset/:id/orders/:id");
+    expect(redactUrl("https://app.example.com/users/alice/settings").urlPath).toBe("/users/:id/settings");
   });
 
   it("produces URLs that satisfy the stored event schema", () => {
@@ -98,6 +107,13 @@ describe("privacy redaction", () => {
         score: 101,
       }),
     ).toEqual({});
+  });
+
+  it("rejects trace identifiers with sensitive token-like segments after the prefix", () => {
+    expect(isSafeTraceIdentifier("evt_sk_live_secret", "evt")).toBe(false);
+    expect(isSafeTraceIdentifier("sess_token_secret", "sess")).toBe(false);
+    expect(isSafeTraceIdentifier("anon_123456789", "anon")).toBe(false);
+    expect(isSafeTraceIdentifier("evt_abc123", "evt")).toBe(true);
   });
 
   it("marks sensitive form fields", () => {
