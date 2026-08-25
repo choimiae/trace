@@ -73,15 +73,39 @@ describe("google oauth", () => {
     })).toBeUndefined();
   });
 
-  it("exposes state for callback state mismatch detection", () => {
+  it("does not consume cookie state when callback state differs", () => {
     const created = createOAuthStateCookie({ config, now: new Date("2026-08-25T00:00:00.000Z") });
     const parsed = readOAuthStateCookie({
       config,
       cookieHeader: created.cookie.split(";")[0],
       now: new Date("2026-08-25T00:05:00.000Z"),
     });
+    const store = createOAuthStateStore();
+    const now = new Date("2026-08-25T00:05:00.000Z").getTime();
+    const callbackState = "callback_state_mismatch";
+    store.save(created.state, created.expiresAtMs);
 
-    expect(parsed?.state === "callback_state_mismatch").toBe(false);
+    expect(parsed?.state).not.toBe(callbackState);
+    expect(store.consume(callbackState, now)).toBe(false);
+    expect(store.consume(parsed!.state, now)).toBe(true);
+    expect(store.consume(parsed!.state, now)).toBe(false);
+  });
+
+  it("consumes matching callback state only once", () => {
+    const created = createOAuthStateCookie({ config, now: new Date("2026-08-25T00:00:00.000Z") });
+    const parsed = readOAuthStateCookie({
+      config,
+      cookieHeader: created.cookie.split(";")[0],
+      now: new Date("2026-08-25T00:05:00.000Z"),
+    });
+    const store = createOAuthStateStore();
+    const now = new Date("2026-08-25T00:05:00.000Z").getTime();
+    const callbackState = parsed!.state;
+    store.save(created.state, created.expiresAtMs);
+
+    expect(parsed?.state).toBe(callbackState);
+    expect(store.consume(callbackState, now)).toBe(true);
+    expect(store.consume(callbackState, now)).toBe(false);
   });
 
   it("consumes an unexpired OAuth state only once", () => {
