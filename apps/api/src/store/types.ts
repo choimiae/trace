@@ -88,6 +88,7 @@ export interface StoredSession {
 }
 
 export interface TraceStore {
+  readonly isDurable?: boolean;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
   upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord>;
@@ -107,4 +108,10 @@ export interface TraceStore {
   getIssue(issueId: string): Promise<Issue | undefined>;
   getSessionTimeline(projectId: string, sessionId: string): Promise<TraceEvent[]>;
   getDashboardSummary(projectId: string): Promise<DashboardSummary>;
+}
+
+export function assertDeployableTraceStore(store: TraceStore, env: NodeJS.ProcessEnv): void {
+  if (env.NODE_ENV === "production" && store.isDurable !== true) {
+    throw new Error("DURABLE_TRACE_STORE_REQUIRED");
+  }
 }

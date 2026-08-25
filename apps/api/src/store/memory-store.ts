@@ -15,10 +15,13 @@ import type {
 } from "./types.js";
 
 export class MemoryStore implements TraceStore {
+  readonly isDurable = false;
+
   private projects = new Map<string, ProjectRecord>();
   private events = new Map<string, TraceEvent[]>();
   private issues = new Map<string, Issue>();
   private adminUsers = new Map<string, AdminUserRecord>();
+  private adminUsersByEmail = new Map<string, string>();
   private adminSessions = new Map<string, AdminSessionRecord>();
   private projectMemberships = new Map<string, ProjectMembershipRecord>();
   private auditLogs = new Map<string, AuditLogRecord>();
@@ -40,11 +43,21 @@ export class MemoryStore implements TraceStore {
   }
 
   async upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord> {
+    const email = input.email.toLowerCase();
     const existing = this.adminUsers.get(input.googleSub);
+    const googleSubForEmail = this.adminUsersByEmail.get(email);
+    if (googleSubForEmail !== undefined && googleSubForEmail !== input.googleSub) {
+      throw new Error("admin_email_conflict");
+    }
+
+    if (existing && existing.email !== email) {
+      this.adminUsersByEmail.delete(existing.email);
+    }
+
     const user: AdminUserRecord = existing
       ? {
           ...existing,
-          email: input.email,
+          email,
           emailVerified: input.emailVerified,
           ...(input.name === undefined ? {} : { name: input.name }),
           ...(input.pictureUrl === undefined ? {} : { pictureUrl: input.pictureUrl }),
@@ -53,7 +66,7 @@ export class MemoryStore implements TraceStore {
       : {
           adminUserId: `admin_${nanoid(10)}`,
           googleSub: input.googleSub,
-          email: input.email,
+          email,
           emailVerified: input.emailVerified,
           ...(input.name === undefined ? {} : { name: input.name }),
           ...(input.pictureUrl === undefined ? {} : { pictureUrl: input.pictureUrl }),
@@ -62,6 +75,7 @@ export class MemoryStore implements TraceStore {
         };
 
     this.adminUsers.set(input.googleSub, user);
+    this.adminUsersByEmail.set(email, input.googleSub);
     return user;
   }
 
