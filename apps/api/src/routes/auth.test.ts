@@ -104,7 +104,8 @@ describe("auth routes", () => {
   });
 
   it("logs out with CSRF and clears auth cookies", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const store = new MemoryStore();
+    const app = createApp({ store, authConfig: config, googleOAuthClient: fakeGoogleClient() });
     const start = await app.inject({ method: "GET", url: "/auth/google/start" });
     const state = new URL(String(start.headers.location)).searchParams.get("state");
     const oauthCookie = Array.isArray(start.headers["set-cookie"])
@@ -128,6 +129,49 @@ describe("auth routes", () => {
 
     expect(logout.statusCode).toBe(204);
     expect((await app.inject({ method: "GET", url: "/auth/me", headers: { cookie: sessionCookie } })).statusCode).toBe(401);
+    expect(await store.listAuditLogs()).toContainEqual(expect.objectContaining({
+      action: "auth.logout",
+      adminUserId: expect.stringMatching(/^admin_/),
+      metadata: { sessionRevoked: true },
+    }));
+  });
+
+  it("consumes state, clears the cookie, and audits a Google access denial", async () => {
+    const store = new MemoryStore();
+    const app = createApp({ store, authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const start = await app.inject({ method: "GET", url: "/auth/google/start" });
+    const state = new URL(String(start.headers.location)).searchParams.get("state");
+    const oauthCookie = Array.isArray(start.headers["set-cookie"])
+      ? start.headers["set-cookie"][0] ?? ""
+      : String(start.headers["set-cookie"]);
+    const request = {
+      method: "GET" as const,
+      url: `/auth/google/callback?error=access_denied&state=${state}`,
+      headers: { cookie: oauthCookie.split(";")[0] },
+    };
+
+    const denial = await app.inject(request);
+
+    expect(denial.statusCode).toBe(401);
+    expect(denial.json()).toEqual({ error: "oauth_denied" });
+    expect(String(denial.headers["set-cookie"])).toContain("__trace_oauth=; Max-Age=0");
+    expect(await store.listAuditLogs()).toContainEqual(expect.objectContaining({
+      action: "auth.login_failure",
+      metadata: { reason: "oauth_denied", providerError: "access_denied" },
+    }));
+    expect((await app.inject(request)).json()).toEqual({ error: "oauth_state_invalid" });
+  });
+
+  it("allows credentialed CORS only from the Admin origin on auth routes", async () => {
+    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+
+    const allowed = await app.inject({ method: "GET", url: "/auth/me", headers: { origin: config.adminAppOrigin } });
+    const disallowed = await app.inject({ method: "GET", url: "/auth/me", headers: { origin: "https://evil.example.com" } });
+
+    expect(allowed.headers["access-control-allow-origin"]).toBe(config.adminAppOrigin);
+    expect(allowed.headers["access-control-allow-credentials"]).toBe("true");
+    expect(disallowed.headers["access-control-allow-origin"]).toBeUndefined();
+    expect(disallowed.headers["access-control-allow-credentials"]).toBeUndefined();
   });
 
   it("rejects callback state mismatch", async () => {

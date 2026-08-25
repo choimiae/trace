@@ -18,7 +18,12 @@ export function createApp(options: {
     delegator: (request, callback) => {
       const protectedBrowserRoute = request.url.startsWith("/auth/") || request.url.startsWith("/admin/api/");
       const allowCredentialedOrigin = protectedBrowserRoute && request.headers.origin === options.authConfig?.adminAppOrigin;
-      callback(null, allowCredentialedOrigin ? { origin: options.authConfig!.adminAppOrigin, credentials: true } : { origin: true });
+      if (protectedBrowserRoute) {
+        callback(null, allowCredentialedOrigin ? { origin: options.authConfig!.adminAppOrigin, credentials: true } : { origin: false });
+        return;
+      }
+
+      callback(null, { origin: true });
     },
   });
   if (options.authConfig) {

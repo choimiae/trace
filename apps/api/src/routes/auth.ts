@@ -22,9 +22,10 @@ export interface AuthMeResponse {
 }
 
 const callbackSchema = z.object({
-  code: z.string().min(1),
+  code: z.string().min(1).optional(),
+  error: z.string().min(1).optional(),
   state: z.string().min(1),
-});
+}).refine(({ code, error }) => (code === undefined) !== (error === undefined));
 
 export async function registerAuthRoutes(
   app: FastifyInstance,
@@ -68,9 +69,14 @@ export async function registerAuthRoutes(
     }
 
     const clearedOauthCookie = clearOAuthStateCookie(options.config);
+    if (callback.data.error) {
+      await auditLoginFailure(options.store, "oauth_denied", { providerError: callback.data.error });
+      return reply.header("set-cookie", clearedOauthCookie).code(401).send({ error: "oauth_denied" });
+    }
+
     try {
       const token = await options.googleOAuthClient.exchangeCode({
-        code: callback.data.code,
+        code: callback.data.code!,
         codeVerifier: oauthState.codeVerifier,
       });
       const profile = await options.googleOAuthClient.verifyIdToken({ idToken: token.idToken, nonce: oauthState.nonce });
@@ -148,6 +154,12 @@ export async function registerAuthRoutes(
     if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
 
     await options.store.revokeAdminSession(authenticated.session.sessionIdHash, new Date().toISOString());
+    await options.store.createAuditLog({
+      adminUserId: authenticated.adminUserId,
+      action: "auth.logout",
+      createdAt: new Date().toISOString(),
+      metadata: { sessionRevoked: true },
+    });
     return reply.header("set-cookie", buildClearedAuthCookies(options.config)).code(204).send();
   });
 }
@@ -187,10 +199,10 @@ function createCsrfCookie(config: AdminAuthConfig, csrfToken: string): string {
   });
 }
 
-async function auditLoginFailure(store: TraceStore, reason: string): Promise<void> {
+async function auditLoginFailure(store: TraceStore, reason: string, metadata: Record<string, unknown> = {}): Promise<void> {
   await store.createAuditLog({
     action: "auth.login_failure",
     createdAt: new Date().toISOString(),
-    metadata: { reason },
+    metadata: { reason, ...metadata },
   });
 }
