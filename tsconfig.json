@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "apps/admin" },
+    { "path": "apps/api" },
+    { "path": "packages/sdk" },
+    { "path": "packages/shared" }
+  ]
+}

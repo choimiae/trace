@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false",
     "dev:api": "npm run dev --workspace @trace/api",
-    "dev:admin": "npm run dev --workspace @trace/admin"
+    "dev:admin": "npm run dev --workspace @trace/admin",
+    "dev:demo": "vite examples/demo-site --host 0.0.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trace Demo SaaS</title>
+    <style>
+      body {
+        margin: 40px;
+        color: #17202a;
+        font-family: system-ui, sans-serif;
+      }
+
+      button {
+        margin-right: 8px;
+        padding: 10px 14px;
+      }
+
+      .panel {
+        max-width: 720px;
+        border: 1px solid #d9e1ea;
+        border-radius: 8px;
+        padding: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="panel">
+      <h1>설정</h1>
+      <p>반복 클릭과 오류 감지를 확인하는 데모 화면입니다.</p>
+      <button id="dead-click">권한 추가</button>
+      <button onclick="window.trace?.track('report_export_clicked')">리포트 내보내기</button>
+      <button onclick="throw new Error('Demo error')">오류 발생</button>
+    </main>
+    <script type="module">
+      import { init } from "../../packages/sdk/src/index.ts";
+
+      const projectId = new URLSearchParams(window.location.search).get("projectId") ?? "proj_demo";
+
+      init({
+        projectId,
+        endpoint: "http://localhost:4000/v1/events/batch",
+        consent: "granted",
+      });
+    </script>
+  </body>
+</html>
