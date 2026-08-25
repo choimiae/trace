@@ -1,6 +1,12 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { describe, expect, it, vi } from "vitest";
-import { createGoogleOAuthClient, createOAuthStateCookie, createPkcePair, readOAuthStateCookie } from "./google.js";
+import {
+  createGoogleOAuthClient,
+  createOAuthStateCookie,
+  createOAuthStateStore,
+  createPkcePair,
+  readOAuthStateCookie,
+} from "./google.js";
 import type { AdminAuthConfig } from "./config.js";
 
 const config: AdminAuthConfig = {
@@ -45,6 +51,65 @@ describe("google oauth", () => {
     expect(parsed?.state).toBe(created.state);
     expect(parsed?.nonce).toBe(created.nonce);
     expect(parsed?.codeVerifier).toBe(created.codeVerifier);
+  });
+
+  it("rejects a tampered OAuth state cookie", () => {
+    const created = createOAuthStateCookie({ config, now: new Date("2026-08-25T00:00:00.000Z") });
+
+    expect(readOAuthStateCookie({
+      config,
+      cookieHeader: `${created.cookie.split(";")[0]}tampered`,
+      now: new Date("2026-08-25T00:05:00.000Z"),
+    })).toBeUndefined();
+  });
+
+  it("rejects an expired OAuth state cookie", () => {
+    const created = createOAuthStateCookie({ config, now: new Date("2026-08-25T00:00:00.000Z") });
+
+    expect(readOAuthStateCookie({
+      config,
+      cookieHeader: created.cookie.split(";")[0],
+      now: new Date(created.expiresAtMs),
+    })).toBeUndefined();
+  });
+
+  it("exposes state for callback state mismatch detection", () => {
+    const created = createOAuthStateCookie({ config, now: new Date("2026-08-25T00:00:00.000Z") });
+    const parsed = readOAuthStateCookie({
+      config,
+      cookieHeader: created.cookie.split(";")[0],
+      now: new Date("2026-08-25T00:05:00.000Z"),
+    });
+
+    expect(parsed?.state === "callback_state_mismatch").toBe(false);
+  });
+
+  it("consumes an unexpired OAuth state only once", () => {
+    const store = createOAuthStateStore();
+    const now = Date.now();
+    store.save("state_1", now + 1_000);
+
+    expect(store.consume("state_1", now)).toBe(true);
+    expect(store.size()).toBe(0);
+    expect(store.consume("state_1", now)).toBe(false);
+  });
+
+  it("rejects expired OAuth state", () => {
+    const store = createOAuthStateStore();
+    const now = Date.now();
+    store.save("state_1", now - 1);
+
+    expect(store.consume("state_1", now)).toBe(false);
+  });
+
+  it("cleans expired OAuth state keys while consuming", () => {
+    const store = createOAuthStateStore();
+    const now = Date.now();
+    store.save("active", now + 1_000);
+    store.save("expired", now - 1);
+
+    expect(store.consume("missing", now)).toBe(false);
+    expect(store.size()).toBe(1);
   });
 
   it("exchanges an authorization code through Google's token endpoint", async () => {

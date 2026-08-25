@@ -52,6 +52,7 @@ export function createOAuthStateCookie(input: OAuthStateCookieInput): {
   state: string;
   nonce: string;
   codeVerifier: string;
+  expiresAtMs: number;
   cookie: string;
 } {
   const now = input.now ?? new Date();
@@ -66,6 +67,7 @@ export function createOAuthStateCookie(input: OAuthStateCookieInput): {
     state: state.state,
     nonce: state.nonce,
     codeVerifier: state.codeVerifier,
+    expiresAtMs: state.expiresAt,
     cookie: serializeCookie(input.config.oauthCookieName, signValue(JSON.stringify(state), input.config.sessionSecret), {
       httpOnly: true,
       secure: input.config.cookieSecure,
@@ -103,6 +105,37 @@ export function readOAuthStateCookie(input: ReadOAuthStateCookieInput): {
   } catch {
     return undefined;
   }
+}
+
+export function createOAuthStateStore(): {
+  save(state: string, expiresAtMs: number): void;
+  consume(state: string, nowMs?: number): boolean;
+  size(): number;
+} {
+  const states = new Map<string, number>();
+
+  function cleanExpired(nowMs: number): void {
+    for (const [state, expiresAtMs] of states) {
+      if (expiresAtMs <= nowMs) states.delete(state);
+    }
+  }
+
+  return {
+    save(state, expiresAtMs) {
+      cleanExpired(Date.now());
+      states.set(state, expiresAtMs);
+    },
+    consume(state, nowMs = Date.now()) {
+      cleanExpired(nowMs);
+      if (!states.has(state)) return false;
+
+      states.delete(state);
+      return true;
+    },
+    size() {
+      return states.size;
+    },
+  };
 }
 
 export function createGoogleOAuthClient(
