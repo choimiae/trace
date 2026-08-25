@@ -13,6 +13,72 @@ export interface CreateProjectInput {
   allowedDomains: string[];
 }
 
+export type AdminRole = "owner" | "admin" | "viewer";
+
+export interface AdminUserRecord {
+  adminUserId: string;
+  googleSub: string;
+  email: string;
+  emailVerified: boolean;
+  name?: string;
+  pictureUrl?: string;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface AdminSessionRecord {
+  sessionIdHash: string;
+  adminUserId: string;
+  createdAt: string;
+  expiresAt: string;
+  lastSeenAt: string;
+  revokedAt?: string;
+  userAgentHash?: string;
+  ipHash?: string;
+}
+
+export interface ProjectMembershipRecord {
+  projectId: string;
+  adminUserId: string;
+  role: AdminRole;
+  createdAt: string;
+}
+
+export interface AuditLogRecord {
+  auditLogId: string;
+  adminUserId?: string;
+  action: string;
+  projectId?: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface UpsertAdminUserFromGoogleInput {
+  googleSub: string;
+  email: string;
+  emailVerified: boolean;
+  name?: string;
+  pictureUrl?: string;
+  now: string;
+}
+
+export interface CreateAdminSessionInput extends AdminSessionRecord {}
+
+export interface AddProjectMembershipInput {
+  projectId: string;
+  adminUserId: string;
+  role: AdminRole;
+  createdAt: string;
+}
+
+export interface CreateAuditLogInput {
+  adminUserId?: string;
+  action: string;
+  projectId?: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface StoredSession {
   sessionId: string;
   projectId: string;
@@ -24,6 +90,16 @@ export interface StoredSession {
 export interface TraceStore {
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
+  upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord>;
+  createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord>;
+  getAdminSession(sessionIdHash: string): Promise<AdminSessionRecord | undefined>;
+  revokeAdminSession(sessionIdHash: string, revokedAt: string): Promise<void>;
+  touchAdminSession(sessionIdHash: string, lastSeenAt: string): Promise<void>;
+  addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord>;
+  getProjectMembership(projectId: string, adminUserId: string): Promise<ProjectMembershipRecord | undefined>;
+  listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]>;
+  createAuditLog(input: CreateAuditLogInput): Promise<void>;
+  listAuditLogs(): Promise<AuditLogRecord[]>;
   saveBatch(batch: EventBatch): Promise<void>;
   listEvents(projectId: string): Promise<TraceEvent[]>;
   upsertIssues(projectId: string, issues: Issue[]): Promise<void>;

@@ -1,11 +1,27 @@
 import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
-import type { CreateProjectInput, ProjectRecord, TraceStore } from "./types.js";
+import type {
+  AddProjectMembershipInput,
+  AdminSessionRecord,
+  AdminUserRecord,
+  AuditLogRecord,
+  CreateAdminSessionInput,
+  CreateAuditLogInput,
+  CreateProjectInput,
+  ProjectMembershipRecord,
+  ProjectRecord,
+  TraceStore,
+  UpsertAdminUserFromGoogleInput,
+} from "./types.js";
 
 export class MemoryStore implements TraceStore {
   private projects = new Map<string, ProjectRecord>();
   private events = new Map<string, TraceEvent[]>();
   private issues = new Map<string, Issue>();
+  private adminUsers = new Map<string, AdminUserRecord>();
+  private adminSessions = new Map<string, AdminSessionRecord>();
+  private projectMemberships = new Map<string, ProjectMembershipRecord>();
+  private auditLogs = new Map<string, AuditLogRecord>();
 
   async createProject(input: CreateProjectInput): Promise<ProjectRecord> {
     const project: ProjectRecord = {
@@ -21,6 +37,76 @@ export class MemoryStore implements TraceStore {
 
   async getProject(projectId: string): Promise<ProjectRecord | undefined> {
     return this.projects.get(projectId);
+  }
+
+  async upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord> {
+    const existing = this.adminUsers.get(input.googleSub);
+    const user: AdminUserRecord = existing
+      ? {
+          ...existing,
+          email: input.email,
+          emailVerified: input.emailVerified,
+          ...(input.name === undefined ? {} : { name: input.name }),
+          ...(input.pictureUrl === undefined ? {} : { pictureUrl: input.pictureUrl }),
+          lastLoginAt: input.now,
+        }
+      : {
+          adminUserId: `admin_${nanoid(10)}`,
+          googleSub: input.googleSub,
+          email: input.email,
+          emailVerified: input.emailVerified,
+          ...(input.name === undefined ? {} : { name: input.name }),
+          ...(input.pictureUrl === undefined ? {} : { pictureUrl: input.pictureUrl }),
+          createdAt: input.now,
+          lastLoginAt: input.now,
+        };
+
+    this.adminUsers.set(input.googleSub, user);
+    return user;
+  }
+
+  async createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord> {
+    this.adminSessions.set(input.sessionIdHash, input);
+    return input;
+  }
+
+  async getAdminSession(sessionIdHash: string): Promise<AdminSessionRecord | undefined> {
+    return this.adminSessions.get(sessionIdHash);
+  }
+
+  async revokeAdminSession(sessionIdHash: string, revokedAt: string): Promise<void> {
+    const session = this.adminSessions.get(sessionIdHash);
+    if (session) this.adminSessions.set(sessionIdHash, { ...session, revokedAt });
+  }
+
+  async touchAdminSession(sessionIdHash: string, lastSeenAt: string): Promise<void> {
+    const session = this.adminSessions.get(sessionIdHash);
+    if (session) this.adminSessions.set(sessionIdHash, { ...session, lastSeenAt });
+  }
+
+  async addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord> {
+    this.projectMemberships.set(`${input.projectId}:${input.adminUserId}`, input);
+    return input;
+  }
+
+  async getProjectMembership(
+    projectId: string,
+    adminUserId: string,
+  ): Promise<ProjectMembershipRecord | undefined> {
+    return this.projectMemberships.get(`${projectId}:${adminUserId}`);
+  }
+
+  async listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]> {
+    return [...this.projectMemberships.values()].filter((membership) => membership.adminUserId === adminUserId);
+  }
+
+  async createAuditLog(input: CreateAuditLogInput): Promise<void> {
+    const auditLog: AuditLogRecord = { auditLogId: `audit_${nanoid(10)}`, ...input };
+    this.auditLogs.set(auditLog.auditLogId, auditLog);
+  }
+
+  async listAuditLogs(): Promise<AuditLogRecord[]> {
+    return [...this.auditLogs.values()];
   }
 
   async saveBatch(batch: EventBatch): Promise<void> {
