@@ -7,10 +7,14 @@ import { MetricStrip } from "../components/MetricStrip.js";
 export function DashboardPage({
   summary,
   issues,
+  userEmail,
+  onLogout,
   onSelectIssue,
 }: {
   summary: DashboardSummary;
   issues: Issue[];
+  userEmail: string;
+  onLogout: () => void;
   onSelectIssue?: ((issue: Issue) => void) | undefined;
 }) {
   return (
@@ -19,6 +23,10 @@ export function DashboardPage({
         <div>
           <p className="eyebrow">Trace 관리자</p>
           <h1>문제 인박스</h1>
+        </div>
+        <div className="header-actions">
+          <span className="user-email">{userEmail}</span>
+          <button className="secondary-button" type="button" onClick={onLogout}>로그아웃</button>
         </div>
       </header>
       <MetricStrip summary={summary} />

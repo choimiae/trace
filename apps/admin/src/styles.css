@@ -21,6 +21,26 @@ button {
   font: inherit;
 }
 
+.primary-button,
+.secondary-button {
+  border: 1px solid #117a7a;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.primary-button {
+  background: #117a7a;
+  color: #ffffff;
+  padding: 10px 14px;
+}
+
+.secondary-button {
+  background: #ffffff;
+  color: #117a7a;
+  padding: 8px 12px;
+}
+
 .app-shell {
   width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
@@ -32,6 +52,36 @@ button {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-email {
+  color: #66767f;
+  font-size: 0.85rem;
+}
+
+.auth-state {
+  display: grid;
+  align-content: center;
+  min-height: 100vh;
+  gap: 12px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.auth-state .eyebrow,
+.auth-state h1,
+.auth-state p {
+  margin-bottom: 0;
+}
+
+.auth-state .primary-button {
+  width: fit-content;
 }
 
 .eyebrow {
@@ -279,5 +329,19 @@ td span {
   .detail-drawer {
     inset: 12px;
     width: auto;
+  }
+
+  .page-header,
+  .header-actions {
+    align-items: flex-start;
+  }
+
+  .page-header {
+    gap: 16px;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    gap: 6px;
   }
 }
