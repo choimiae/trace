@@ -74,6 +74,63 @@ describe("admin bff routes", () => {
     expect(response.json()).toEqual({ error: "project_access_denied" });
   });
 
+  it("audits every project membership denial", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Private", allowedDomains: ["https://private.example.com"] });
+    await store.upsertIssues(project.projectId, [{
+      issueId: "issue_private",
+      projectId: project.projectId,
+      issueType: "rage_click",
+      title: "Private issue",
+      summary: "Private issue summary.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 70,
+      firstSeenAt: "2026-08-25T00:00:00.000Z",
+      lastSeenAt: "2026-08-25T00:00:00.000Z",
+      trend: "flat",
+      relatedUrlPath: "/private",
+      exampleSessionIds: ["sess_private"],
+      status: "new",
+    }]);
+    const app = createApp({ store, authConfig });
+
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/summary`, headers: { cookie } }),
+      app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/issues`, headers: { cookie } }),
+      app.inject({ method: "GET", url: `/admin/api/issues/issue_private?projectId=${project.projectId}`, headers: { cookie } }),
+      app.inject({ method: "GET", url: `/admin/api/sessions/sess_private/timeline?projectId=${project.projectId}`, headers: { cookie } }),
+    ]);
+
+    expect(responses.map((response) => response.statusCode)).toEqual([403, 403, 403, 403]);
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "project_summary" },
+      }),
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "project_issues" },
+      }),
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "issue_detail" },
+      }),
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "session_timeline" },
+      }),
+    ]));
+  });
+
   it("does not leak issue detail or session timeline across project scope", async () => {
     const { store, user, cookie } = await signedInStore();
     const memberProject = await store.createProject({ name: "Member", allowedDomains: ["https://member.example.com"] });

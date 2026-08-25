@@ -56,7 +56,7 @@ export async function registerAdminProxyRoutes(
     if ("error" in authenticated) return reply.code(401).send(authenticated);
 
     const { projectId } = projectParamsSchema.parse(request.params);
-    const accessError = await getProjectAccessError(options.store, projectId, authenticated);
+    const accessError = await getProjectAccessError(options.store, projectId, authenticated, "project_summary");
     if (accessError) {
       return reply.code(accessError.statusCode).send({ error: accessError.error });
     }
@@ -69,7 +69,7 @@ export async function registerAdminProxyRoutes(
     if ("error" in authenticated) return reply.code(401).send(authenticated);
 
     const { projectId } = projectParamsSchema.parse(request.params);
-    const accessError = await getProjectAccessError(options.store, projectId, authenticated);
+    const accessError = await getProjectAccessError(options.store, projectId, authenticated, "project_issues");
     if (accessError) {
       return reply.code(accessError.statusCode).send({ error: accessError.error });
     }
@@ -90,7 +90,10 @@ export async function registerAdminProxyRoutes(
     if (!issue || issue.projectId !== projectId) return reply.code(404).send({ error: "issue_not_found" });
 
     const membership = await options.store.getProjectMembership(projectId, authenticated.adminUserId);
-    if (!membership) return reply.code(403).send({ error: "project_access_denied" });
+    if (!membership) {
+      await auditProjectAccessDenied(options.store, projectId, authenticated, "issue_detail");
+      return reply.code(403).send({ error: "project_access_denied" });
+    }
 
     return issue;
   });
@@ -101,7 +104,7 @@ export async function registerAdminProxyRoutes(
 
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const { projectId } = projectQuerySchema.parse(request.query);
-    const accessError = await getProjectAccessError(options.store, projectId, authenticated);
+    const accessError = await getProjectAccessError(options.store, projectId, authenticated, "session_timeline");
     if (accessError) {
       return reply.code(accessError.statusCode).send({ error: accessError.error });
     }
@@ -125,17 +128,38 @@ async function getProjectAccessError(
   store: TraceStore,
   projectId: string,
   authenticated: AuthenticatedAdmin,
+  resourceType: ProjectResourceType,
 ): Promise<ProjectAccessError | undefined> {
   const project = await store.getProject(projectId);
   if (!project) return { statusCode: 404, error: "project_not_found" };
 
   const membership = await store.getProjectMembership(projectId, authenticated.adminUserId);
-  if (!membership) return { statusCode: 403, error: "project_access_denied" };
+  if (!membership) {
+    await auditProjectAccessDenied(store, projectId, authenticated, resourceType);
+    return { statusCode: 403, error: "project_access_denied" };
+  }
 }
 
 type ProjectAccessError =
   | { statusCode: 404; error: "project_not_found" }
   | { statusCode: 403; error: "project_access_denied" };
+
+type ProjectResourceType = "project_summary" | "project_issues" | "issue_detail" | "session_timeline";
+
+async function auditProjectAccessDenied(
+  store: TraceStore,
+  projectId: string,
+  authenticated: AuthenticatedAdmin,
+  resourceType: ProjectResourceType,
+): Promise<void> {
+  await store.createAuditLog({
+    adminUserId: authenticated.adminUserId,
+    action: "project.access_denied",
+    projectId,
+    createdAt: new Date().toISOString(),
+    metadata: { resourceType },
+  });
+}
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
