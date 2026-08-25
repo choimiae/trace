@@ -227,6 +227,24 @@ Admin UI는 `/auth/me`를 먼저 호출한다.
 3. README는 Google OAuth env와 local fake OAuth smoke 절차를 설명한다.
 4. 배포 전 `COOKIE_SECURE=true`, HTTPS, `ADMIN_APP_ORIGIN` 고정 여부를 checklist로 확인한다.
 
+## Implementation Status
+
+구현 완료:
+
+- `/auth/google/start`, `/auth/google/callback`, `/auth/me`, `/auth/logout`
+- `/admin/api/projects`, `/admin/api/projects/:projectId/summary`, `/admin/api/projects/:projectId/issues`, `/admin/api/issues/:issueId`, `/admin/api/sessions/:sessionId/timeline`
+
+검증 명령:
+
+```bash
+npm run test --workspace @trace/api
+npm run test --workspace @trace/admin
+npm test
+npm run typecheck
+npm run build
+rg "GOOGLE_CLIENT_SECRET|SESSION_SECRET|TRACE_ADMIN_TOKEN|VITE_TRACE_ADMIN_TOKEN" apps/admin/dist apps/admin/src apps/api/src README.md
+```
+
 ## Open Decisions
 
 - 초기 사용자 seed 방식은 env allowlist로 시작한다: `ADMIN_ALLOWED_EMAILS`.
