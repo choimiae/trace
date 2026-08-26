@@ -1,7 +1,5 @@
 import type { DashboardSummary, Issue, SessionTimelineEvent } from "@trace/shared";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
-const DEFAULT_PROJECT_ID = import.meta.env.VITE_PROJECT_ID;
+import { API_BASE_URL } from "./config.js";
 
 export interface AuthMeResponse {
   user: { adminUserId: string; email: string; name?: string; pictureUrl?: string };
@@ -16,7 +14,7 @@ export class ApiError extends Error {
 }
 
 const credentialedFetch = (path: string, init: RequestInit = {}) =>
-  fetch(`${API_BASE}${path}`, { ...init, credentials: "include" });
+  fetch(`${API_BASE_URL}${path}`, { ...init, credentials: "include" });
 
 export async function getAuthMe(): Promise<AuthMeResponse> {
   return getJson<AuthMeResponse>("/auth/me");
@@ -27,6 +25,19 @@ export async function logout(csrfToken: string): Promise<void> {
     method: "POST",
     headers: { "x-trace-csrf": csrfToken },
   });
+}
+
+export async function createProject(
+  input: { name: string; allowedDomains: string[] },
+  csrfToken: string,
+): Promise<{ projectId: string }> {
+  const response = await ensureSuccess("/admin/api/projects", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-trace-csrf": csrfToken },
+    body: JSON.stringify(input),
+  });
+
+  return response.json() as Promise<{ projectId: string }>;
 }
 
 export async function getDashboardData(projectId: string): Promise<{ summary: DashboardSummary; issues: Issue[] }> {

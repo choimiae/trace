@@ -1,12 +1,11 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
 import { useEffect, useState } from "react";
 import { ApiError, getAuthMe, getDashboardData, logout } from "./api.js";
+import { API_BASE_URL } from "./config.js";
+import { readSelectedProjectId, writeSelectedProjectId } from "./storage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
 import "./styles.css";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
-const DEFAULT_PROJECT_ID = import.meta.env.VITE_PROJECT_ID;
 
 type AppState =
   | { type: "loading" }
@@ -35,11 +34,17 @@ export function App() {
 
       try {
         const auth = await getAuthMe();
-        const projectId = DEFAULT_PROJECT_ID ?? auth.projects[0]?.projectId;
+        const storedProjectId = readSelectedProjectId();
+        const hasStored = storedProjectId
+          ? auth.projects.some((project) => project.projectId === storedProjectId)
+          : false;
+        const projectId = hasStored ? storedProjectId : auth.projects[0]?.projectId;
         if (!projectId) {
           if (active) setState({ type: "empty-projects" });
           return;
         }
+
+        writeSelectedProjectId(projectId);
 
         const data = await getDashboardData(projectId);
         if (active) {
@@ -70,7 +75,7 @@ export function App() {
       <main className="app-shell auth-state">
         <p className="eyebrow">Trace 관리자</p>
         <h1>관리자 로그인이 필요합니다.</h1>
-        <button type="button" className="primary-button" onClick={() => { window.location.href = `${API_BASE}/auth/google/start`; }}>
+        <button type="button" className="primary-button" onClick={() => { window.location.href = `${API_BASE_URL}/auth/google/start`; }}>
           Google로 로그인
         </button>
       </main>
