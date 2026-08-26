@@ -5,6 +5,7 @@ import { createGoogleOAuthClient, type GoogleOAuthClient } from "./auth/google.j
 import { registerAdminProxyRoutes } from "./routes/admin-proxy.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
+import { registerSdkBundleRoutes } from "./routes/sdk-bundle.js";
 import type { TraceStore } from "./store/types.js";
 
 export function createApp(options: {
@@ -34,5 +35,6 @@ export function createApp(options: {
     app.register(registerAdminProxyRoutes, { store: options.store, config: options.authConfig });
   }
   app.register(registerIngestionRoutes, { store: options.store });
+  app.register(registerSdkBundleRoutes, {});
   return app;
 }

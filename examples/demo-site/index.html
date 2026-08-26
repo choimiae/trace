@@ -32,16 +32,15 @@
       <button onclick="window.trace?.track('report_export_clicked')">리포트 내보내기</button>
       <button onclick="throw new Error('Demo error')">오류 발생</button>
     </main>
-    <script type="module">
-      import { init } from "../../packages/sdk/src/index.ts";
-
+    <script>
+      // query string 에서 projectId 를 읽어야 하므로 정적 script 태그로는 속성을 채울 수 없다.
+      // 동적으로 삽입한 classic script 도 실행 중에는 document.currentScript 가
+      // 자기 요소를 가리키므로 data-* 파싱 경로가 동일하게 동작한다.
       const projectId = new URLSearchParams(window.location.search).get("projectId") ?? "proj_demo";
-
-      init({
-        projectId,
-        endpoint: "http://localhost:4000/v1/events/batch",
-        consent: "granted",
-      });
+      const script = document.createElement("script");
+      script.src = "http://localhost:4000/trace.js";
+      script.dataset.projectId = projectId;
+      document.head.appendChild(script);
     </script>
   </body>
 </html>
