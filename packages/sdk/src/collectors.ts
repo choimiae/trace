@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import { redactUrl } from "@trace/shared/privacy";
 import type { TraceClient } from "./client.js";
 import { getElementMetadata } from "./dom.js";
+import { installTransport } from "./transport.js";
 
 export function installCollectors(client: TraceClient) {
   const currentPath = () => redactUrl(window.location.href).urlPath;
@@ -44,4 +45,6 @@ export function installCollectors(client: TraceClient) {
       }),
     );
   });
+
+  installTransport(client);
 }

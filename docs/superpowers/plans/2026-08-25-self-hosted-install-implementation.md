@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0, Task 1, Task 2, Task 3, Task 4 |
-| 다음 | Task 5 — SDK 자동 전송 |
+| 완료 | Task 0, Task 1, Task 2, Task 3, Task 4, Task 5 |
+| 다음 | Task 6 — SDK 설치 인터페이스와 consent 기본값 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 18 파일 133 건 통과 |
+| `npm test` | 19 파일 141 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -1634,7 +1634,7 @@ MSG
 
 **현재 SDK는 이벤트를 서버로 전송하지 않는다.** `flush()`가 프로덕션 코드에서 호출되지 않고 `client.test.ts`에서만 호출된다. 타이머, `visibilitychange`, `pagehide` 핸들러가 없다. 번들만 만들어도 "붙였는데 아무 일도 안 일어나는" 상태가 된다.
 
-- [ ] **Step 1: 실패하는 전송 테스트 작성**
+- [x] **Step 1: 실패하는 전송 테스트 작성**
 
 Create `packages/sdk/src/transport.test.ts`:
 
@@ -1782,7 +1782,7 @@ describe("TraceClient 전송 실패 격리", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트를 실행해 실패 확인**
+- [x] **Step 2: 테스트를 실행해 실패 확인**
 
 Run:
 
@@ -1792,7 +1792,7 @@ npm run test --workspace @trace/sdk -- src/transport.test.ts
 
 Expected: FAIL. `Failed to resolve import "./transport.js"`.
 
-- [ ] **Step 3: TraceClient에 큐 관측 수단과 실패 격리 추가**
+- [x] **Step 3: TraceClient에 큐 관측 수단과 실패 격리 추가**
 
 Modify `packages/sdk/src/client.ts`.
 
@@ -1838,7 +1838,7 @@ Modify `packages/sdk/src/client.ts`.
     }
 ```
 
-- [ ] **Step 4: transport 구현**
+- [x] **Step 4: transport 구현**
 
 Create `packages/sdk/src/transport.ts`:
 
@@ -1888,7 +1888,7 @@ export function installTransport(client: TraceClient, options: TransportOptions 
 
 `onEnqueue` 리스너는 제거하지 않는다. `stopped` 플래그가 `send`를 무력화하므로 teardown 후 전송이 발생하지 않는다.
 
-- [ ] **Step 5: collectors가 transport를 설치하도록 변경**
+- [x] **Step 5: collectors가 transport를 설치하도록 변경**
 
 Modify `packages/sdk/src/collectors.ts` — import에 추가한다:
 
@@ -1902,7 +1902,7 @@ import { installTransport } from "./transport.js";
   installTransport(client);
 ```
 
-- [ ] **Step 6: 테스트를 실행해 통과 확인**
+- [x] **Step 6: 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -1914,7 +1914,7 @@ Expected: PASS. `transport.test.ts` 8개 포함 전체 통과.
 
 `client.test.ts`의 "sends collector events with sanitized dynamic URL paths" 테스트가 `installCollectors`를 호출하므로 이제 타이머가 함께 설치된다. 그 테스트는 `flush()`를 직접 호출하고 fake timer를 쓰지 않으므로 영향받지 않는다.
 
-- [ ] **Step 7: 전체 검증**
+- [x] **Step 7: 전체 검증**
 
 Run:
 
@@ -1926,7 +1926,7 @@ npm run build
 
 Expected: 전부 통과.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/sdk/src

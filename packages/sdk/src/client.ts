@@ -21,6 +21,15 @@ export class TraceClient {
   private readonly sessionId = `sess_${nanoid(10)}`;
   private readonly pageId = `page_${nanoid(10)}`;
   private queue: TraceEvent[] = [];
+  private enqueueListeners: Array<() => void> = [];
+
+  get queueLength(): number {
+    return this.queue.length;
+  }
+
+  onEnqueue(listener: () => void): void {
+    this.enqueueListeners.push(listener);
+  }
 
   constructor(options: TraceClientOptions) {
     this.projectId = options.projectId;
@@ -64,6 +73,7 @@ export class TraceClient {
   enqueue(event: TraceEvent) {
     if (this.consent !== "granted") return;
     this.queue.push(event);
+    for (const listener of this.enqueueListeners) listener();
   }
 
   async flush() {
