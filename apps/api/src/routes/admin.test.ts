@@ -28,7 +28,10 @@ async function signedInStore() {
     emailVerified: true,
     now: "2026-08-25T00:00:00.000Z",
   });
-  const session = await createAdminSessionForUser({ store, config: authConfig, user, now: new Date("2026-08-25T00:00:00.000Z") });
+  // 세션 만료는 라우트 핸들러가 실제 시계로 판정한다. app.inject 경로에는 now 를
+  // 주입할 수 없으므로 세션도 실제 시각으로 발급한다. 고정 날짜로 만들면 TTL 이
+  // 지나는 순간부터 모든 요청이 401 이 된다.
+  const session = await createAdminSessionForUser({ store, config: authConfig, user });
   return { store, user, cookie: `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`, csrfToken: session.csrfToken };
 }
 
