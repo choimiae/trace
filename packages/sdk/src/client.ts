@@ -89,14 +89,19 @@ export class TraceClient {
       events,
     };
 
-    const response = await this.fetcher(this.endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(batch),
-      keepalive: true,
-    });
+    try {
+      const response = await this.fetcher(this.endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(batch),
+        keepalive: true,
+      });
 
-    if (!response.ok) this.queue.unshift(...batch.events);
+      if (!response.ok) this.queue.unshift(...batch.events);
+    } catch {
+      // 네트워크 실패가 고객 사이트 사용자 경험에 영향을 주지 않아야 한다.
+      this.queue.unshift(...batch.events);
+    }
   }
 }
 

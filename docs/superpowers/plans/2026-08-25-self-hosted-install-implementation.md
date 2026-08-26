@@ -27,7 +27,7 @@
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 18 파일 132 건 통과 |
+| `npm test` | 18 파일 133 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 

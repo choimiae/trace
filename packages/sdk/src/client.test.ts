@@ -58,4 +58,24 @@ describe("TraceClient", () => {
     expect(payload.events[0].type).toBe("page_view");
     expect(payload.events[0].urlPath).toBe("/users/:id/settings");
   });
+
+  it("does not expose network failures and retries queued events", async () => {
+    const fetcher = vi.fn().mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({ ok: true });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://trace.example.com/v1/events/batch",
+      fetcher,
+      consent: "granted",
+    });
+
+    client.track("report_export_clicked");
+
+    await expect(client.flush()).resolves.toBeUndefined();
+    await client.flush();
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const [, retryInit] = fetcher.mock.calls[1] as [string, RequestInit];
+    const payload = JSON.parse(String(retryInit.body));
+    expect(payload.events[0].metadata).toEqual({ eventName: "report_export_clicked" });
+  });
 });
