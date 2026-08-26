@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
     }
   },
   getAuthMe: vi.fn(),
+  createProject: vi.fn(),
   getDashboardData: vi.fn(),
   logout: vi.fn(),
   getIssueDetail: vi.fn(),
@@ -22,26 +23,29 @@ const api = vi.hoisted(() => ({
 vi.mock("./api", () => ({
   ApiError: api.ApiError,
   getAuthMe: api.getAuthMe,
+  createProject: api.createProject,
   getDashboardData: api.getDashboardData,
   logout: api.logout,
   getIssueDetail: api.getIssueDetail,
   getSessionTimeline: api.getSessionTimeline,
 }));
 
+const baseSummary = {
+  frictionScore: 82,
+  affectedSessionsCount: 312,
+  newIssuesCount: 14,
+  resolvedOrIgnoredIssuesCount: 6,
+  totalEventsCount: 128,
+  insight: "이번 주 설정 화면의 dead click이 전주 대비 38% 증가했습니다.",
+  trend: [{ date: "2026-08-24", score: 82 }],
+  issueTypeDistribution: [{ issueType: "rage_click" as const, count: 4 }],
+  topTargets: [{ label: "/settings", count: 42 }],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   api.getDashboardData.mockResolvedValue({
-    summary: {
-      frictionScore: 82,
-      affectedSessionsCount: 312,
-      newIssuesCount: 14,
-      resolvedOrIgnoredIssuesCount: 6,
-      totalEventsCount: 128,
-      insight: "이번 주 설정 화면의 dead click이 전주 대비 38% 증가했습니다.",
-      trend: [{ date: "2026-08-24", score: 82 }],
-      issueTypeDistribution: [{ issueType: "rage_click", count: 4 }],
-      topTargets: [{ label: "/settings", count: 42 }],
-    },
+    summary: baseSummary,
     issues: [{
       issueId: "issue_1",
       projectId: "proj_demo",
@@ -114,5 +118,108 @@ describe("App auth state", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "로그아웃" }));
     expect(api.logout).toHaveBeenCalledWith("csrf_1");
+  });
+});
+
+describe("App 온보딩", () => {
+  const emptyAuth = {
+    user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+    projects: [],
+    csrfToken: "csrf_1",
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("프로젝트가 없으면 생성 폼을 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue(emptyAuth);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "첫 프로젝트를 만들어주세요." })).toBeInTheDocument();
+    expect(screen.getByLabelText("프로젝트 이름")).toBeInTheDocument();
+    expect(screen.getByLabelText("허용 도메인")).toBeInTheDocument();
+  });
+
+  it("프로젝트를 만들면 설치 스니펫을 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue(emptyAuth);
+    api.createProject.mockResolvedValue({ projectId: "proj_new" });
+    api.getDashboardData.mockResolvedValue({
+      summary: { ...baseSummary, totalEventsCount: 0 },
+      issues: [],
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "내 사이트" } });
+    fireEvent.change(screen.getByLabelText("허용 도메인"), {
+      target: { value: "http://localhost:5174" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
+
+    expect(await screen.findByRole("heading", { name: "스크립트를 붙여주세요." })).toBeInTheDocument();
+    expect(api.createProject).toHaveBeenCalledWith(
+      { name: "내 사이트", allowedDomains: ["http://localhost:5174"] },
+      "csrf_1",
+    );
+    expect(screen.getByText(/data-project-id="proj_new"/)).toBeInTheDocument();
+  });
+
+  it("첫 이벤트가 도착하면 대시보드로 넘어가는 버튼을 보여준다", async () => {
+    vi.useFakeTimers();
+    api.getAuthMe.mockResolvedValue(emptyAuth);
+    api.createProject.mockResolvedValue({ projectId: "proj_new" });
+    // 폴링은 install 화면에 들어간 뒤 3 초 시점에 처음 호출된다. mockResolvedValueOnce 로
+    // 0 을 먼저 두면 첫 폴링이 0 을 받아 아래 도착 단정이 3 초에 성립하지 않는다.
+    api.getDashboardData.mockResolvedValue({
+      summary: { ...baseSummary, totalEventsCount: 3 },
+      issues: [],
+    });
+
+    render(<App />);
+
+    await vi.advanceTimersByTimeAsync(0);
+    fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "내 사이트" } });
+    fireEvent.change(screen.getByLabelText("허용 도메인"), {
+      target: { value: "http://localhost:5174" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(screen.getByText("아직 이벤트를 기다리고 있습니다.")).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(screen.getByText("첫 이벤트가 도착했습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "대시보드 보기" })).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("생성이 실패하면 오류를 폼에 표시한다", async () => {
+    api.getAuthMe.mockResolvedValue(emptyAuth);
+    api.createProject.mockRejectedValue(new api.ApiError(400, "invalid_allowed_domains"));
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "내 사이트" } });
+    fireEvent.change(screen.getByLabelText("허용 도메인"), { target: { value: "localhost" } });
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
+
+    expect(await screen.findByText("invalid_allowed_domains")).toBeInTheDocument();
+  });
+
+  it("대시보드에서 설치 안내로 돌아갈 수 있다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "설치 안내" }));
+
+    expect(await screen.findByRole("heading", { name: "스크립트를 붙여주세요." })).toBeInTheDocument();
   });
 });

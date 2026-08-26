@@ -10,12 +10,14 @@ export function DashboardPage({
   userEmail,
   onLogout,
   onSelectIssue,
+  onShowInstall,
 }: {
   summary: DashboardSummary;
   issues: Issue[];
   userEmail: string;
   onLogout: () => void;
   onSelectIssue?: ((issue: Issue) => void) | undefined;
+  onShowInstall: () => void;
 }) {
   return (
     <main className="app-shell">
@@ -26,6 +28,7 @@ export function DashboardPage({
         </div>
         <div className="header-actions">
           <span className="user-email">{userEmail}</span>
+          <button className="secondary-button" type="button" onClick={onShowInstall}>설치 안내</button>
           <button className="secondary-button" type="button" onClick={onLogout}>로그아웃</button>
         </div>
       </header>

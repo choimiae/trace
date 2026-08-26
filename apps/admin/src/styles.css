@@ -345,3 +345,44 @@ td span {
     gap: 6px;
   }
 }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 16px 0;
+  max-width: 420px;
+  text-align: left;
+}
+
+.field input {
+  padding: 10px 12px;
+  border: 1px solid #d9e1ea;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.field-hint {
+  color: #5b6b7c;
+  font-size: 13px;
+}
+
+.field-error {
+  color: #c0392b;
+  font-size: 14px;
+}
+
+.install-snippet {
+  max-width: 640px;
+  padding: 14px 16px;
+  border: 1px solid #d9e1ea;
+  border-radius: 6px;
+  background: #f7f9fb;
+  overflow-x: auto;
+  text-align: left;
+  font-size: 13px;
+}
+
+.install-status {
+  font-weight: 600;
+}

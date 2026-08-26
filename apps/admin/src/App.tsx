@@ -1,9 +1,11 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
 import { useEffect, useState } from "react";
-import { ApiError, getAuthMe, getDashboardData, logout } from "./api.js";
+import { ApiError, createProject, getAuthMe, getDashboardData, logout } from "./api.js";
 import { API_BASE_URL } from "./config.js";
 import { readSelectedProjectId, writeSelectedProjectId } from "./storage.js";
+import { CreateProjectPage } from "./pages/CreateProjectPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
+import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
 import "./styles.css";
 
@@ -12,10 +14,12 @@ type AppState =
   | { type: "login" }
   | { type: "forbidden" }
   | { type: "network" }
-  | { type: "empty-projects" }
+  | { type: "create-project"; csrfToken: string; createError?: string | undefined }
+  | { type: "install"; projectId: string; eventsSeen: number }
   | {
       type: "ready";
       data: { summary: DashboardSummary; issues: Issue[] };
+      projectId: string;
       userEmail: string;
       csrfToken: string;
     };
@@ -40,7 +44,7 @@ export function App() {
           : false;
         const projectId = hasStored ? storedProjectId : auth.projects[0]?.projectId;
         if (!projectId) {
-          if (active) setState({ type: "empty-projects" });
+          if (active) setState({ type: "create-project", csrfToken: auth.csrfToken });
           return;
         }
 
@@ -48,7 +52,13 @@ export function App() {
 
         const data = await getDashboardData(projectId);
         if (active) {
-          setState({ type: "ready", data, userEmail: auth.user.email, csrfToken: auth.csrfToken });
+          setState({
+            type: "ready",
+            data,
+            projectId,
+            userEmail: auth.user.email,
+            csrfToken: auth.csrfToken,
+          });
         }
       } catch (error) {
         if (!active) return;
@@ -68,6 +78,33 @@ export function App() {
     };
   }, [reloadKey]);
 
+  useEffect(() => {
+    if (state.type !== "install" || state.eventsSeen > 0) return;
+
+    const projectId = state.projectId;
+    let active = true;
+
+    const timer = setInterval(() => {
+      void getDashboardData(projectId)
+        .then((data) => {
+          if (!active || data.summary.totalEventsCount === 0) return;
+          setState((current) =>
+            current.type === "install"
+              ? { ...current, eventsSeen: data.summary.totalEventsCount }
+              : current,
+          );
+        })
+        .catch(() => {
+          // 폴링 실패는 무시한다. 다음 주기에 다시 시도한다.
+        });
+    }, 3000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [state]);
+
   if (state.type === "loading") return <main className="app-shell">불러오는 중</main>;
 
   if (state.type === "login") {
@@ -86,8 +123,33 @@ export function App() {
     return <AppMessage title="접근 권한이 없습니다." />;
   }
 
-  if (state.type === "empty-projects") {
-    return <AppMessage title="연결된 프로젝트가 없습니다." />;
+  if (state.type === "create-project") {
+    const handleCreate = async (input: { name: string; allowedDomains: string[] }) => {
+      try {
+        const project = await createProject(input, state.csrfToken);
+        writeSelectedProjectId(project.projectId);
+        setState({ type: "install", projectId: project.projectId, eventsSeen: 0 });
+      } catch (error) {
+        setState({
+          type: "create-project",
+          csrfToken: state.csrfToken,
+          createError: error instanceof ApiError ? error.message : "프로젝트를 만들지 못했습니다.",
+        });
+      }
+    };
+
+    return <CreateProjectPage onCreate={(input) => { void handleCreate(input); }} error={state.createError} />;
+  }
+
+  if (state.type === "install") {
+    return (
+      <InstallPage
+        projectId={state.projectId}
+        snippet={buildSnippet(state.projectId)}
+        eventsSeen={state.eventsSeen}
+        onContinue={() => setReloadKey((key) => key + 1)}
+      />
+    );
   }
 
   if (state.type === "network") {
@@ -126,6 +188,13 @@ export function App() {
         userEmail={state.userEmail}
         onLogout={() => { void handleLogout(); }}
         onSelectIssue={setSelectedIssue}
+        onShowInstall={() =>
+          setState({
+            type: "install",
+            projectId: state.projectId,
+            eventsSeen: state.data.summary.totalEventsCount,
+          })
+        }
       />
       {selectedIssue ? <IssueDetailPage issue={selectedIssue} onClose={() => setSelectedIssue(undefined)} /> : null}
     </>
@@ -139,4 +208,8 @@ function AppMessage({ title }: { title: string }) {
       <h1>{title}</h1>
     </main>
   );
+}
+
+function buildSnippet(projectId: string): string {
+  return `<script src="${API_BASE_URL}/trace.js" data-project-id="${projectId}"></script>`;
 }
