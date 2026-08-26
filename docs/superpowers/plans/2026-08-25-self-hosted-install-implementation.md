@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0 ~ Task 8 |
-| 다음 | Task 9 — 온보딩 화면 |
+| 완료 | Task 0 ~ Task 9 |
+| 다음 | Task 10 — README 재작성과 최종 검증 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 22 파일 157 건 통과 |
+| `npm test` | 22 파일 162 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -43,6 +43,7 @@
 - **Task 3 `SqliteStore`의 `totalEventsCount`는 `COUNT(*)`를 유지한다.** Global Constraints의 "집계는 SQL이 아니라 JS에서 한다"는 friction score, issue type distribution, top targets 같은 제품 집계 로직을 뜻한다. `totalEventsCount`는 온보딩 상태 확인용 단순 row count이고 Task 3 Step 5가 구체적으로 `COUNT`를 지시하므로 SQL count를 허용한다.
 - **로컬 기동에는 `NODE_ENV=development` 가 필요하다.** `auth/config.ts` 의 `assertDeployableAdminAuthConfig` 가 `COOKIE_SECURE=false` 를 `NODE_ENV` 가 `development` 나 `test` 일 때만 허용한다. `tsx watch` 는 `NODE_ENV` 를 설정하지 않으므로 지정하지 않으면 기동이 거부된다. Task 7 Step 9 의 수동 확인 블록과 Task 10 의 README 초안에 이 변수가 빠져 있어 채웠다. 현재 `README.md` 에도 같은 누락이 있으나 Task 10 이 전체를 다시 쓰므로 그때 해소된다.
 - **jsdom 의 `localStorage` 에는 인스턴스 스파이가 걸리지 않는다.** Proxy 라서 `vi.spyOn(window.localStorage, ...)` 이 `defineProperty` 트랩에 삼켜져 조용히 무시된다. 원래 코드는 아무것도 가로채지 못한 채 통과했다. Task 8 Step 1 의 테스트를 `Storage.prototype` 에 거는 방식으로 고쳤다.
+- **`<label>` 이 힌트까지 감싸면 `getByLabelText` 로 조회할 수 없다.** 접근 가능한 이름에 힌트 문구가 이어붙기 때문이다. Task 9 의 허용 도메인 필드를 `htmlFor` 와 `aria-describedby` 로 나눴다.
 - **최종 검증 체크리스트 12 항목 중 3 항목은 실제 Google 로그인이 필요하다.** 저장소가 브라우저용 fake OAuth 서버를 제공하지 않으므로 Task 10 전까지 Google Cloud Console 에서 OAuth 클라이언트를 준비해야 한다. redirect URI 는 `http://localhost:4000/auth/google/callback` 이다.
 
 ---
@@ -2807,7 +2808,7 @@ loading → login → create-project → install → ready
 
 폴링은 App이 소유하고 `InstallPage`는 표시만 한다. 첫 이벤트 도착 확인이 온보딩 최대 이탈 지점이므로, 화면에 머무는 동안 3초 간격으로 `getDashboardData`를 호출해 `totalEventsCount`를 확인한다.
 
-- [ ] **Step 1: 실패하는 온보딩 테스트 작성**
+- [x] **Step 1: 실패하는 온보딩 테스트 작성**
 
 Modify `apps/admin/src/App.test.tsx` — `api` mock 객체에 `createProject: vi.fn(),`를 추가하고 `vi.mock("./api", ...)`의 반환 객체에도 `createProject: api.createProject,`를 추가한다. 그리고 파일 맨 아래에 다음 describe 블록을 추가한다:
 
@@ -2934,7 +2935,7 @@ const baseSummary = {
 
 기존 `beforeEach`의 `summary` 리터럴을 `summary: baseSummary,`로 교체한다.
 
-- [ ] **Step 2: 테스트를 실행해 실패 확인**
+- [x] **Step 2: 테스트를 실행해 실패 확인**
 
 Run:
 
@@ -2944,7 +2945,7 @@ npm run test --workspace @trace/admin
 
 Expected: FAIL. `Unable to find an accessible element with the role "heading" and name "첫 프로젝트를 만들어주세요."`.
 
-- [ ] **Step 3: 프로젝트 생성 화면 작성**
+- [x] **Step 3: 프로젝트 생성 화면 작성**
 
 Create `apps/admin/src/pages/CreateProjectPage.tsx`:
 
@@ -2987,19 +2988,22 @@ export function CreateProjectPage({
         />
       </label>
 
-      <label className="field" htmlFor="allowed-domains">
-        허용 도메인
+      {/* 힌트를 label 안에 두면 접근 가능한 이름에 힌트 문구까지 붙어 라벨이
+          "허용 도메인" 으로 조회되지 않는다. 밖으로 빼고 aria-describedby 로 잇는다. */}
+      <div className="field">
+        <label htmlFor="allowed-domains">허용 도메인</label>
         <input
           id="allowed-domains"
           type="text"
           value={domains}
           placeholder="http://localhost:5174"
+          aria-describedby="allowed-domains-hint"
           onChange={(event) => setDomains(event.target.value)}
         />
-        <span className="field-hint">
+        <span className="field-hint" id="allowed-domains-hint">
           이 프로젝트의 이벤트를 받을 사이트 주소입니다. 여러 개면 쉼표로 구분합니다.
         </span>
-      </label>
+      </div>
 
       {error ? <p className="field-error">{error}</p> : null}
 
@@ -3016,9 +3020,9 @@ export function CreateProjectPage({
 }
 ```
 
-`<label>`이 텍스트와 `<input>`을 함께 감싸므로 `getByLabelText`가 동작한다.
+`<label>`이 텍스트와 `<input>`을 함께 감싸면 `getByLabelText`가 동작한다. 다만 힌트까지 감싸면 접근 가능한 이름에 힌트 문구가 붙어 조회에 실패하므로, 힌트가 있는 필드는 `htmlFor` 와 `aria-describedby` 로 나눈다.
 
-- [ ] **Step 4: 설치 안내 화면 작성**
+- [x] **Step 4: 설치 안내 화면 작성**
 
 Create `apps/admin/src/pages/InstallPage.tsx`:
 
@@ -3064,7 +3068,7 @@ export function InstallPage({
 }
 ```
 
-- [ ] **Step 5: App.tsx 상태 흐름 확장**
+- [x] **Step 5: App.tsx 상태 흐름 확장**
 
 Modify `apps/admin/src/App.tsx`.
 
@@ -3192,7 +3196,7 @@ function buildSnippet(projectId: string): string {
         }
 ```
 
-- [ ] **Step 6: 대시보드 헤더에 설치 안내 버튼 추가**
+- [x] **Step 6: 대시보드 헤더에 설치 안내 버튼 추가**
 
 Modify `apps/admin/src/pages/DashboardPage.tsx`.
 
@@ -3204,7 +3208,7 @@ props 타입과 구조 분해에 `onShowInstall: () => void;`를 추가한다.
           <button className="secondary-button" type="button" onClick={onShowInstall}>설치 안내</button>
 ```
 
-- [ ] **Step 7: 스타일 추가**
+- [x] **Step 7: 스타일 추가**
 
 Modify `apps/admin/src/styles.css` — 파일 끝에 추가한다:
 
@@ -3251,7 +3255,7 @@ Modify `apps/admin/src/styles.css` — 파일 끝에 추가한다:
 }
 ```
 
-- [ ] **Step 8: 테스트를 실행해 통과 확인**
+- [x] **Step 8: 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -3261,7 +3265,7 @@ npm run test --workspace @trace/admin
 
 Expected: PASS. `storage.test.ts` 3개, `App.test.tsx` 10개(기존 5개 + 온보딩 5개).
 
-- [ ] **Step 9: 전체 검증**
+- [x] **Step 9: 전체 검증**
 
 Run:
 
@@ -3273,7 +3277,7 @@ npm run build
 
 Expected: 전부 통과.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add apps/admin/src
