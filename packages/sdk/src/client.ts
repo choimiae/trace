@@ -1,8 +1,8 @@
 import { redactMetadata, redactUrl } from "@trace/shared/privacy";
 import type { EventBatch, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
+import type { Consent } from "./install.js";
 
-type Consent = "granted" | "denied" | "pending";
 type Fetcher = (input: string, init?: RequestInit) => Promise<{ ok: boolean }>;
 
 export interface TraceClientOptions {
@@ -35,7 +35,7 @@ export class TraceClient {
     this.projectId = options.projectId;
     this.endpoint = options.endpoint;
     this.fetcher = options.fetcher ?? ((input, init) => fetch(input, init));
-    this.consent = options.consent ?? "pending";
+    this.consent = options.consent ?? "granted";
   }
 
   grantConsent() {

@@ -1,13 +1,14 @@
 import { TraceClient } from "./client.js";
 import { installCollectors } from "./collectors.js";
+import { autoInstall, type Consent, type InstallOptions } from "./install.js";
 
 let client: TraceClient | undefined;
 
-export function init(options: { projectId: string; endpoint?: string; consent?: "granted" | "denied" | "pending" }) {
+export function init(options: { projectId: string; endpoint?: string; consent?: Consent }) {
   client = new TraceClient({
     projectId: options.projectId,
     endpoint: options.endpoint ?? "/v1/events/batch",
-    consent: options.consent ?? "pending",
+    consent: options.consent ?? "granted",
   });
   installCollectors(client);
   return client;
@@ -34,6 +35,11 @@ declare global {
 
 if (typeof window !== "undefined") {
   window.trace = { init, track, consent };
+
+  if (typeof document !== "undefined") {
+    autoInstall(document.currentScript, (options: InstallOptions) => init(options));
+  }
 }
 
 export { TraceClient };
+export type { Consent, InstallOptions };

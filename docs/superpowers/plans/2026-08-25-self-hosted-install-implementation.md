@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0, Task 1, Task 2, Task 3, Task 4, Task 5 |
-| 다음 | Task 6 — SDK 설치 인터페이스와 consent 기본값 |
+| 완료 | Task 0, Task 1, Task 2, Task 3, Task 4, Task 5, Task 6 |
+| 다음 | Task 7 — 번들 빌드, API 서버 서빙, 데모 사이트 전환 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 19 파일 141 건 통과 |
+| `npm test` | 20 파일 151 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -1971,7 +1971,7 @@ MSG
 | `data-endpoint` | 선택 | 스크립트 `src`의 origin + `/v1/events/batch` |
 | `data-consent` | 선택 | `granted` |
 
-- [ ] **Step 1: 실패하는 설치 테스트 작성**
+- [x] **Step 1: 실패하는 설치 테스트 작성**
 
 Create `packages/sdk/src/install.test.ts`:
 
@@ -2091,7 +2091,7 @@ describe("autoInstall", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트를 실행해 실패 확인**
+- [x] **Step 2: 테스트를 실행해 실패 확인**
 
 Run:
 
@@ -2101,7 +2101,7 @@ npm run test --workspace @trace/sdk -- src/install.test.ts
 
 Expected: FAIL. `Failed to resolve import "./install.js"`.
 
-- [ ] **Step 3: install 구현**
+- [x] **Step 3: install 구현**
 
 Create `packages/sdk/src/install.ts`:
 
@@ -2159,7 +2159,7 @@ function normalizeConsent(value: string | undefined): Consent {
 }
 ```
 
-- [ ] **Step 4: 테스트를 실행해 통과 확인**
+- [x] **Step 4: 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -2169,7 +2169,7 @@ npm run test --workspace @trace/sdk -- src/install.test.ts
 
 Expected: PASS. 10개 통과.
 
-- [ ] **Step 5: index.ts에서 자동 설치를 연결하고 consent 기본값 변경**
+- [x] **Step 5: index.ts에서 자동 설치를 연결하고 consent 기본값 변경**
 
 Modify `packages/sdk/src/index.ts` 전체를 다음으로 교체한다:
 
@@ -2221,7 +2221,7 @@ export { TraceClient };
 export type { Consent, InstallOptions };
 ```
 
-- [ ] **Step 6: TraceClient의 consent 기본값도 맞춘다**
+- [x] **Step 6: TraceClient의 consent 기본값도 맞춘다**
 
 Modify `packages/sdk/src/client.ts` — 두 곳을 수정한다. 기본값이 두 군데서 달라지면 안 된다.
 
@@ -2239,7 +2239,7 @@ constructor 안의 다음 줄을 교체한다:
 
 `TraceClientOptions`의 `consent?: Consent;`는 그대로 둔다.
 
-- [ ] **Step 7: SDK 테스트 전체 실행**
+- [x] **Step 7: SDK 테스트 전체 실행**
 
 Run:
 
@@ -2251,7 +2251,7 @@ Expected: PASS. `client.test.ts` 3개, `dom.test.ts` 2개, `transport.test.ts` 8
 
 `client.test.ts`의 세 테스트는 모두 `consent`를 명시적으로 넘기므로 기본값 변경에 영향받지 않는다.
 
-- [ ] **Step 8: 번들 크기가 예산 안에 있는지 재확인**
+- [x] **Step 8: 번들 크기가 예산 안에 있는지 재확인**
 
 Run:
 
@@ -2261,7 +2261,7 @@ npm run test --workspace @trace/sdk -- src/bundle-size.test.ts
 
 Expected: PASS. `install.ts`와 `transport.ts`가 늘었지만 두 파일 모두 작아 여유가 크다.
 
-- [ ] **Step 9: 전체 검증**
+- [x] **Step 9: 전체 검증**
 
 Run:
 
@@ -2273,7 +2273,7 @@ npm run build
 
 Expected: 전부 통과.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add packages/sdk/src
