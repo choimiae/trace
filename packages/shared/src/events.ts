@@ -199,6 +199,7 @@ export const dashboardSummarySchema = z.object({
   affectedSessionsCount: z.number().int().nonnegative(),
   newIssuesCount: z.number().int().nonnegative(),
   resolvedOrIgnoredIssuesCount: z.number().int().nonnegative(),
+  totalEventsCount: z.number().int().nonnegative(),
   insight: z.string(),
   trend: z.array(z.object({ date: z.string(), score: z.number().int().min(0).max(100) })),
   issueTypeDistribution: z.array(z.object({ issueType: issueTypeSchema, count: z.number().int().nonnegative() })),

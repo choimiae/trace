@@ -36,6 +36,7 @@ beforeEach(() => {
       affectedSessionsCount: 312,
       newIssuesCount: 14,
       resolvedOrIgnoredIssuesCount: 6,
+      totalEventsCount: 128,
       insight: "이번 주 설정 화면의 dead click이 전주 대비 38% 증가했습니다.",
       trend: [{ date: "2026-08-24", score: 82 }],
       issueTypeDistribution: [{ issueType: "rage_click", count: 4 }],

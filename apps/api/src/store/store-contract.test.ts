@@ -193,6 +193,38 @@ function describeTraceStoreContract(
       expect(await store.listEvents(project.projectId)).toHaveLength(1);
       expect(await store.getSessionTimeline(project.projectId, "sess_1")).toHaveLength(1);
     });
+
+    it("대시보드 요약에 이벤트 총 개수를 담는다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      expect((await store.getDashboardSummary(project.projectId)).totalEventsCount).toBe(0);
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-08-25T00:00:01.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-25T00:00:00.000Z",
+            type: "page_view",
+            urlPath: "/settings",
+            metadata: {},
+          },
+        ],
+      });
+
+      expect((await store.getDashboardSummary(project.projectId)).totalEventsCount).toBe(1);
+    });
   });
 }
 

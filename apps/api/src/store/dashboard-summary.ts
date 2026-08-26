@@ -1,10 +1,11 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
 
-export function buildDashboardSummary(issues: Issue[]): DashboardSummary {
+export function buildDashboardSummary(issues: Issue[], totalEventsCount: number): DashboardSummary {
   const activeIssues = issues.filter((issue) => issue.status === "new" || issue.status === "reviewing");
   const frictionScore = activeIssues.length === 0 ? 0 : Math.max(...activeIssues.map((issue) => issue.severityScore));
 
   return {
+    totalEventsCount,
     frictionScore,
     affectedSessionsCount: activeIssues.reduce((sum, issue) => sum + issue.affectedSessionsCount, 0),
     newIssuesCount: issues.filter((issue) => issue.status === "new").length,

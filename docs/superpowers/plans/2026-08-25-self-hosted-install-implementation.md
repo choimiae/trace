@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0, Task 1, Task 2 |
-| 다음 | Task 3 — 이벤트 총 개수를 대시보드 요약에 추가 |
+| 완료 | Task 0, Task 1, Task 2, Task 3 |
+| 다음 | Task 4 — SDK import 경계 정리와 번들 크기 예산 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 17 파일 129 건 통과 |
+| `npm test` | 17 파일 131 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -1238,7 +1238,7 @@ MSG
 
 온보딩의 첫 이벤트 도착 확인이 이 값에 의존한다. `DashboardSummary`가 issue 기반이라 이벤트가 정상적으로 들어와도 감지 조건을 만족하는 문제가 없으면 모든 수치가 0이고, 설치 성공과 실패가 화면에서 구분되지 않는다.
 
-- [ ] **Step 1: 실패하는 계약 테스트 추가**
+- [x] **Step 1: 실패하는 계약 테스트 추가**
 
 Modify `apps/api/src/store/store-contract.test.ts` — `describeTraceStoreContract` 안의 마지막 `it` 블록 뒤에 추가한다:
 
@@ -1276,7 +1276,7 @@ Modify `apps/api/src/store/store-contract.test.ts` — `describeTraceStoreContra
     });
 ```
 
-- [ ] **Step 2: 테스트를 실행해 실패 확인**
+- [x] **Step 2: 테스트를 실행해 실패 확인**
 
 Run:
 
@@ -1286,7 +1286,7 @@ npm run test --workspace @trace/api -- src/store/store-contract.test.ts
 
 Expected: FAIL. `expected undefined to be 0`.
 
-- [ ] **Step 3: shared 스키마에 필드 추가**
+- [x] **Step 3: shared 스키마에 필드 추가**
 
 Modify `packages/shared/src/events.ts` — `dashboardSummarySchema`의 `resolvedOrIgnoredIssuesCount` 줄 다음에 추가한다:
 
@@ -1294,7 +1294,7 @@ Modify `packages/shared/src/events.ts` — `dashboardSummarySchema`의 `resolved
   totalEventsCount: z.number().int().nonnegative(),
 ```
 
-- [ ] **Step 4: 집계 함수가 값을 받도록 변경**
+- [x] **Step 4: 집계 함수가 값을 받도록 변경**
 
 Modify `apps/api/src/store/dashboard-summary.ts` — 시그니처와 반환 객체를 수정한다:
 
@@ -1308,7 +1308,7 @@ export function buildDashboardSummary(issues: Issue[], totalEventsCount: number)
     totalEventsCount,
 ```
 
-- [ ] **Step 5: 두 store가 이벤트 개수를 넘기도록 변경**
+- [x] **Step 5: 두 store가 이벤트 개수를 넘기도록 변경**
 
 Modify `apps/api/src/store/memory-store.ts` — `getDashboardSummary`를 수정한다:
 
@@ -1331,7 +1331,7 @@ Modify `apps/api/src/store/sqlite-store.ts` — `getDashboardSummary`를 수정�
   }
 ```
 
-- [ ] **Step 6: 테스트를 실행해 통과 확인**
+- [x] **Step 6: 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -1341,7 +1341,7 @@ npm run test --workspace @trace/api -- src/store/store-contract.test.ts
 
 Expected: PASS. 16개 테스트 통과.
 
-- [ ] **Step 7: Admin UI 테스트 픽스처 갱신**
+- [x] **Step 7: Admin UI 테스트 픽스처 갱신**
 
 Modify `apps/admin/src/App.test.tsx` — `beforeEach`의 `api.getDashboardData.mockResolvedValue` 안 `summary` 객체에서 `resolvedOrIgnoredIssuesCount: 6,` 다음 줄에 추가한다:
 
@@ -1349,7 +1349,7 @@ Modify `apps/admin/src/App.test.tsx` — `beforeEach`의 `api.getDashboardData.m
       totalEventsCount: 128,
 ```
 
-- [ ] **Step 8: 전체 검증**
+- [x] **Step 8: 전체 검증**
 
 Run:
 
@@ -1360,7 +1360,7 @@ npm run typecheck
 
 Expected: 전부 통과. `typecheck`가 실패하면 `DashboardSummary` 리터럴을 만드는 다른 지점이 남아 있다는 뜻이므로, 오류가 가리키는 파일에 `totalEventsCount`를 추가한다.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add packages/shared/src/events.ts apps/api/src/store apps/admin/src/App.test.tsx

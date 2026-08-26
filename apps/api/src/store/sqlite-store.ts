@@ -359,7 +359,11 @@ export class SqliteStore implements TraceStore {
   }
 
   async getDashboardSummary(projectId: string): Promise<DashboardSummary> {
-    return buildDashboardSummary(await this.listIssues(projectId));
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS total FROM events WHERE project_id = ?`)
+      .get(projectId) as { total: number };
+
+    return buildDashboardSummary(await this.listIssues(projectId), row.total);
   }
 
   private toMembership(row: Row): ProjectMembershipRecord {

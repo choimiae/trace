@@ -160,6 +160,7 @@ export class MemoryStore implements TraceStore {
   }
 
   async getDashboardSummary(projectId: string): Promise<DashboardSummary> {
-    return buildDashboardSummary(await this.listIssues(projectId));
+    const [issues, events] = await Promise.all([this.listIssues(projectId), this.listEvents(projectId)]);
+    return buildDashboardSummary(issues, events.length);
   }
 }
