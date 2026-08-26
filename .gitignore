@@ -8,3 +8,6 @@ coverage/
 .env
 .env.*
 !.env.example
+trace.db
+*.db-wal
+*.db-shm

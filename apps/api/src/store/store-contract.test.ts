@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { MemoryStore } from "./memory-store.js";
+import { SqliteStore } from "./sqlite-store.js";
 import { assertDeployableTraceStore, type TraceStore } from "./types.js";
 
 interface StoreUnderTest {
@@ -196,3 +197,11 @@ function describeTraceStoreContract(
 }
 
 describeTraceStoreContract("MemoryStore", () => ({ store: new MemoryStore() }), false);
+describeTraceStoreContract(
+  "SqliteStore",
+  () => {
+    const store = new SqliteStore(":memory:");
+    return { store, dispose: () => store.close() };
+  },
+  true,
+);

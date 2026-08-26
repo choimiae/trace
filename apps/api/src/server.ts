@@ -1,10 +1,10 @@
 import { createApp } from "./app.js";
 import { createGoogleOAuthClient } from "./auth/google.js";
-import { MemoryStore } from "./store/memory-store.js";
+import { SqliteStore } from "./store/sqlite-store.js";
 import { prepareServerStartup } from "./startup.js";
 
 const port = Number(process.env.PORT ?? 4000);
-const store = new MemoryStore();
+const store = new SqliteStore(process.env.TRACE_DB_PATH ?? "./trace.db");
 const authConfig = prepareServerStartup({ store, env: process.env });
 
 const app = createApp({

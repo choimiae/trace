@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0, Task 1 |
-| 다음 | Task 2 — SqliteStore와 기본 저장소 승격 |
+| 완료 | Task 0, Task 1, Task 2 |
+| 다음 | Task 3 — 이벤트 총 개수를 대시보드 요약에 추가 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 17 파일 122 건 통과 |
+| `npm test` | 17 파일 129 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -521,7 +521,7 @@ MSG
 
 **중요 — 외래 키를 활성화하지 않는다.** SQLite는 `PRAGMA foreign_keys = ON` 없이는 `REFERENCES`를 강제하지 않는다. `MemoryStore`도 참조 무결성을 검사하지 않고, 계약 테스트가 존재하지 않는 `admin_1`로 세션과 감사 로그를 만든다. 두 구현체의 동작을 같게 유지하려면 SQLite 스키마에서 `REFERENCES` 절을 넣지 않고 pragma도 켜지 않는다.
 
-- [ ] **Step 1: 의존성 추가**
+- [x] **Step 1: 의존성 추가**
 
 Run:
 
@@ -530,7 +530,7 @@ npm install better-sqlite3 --workspace @trace/api
 npm install -D @types/better-sqlite3 --workspace @trace/api
 ```
 
-- [ ] **Step 2: 계약 테스트에 SqliteStore 추가**
+- [x] **Step 2: 계약 테스트에 SqliteStore 추가**
 
 Modify `apps/api/src/store/store-contract.test.ts` — 파일 맨 위 import에 추가:
 
@@ -551,7 +551,7 @@ describeTraceStoreContract(
 );
 ```
 
-- [ ] **Step 3: 테스트를 실행해 실패 확인**
+- [x] **Step 3: 테스트를 실행해 실패 확인**
 
 Run:
 
@@ -561,7 +561,7 @@ npm run test --workspace @trace/api -- src/store/store-contract.test.ts
 
 Expected: FAIL. `Failed to resolve import "./sqlite-store.js"`.
 
-- [ ] **Step 4: SQLite 스키마 작성**
+- [x] **Step 4: SQLite 스키마 작성**
 
 Create `apps/api/src/db/schema.sqlite.ts`:
 
@@ -662,7 +662,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 `;
 ```
 
-- [ ] **Step 5: 대시보드 집계를 공용 함수로 추출**
+- [x] **Step 5: 대시보드 집계를 공용 함수로 추출**
 
 Create `apps/api/src/store/dashboard-summary.ts`. `memory-store.ts:152-186`의 집계 로직을 그대로 옮긴다. 두 store가 같은 함수를 쓰므로 집계 규칙이 갈라지지 않는다:
 
@@ -699,7 +699,7 @@ export function buildDashboardSummary(issues: Issue[]): DashboardSummary {
 }
 ```
 
-- [ ] **Step 6: MemoryStore가 공용 함수를 쓰도록 변경**
+- [x] **Step 6: MemoryStore가 공용 함수를 쓰도록 변경**
 
 Modify `apps/api/src/store/memory-store.ts`. import에 추가:
 
@@ -715,7 +715,7 @@ import { buildDashboardSummary } from "./dashboard-summary.js";
   }
 ```
 
-- [ ] **Step 7: SqliteStore 구현**
+- [x] **Step 7: SqliteStore 구현**
 
 Create `apps/api/src/store/sqlite-store.ts`:
 
@@ -1139,7 +1139,7 @@ export class SqliteStore implements TraceStore {
 }
 ```
 
-- [ ] **Step 8: 계약 테스트를 실행해 통과 확인**
+- [x] **Step 8: 계약 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -1151,7 +1151,7 @@ Expected: PASS. 14개 테스트 통과 (`MemoryStore` 7개 + `SqliteStore` 7개)
 
 실패하면 `compact()`가 제거하는 null 키와 optional property 기대값을 먼저 확인한다.
 
-- [ ] **Step 9: 서버가 SqliteStore를 기본으로 쓰도록 변경**
+- [x] **Step 9: 서버가 SqliteStore를 기본으로 쓰도록 변경**
 
 Modify `apps/api/src/server.ts` 전체를 다음으로 교체한다:
 
@@ -1173,7 +1173,7 @@ const app = createApp({
 await app.listen({ port, host: "0.0.0.0" });
 ```
 
-- [ ] **Step 10: SQLite 파일을 git에서 제외**
+- [x] **Step 10: SQLite 파일을 git에서 제외**
 
 Modify `.gitignore` — 파일 끝에 추가한다:
 
@@ -1183,7 +1183,7 @@ trace.db
 *.db-shm
 ```
 
-- [ ] **Step 11: 전체 검증**
+- [x] **Step 11: 전체 검증**
 
 Run:
 
@@ -1195,7 +1195,7 @@ npm run build
 
 Expected: 전부 통과. 테스트는 17개 파일 129개.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add apps/api/src/db/schema.sqlite.ts apps/api/src/store/sqlite-store.ts \
