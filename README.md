@@ -1,110 +1,174 @@
 # trace
 
-사용자 행동 분석/통계 제품 MVP입니다. SaaS 제품 운영자가 사용자의 막힘 지점을 관리자 페이지에서 통계, 차트, 세션 타임라인으로 확인할 수 있게 합니다.
+사이트에 스크립트 한 줄을 붙이면 사용자가 막히는 지점을 관리자 페이지에서 통계, 차트, 세션 타임라인으로 확인할 수 있습니다.
 
-## 실행
+Trace는 self-hosted 제품입니다. 서버와 관리자 페이지를 직접 운영하고, 수집한 데이터는 여러분의 서버를 벗어나지 않습니다.
+
+## 요구 사항
+
+- Node 22.5 이상 (`.nvmrc` 참고)
+- Google 계정 (관리자 로그인에 사용합니다)
+
+## 시작하기
+
+### 1. 설치
 
 ```bash
 npm install
-npm test
 npm run build
-npm run typecheck
 ```
 
-## 로컬 확인
+### 2. Google OAuth 클라이언트 준비
 
-API 서버를 실행합니다.
+관리자 로그인에 Google OAuth를 사용합니다. Google Cloud Console에서 OAuth 2.0 클라이언트 ID를 하나 만들고, 승인된 리디렉션 URI에 아래 주소를 등록합니다.
+
+```text
+http://localhost:4000/auth/google/callback
+```
+
+### 3. 로컬 환경변수 설정
+
+루트 `.env`와 `apps/api/.env`는 API 서버가 시작할 때 자동으로 읽습니다.
 
 ```bash
-GOOGLE_CLIENT_ID=<client-id> \
-GOOGLE_CLIENT_SECRET=<client-secret> \
-GOOGLE_REDIRECT_URI=http://localhost:4000/auth/google/callback \
-SESSION_SECRET=<32+ byte random string> \
-ADMIN_APP_ORIGIN=http://localhost:5173 \
-ADMIN_ALLOWED_EMAILS=admin@example.com \
-COOKIE_SECURE=false \
+cp .env.example .env
+cp apps/api/.env.example apps/api/.env
+```
+
+`apps/api/.env`에 Google Cloud Console에서 받은 값과 로그인할 관리자 이메일을 채웁니다.
+
+```env
+GOOGLE_CLIENT_ID=<client-id>
+GOOGLE_CLIENT_SECRET=<client-secret>
+SESSION_SECRET=<32자 이상 임의 문자열>
+ADMIN_ALLOWED_EMAILS=<로그인할 Google 계정 이메일>
+```
+
+`SESSION_SECRET`은 Google에서 받는 값이 아니라 세션 쿠키 서명용 랜덤 문자열입니다.
+
+```bash
+openssl rand -base64 32
+```
+
+루트 `.env`의 로컬 기본값은 아래와 같습니다.
+
+```env
+NODE_ENV=development
+GOOGLE_REDIRECT_URI=http://localhost:4000/auth/google/callback
+ADMIN_APP_ORIGIN=http://localhost:5173
+COOKIE_SECURE=false
+TRACE_DB_PATH=./trace.db
+```
+
+`COOKIE_SECURE=false`는 `NODE_ENV`가 `development`나 `test`일 때만 허용됩니다.
+
+### 4. API 서버 실행
+
+```bash
 npm run dev:api
 ```
 
-Google Cloud Console에서 위 callback URL을 OAuth redirect URI로 등록하고, `ADMIN_ALLOWED_EMAILS`에 로그인할 관리자 이메일을 설정합니다.
+데이터는 `TRACE_DB_PATH`에 지정한 SQLite 파일에 저장되고 서버를 재시작해도 남습니다.
 
-`MemoryStore`는 빈 상태로 시작합니다. 첫 프로젝트는 Google 로그인으로 세션을 만든 뒤, Admin origin(`http://localhost:5173`)의 브라우저 개발자 도구 Console에서 아래 요청으로 생성합니다. `auth/me`가 세션의 CSRF token을 반환하고, 브라우저가 `Origin`과 HttpOnly session cookie를 자동으로 포함합니다.
-
-```js
-const apiBase = "http://localhost:4000";
-const me = await fetch(`${apiBase}/auth/me`, { credentials: "include" }).then((response) => response.json());
-const project = await fetch(`${apiBase}/admin/api/projects`, {
-  method: "POST",
-  credentials: "include",
-  headers: { "content-type": "application/json", "x-trace-csrf": me.csrfToken },
-  body: JSON.stringify({ name: "Local Trace", allowedDomains: ["http://localhost:5174"] }),
-}).then((response) => response.json());
-console.log(project.projectId);
-```
-
-출력된 `projectId`를 `VITE_PROJECT_ID`에 설정하거나, Admin UI를 새로고침해 첫 연결 프로젝트로 사용합니다.
-
-관리자 페이지를 실행합니다.
+### 5. 관리자 페이지 실행
 
 ```bash
-VITE_PROJECT_ID=<projectId> npm run dev:admin
+npm run dev:admin
 ```
 
-데모 사이트를 실행하고, 생성한 프로젝트 ID를 query string으로 넘깁니다.
+`http://localhost:5173`을 열고 Google로 로그인합니다. 로그인하면 프로젝트 생성 화면이 나오고, 이름과 허용 도메인을 입력하면 사이트에 붙일 스크립트를 알려줍니다.
+
+```html
+<script src="http://localhost:4000/trace.js" data-project-id="proj_xxxxxxxxxx"></script>
+```
+
+허용 도메인은 이벤트를 받을 사이트의 origin입니다. 로컬 데모 사이트로 확인하려면 `http://localhost:5174`를 입력합니다.
+
+## 데모 사이트로 확인하기
+
+붙일 사이트가 아직 없으면 포함된 데모 사이트로 확인할 수 있습니다.
 
 ```bash
 npm run dev:demo
 ```
 
+프로젝트 생성 후 표시된 프로젝트 ID를 query string으로 넘깁니다.
+
 ```text
 http://localhost:5174/?projectId=<projectId>
 ```
 
-### 로컬 fake OAuth smoke
+데모 사이트에서 버튼을 몇 번 클릭하면 관리자 페이지의 설치 화면이 첫 이벤트 도착을 알려줍니다. 이후 대시보드에서 수집된 이벤트와 감지된 문제를 확인할 수 있습니다.
 
-브라우저용 fake OAuth 서버는 제공하지 않습니다. 대신 API route 테스트가 fake Google client로 Google redirect, callback, 세션 쿠키, `/auth/me`, 그리고 세션 쿠키를 사용하는 Admin BFF를 검증합니다.
+## 수집하는 것과 수집하지 않는 것
+
+기본 설정에서 개인을 식별할 수 있는 정보를 수집하지 않습니다.
+
+| 항목 | 동작 |
+| --- | --- |
+| 쿠키, localStorage, sessionStorage | 사용하지 않습니다 |
+| 방문자 ID | 페이지를 열 때마다 새로 만들고 저장하지 않습니다. 새로고침하면 다른 ID가 됩니다 |
+| IP 주소 | 저장하지 않습니다 |
+| URL 경로 | 식별자로 보이는 부분을 `:id`로 바꿉니다. `/users/alice/settings` -> `/users/:id/settings` |
+| URL 쿼리 | 값을 전부 `[redacted]`로 바꿉니다 |
+| 요소 텍스트 | 마스킹하고 길이를 제한합니다. 선택자는 해시로 저장합니다 |
+| 입력값 원문 | 수집하지 않습니다 |
+| 클릭 좌표, 화면 크기 | 수집합니다 |
+
+`track()`으로 직접 넘기는 metadata에 회원번호 같은 내부 식별자를 넣으면 그것은 저장됩니다. 이메일 형태는 자동으로 걸러내지만 임의의 내부 식별자는 걸러낼 수 없습니다.
+
+## 동의 배너를 쓰는 경우
+
+기본값은 스크립트를 붙이면 바로 수집을 시작하는 것입니다. 사용자 동의를 먼저 받아야 하는 지역에 서비스한다면 수집을 보류하고 동의 후 시작하세요.
+
+```html
+<script src="http://localhost:4000/trace.js" data-project-id="proj_xxx" data-consent="pending"></script>
+```
+
+```js
+window.trace.consent.grant();
+```
+
+## 환경변수
+
+| 변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `GOOGLE_CLIENT_ID` | 필수 | - | Google OAuth 클라이언트 ID |
+| `GOOGLE_CLIENT_SECRET` | 필수 | - | Google OAuth 클라이언트 시크릿 |
+| `GOOGLE_REDIRECT_URI` | 필수 | - | OAuth 콜백 주소 |
+| `SESSION_SECRET` | 필수 | - | 세션 쿠키 서명 키. 32자 이상 |
+| `ADMIN_APP_ORIGIN` | 필수 | - | 관리자 페이지 origin. CORS 허용 대상 |
+| `ADMIN_ALLOWED_EMAILS` | 필수 | - | 로그인 허용 이메일. 쉼표로 구분 |
+| `GOOGLE_ALLOWED_DOMAIN` | 선택 | - | 특정 Google Workspace 도메인으로 제한 |
+| `NODE_ENV` | 선택 | - | `development` 또는 `test`일 때만 `COOKIE_SECURE=false`를 허용합니다 |
+| `COOKIE_SECURE` | 선택 | `true` | 로컬 개발에서만 `false`로 둡니다 |
+| `TRACE_DB_PATH` | 선택 | `./trace.db` | SQLite 데이터베이스 파일 경로 |
+| `PORT` | 선택 | `4000` | API 서버 포트 |
+| `SESSION_TTL_SECONDS` | 선택 | `28800` | 세션 유효 기간 |
+| `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | 선택 | `300` | 로그인 rate limit 시간 창 |
+| `LOGIN_RATE_LIMIT_MAX` | 선택 | `20` | 시간 창당 로그인 시도 허용 횟수 |
+
+관리자 페이지는 `VITE_API_BASE_URL`로 API 주소를 지정할 수 있고, 기본값은 `http://localhost:4000`입니다.
+
+## 서버에 올릴 때
+
+HTTPS를 사용하고 `COOKIE_SECURE=true`로 둡니다. `GOOGLE_REDIRECT_URI`와 `ADMIN_APP_ORIGIN`을 실제 주소로 바꾸고, Google Cloud Console의 승인된 리디렉션 URI에도 같은 주소를 등록해야 합니다.
+
+SQLite를 쓰므로 단일 인스턴스로 운영합니다.
+
+## 개발
+
+```bash
+npm test
+npm run typecheck
+npm run build
+```
+
+인증 관련 통합 검증은 fake Google client로 동작합니다.
 
 ```bash
 npm run test --workspace @trace/api -- src/routes/auth.test.ts src/routes/admin.test.ts
 ```
-
-예상 결과:
-
-- `/auth/google/start`는 Google authorization URL로 `302` redirect하고 OAuth state cookie를 설정합니다.
-- fake Google client callback은 code를 교환하고 `__trace_admin_session` cookie를 생성한 뒤 Admin origin으로 `302` redirect합니다.
-- 세션 cookie를 포함한 `/auth/me`는 `200`과 사용자 및 CSRF token을 반환하고, cookie가 없으면 `401`을 반환합니다.
-- 세션 cookie를 포함한 Admin BFF 요청은 인증을 사용하며, cookie가 없으면 `401`, project membership이 없으면 `403`을 반환합니다.
-
-### 프로덕션 배포 체크리스트
-
-현재 `MemoryStore`는 `isDurable === false`이므로 production에 배포할 수 없습니다. 모든 `NODE_ENV=production` 배포에는 `isDurable === true`인 durable `TraceStore`가 필요합니다.
-
-- HTTPS를 사용합니다.
-- `COOKIE_SECURE=true`를 설정합니다.
-- `ADMIN_APP_ORIGIN`을 고정된 Admin origin으로 설정합니다.
-- Google OAuth redirect URI가 배포된 `/auth/google/callback` URL과 정확히 일치하도록 등록합니다.
-- `ADMIN_ALLOWED_EMAILS`에 허용할 관리자 이메일을 설정합니다.
-- durable `TraceStore`를 구성하고 `isDurable === true`를 보장합니다.
-
-## MVP 1차 범위
-
-- 브라우저 SDK 이벤트 수집
-- 수집 API
-- private by default 마스킹
-- 규칙 기반 막힘 감지
-- 문제 인박스
-- 홈 요약 통계와 차트
-- 문제 상세와 세션 타임라인
-
-## 개인정보 기준
-
-- SDK와 API 모두 URL query value를 저장하지 않습니다.
-- 민감 query key는 `redacted_param_N` 형태로 치환합니다.
-- URL path의 이메일, UUID, 토큰형 segment와 사용자/계정/세션 등 identity container 하위 segment는 `:id`로 치환합니다.
-- 이벤트/세션/페이지/selector/role identifier는 안전한 형식만 저장하고, raw 입력이 안전하지 않으면 저장 전에 대체하거나 버립니다.
-- 관리자 API는 `HttpOnly` 세션 쿠키와 프로젝트 membership으로 보호하며, Admin UI는 브라우저에 관리자 토큰을 저장하지 않습니다.
-- raw custom metadata는 저장 가능한 allowlist만 보존합니다.
-- 입력값, 전체 DOM 원문, 네트워크 body, 이메일/전화번호/긴 숫자 패턴은 저장하지 않습니다.
 
 ## 스펙과 계획
 

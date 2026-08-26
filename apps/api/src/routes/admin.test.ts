@@ -66,6 +66,25 @@ describe("admin bff routes", () => {
     })]);
   });
 
+  it("normalizes allowed domains to origins when creating a project", async () => {
+    const { store, cookie, csrfToken } = await signedInStore();
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/api/projects",
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: {
+        name: "Demo SaaS",
+        allowedDomains: ["http://localhost:5174/", "https://demo.example.com/path?utm=1"],
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const project = await store.getProject(response.json().projectId);
+    expect(project?.allowedDomains).toEqual(["http://localhost:5174", "https://demo.example.com"]);
+  });
+
   it("returns 403 when the signed-in admin lacks project membership", async () => {
     const { store, cookie } = await signedInStore();
     const project = await store.createProject({ name: "Private", allowedDomains: ["https://private.example.com"] });

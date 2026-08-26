@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0 ~ Task 9 |
-| 다음 | Task 10 — README 재작성과 최종 검증 |
+| 완료 | Task 0 ~ Task 10 |
+| 다음 | 최종 커밋/브랜치 마무리 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 22 파일 162 건 통과 |
+| `npm test` | 23 파일 166 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -44,7 +44,9 @@
 - **로컬 기동에는 `NODE_ENV=development` 가 필요하다.** `auth/config.ts` 의 `assertDeployableAdminAuthConfig` 가 `COOKIE_SECURE=false` 를 `NODE_ENV` 가 `development` 나 `test` 일 때만 허용한다. `tsx watch` 는 `NODE_ENV` 를 설정하지 않으므로 지정하지 않으면 기동이 거부된다. Task 7 Step 9 의 수동 확인 블록과 Task 10 의 README 초안에 이 변수가 빠져 있어 채웠다. 현재 `README.md` 에도 같은 누락이 있으나 Task 10 이 전체를 다시 쓰므로 그때 해소된다.
 - **jsdom 의 `localStorage` 에는 인스턴스 스파이가 걸리지 않는다.** Proxy 라서 `vi.spyOn(window.localStorage, ...)` 이 `defineProperty` 트랩에 삼켜져 조용히 무시된다. 원래 코드는 아무것도 가로채지 못한 채 통과했다. Task 8 Step 1 의 테스트를 `Storage.prototype` 에 거는 방식으로 고쳤다.
 - **`<label>` 이 힌트까지 감싸면 `getByLabelText` 로 조회할 수 없다.** 접근 가능한 이름에 힌트 문구가 이어붙기 때문이다. Task 9 의 허용 도메인 필드를 `htmlFor` 와 `aria-describedby` 로 나눴다.
-- **최종 검증 체크리스트 12 항목 중 3 항목은 실제 Google 로그인이 필요하다.** 저장소가 브라우저용 fake OAuth 서버를 제공하지 않으므로 Task 10 전까지 Google Cloud Console 에서 OAuth 클라이언트를 준비해야 한다. redirect URI 는 `http://localhost:4000/auth/google/callback` 이다.
+- **최종 검증 체크리스트 12 항목 중 실제 Google 로그인이 필요한 항목은 수동으로 확인했다.** Google Cloud Console OAuth 클라이언트를 만들고 `http://localhost:4000/auth/google/callback` 을 redirect URI 로 등록해 실제 로그인, 프로젝트 생성, 데모 이벤트 수집을 확인했다.
+- **로컬 `.env` 자동 로딩을 추가했다.** Task 10 진행 중 Google OAuth 값을 매번 명령 앞에 붙이는 마찰이 확인되어 루트 `.env` 와 `apps/api/.env` 를 서버 시작 시 읽게 했다. 터미널 환경변수는 파일 값보다 우선한다.
+- **허용 도메인은 origin 으로 정규화한다.** Task 10 smoke 중 `http://localhost:5174/` 처럼 trailing slash 가 포함된 입력이 ingestion 의 `origin` 비교와 맞지 않아 403 이 나는 결함을 발견했다. `createProjectSchema` 에서 `new URL(value).origin` 으로 저장하도록 고쳤다.
 
 ---
 
@@ -3311,7 +3313,7 @@ MSG
 
 현재 README는 브라우저 콘솔에 `fetch`를 붙여넣어 프로젝트를 만들도록 안내한다. Task 9로 그 절차가 사라졌으므로 문서가 실제와 어긋난 상태다.
 
-- [ ] **Step 1: README 전체 재작성**
+- [x] **Step 1: README 전체 재작성**
 
 Modify `README.md` 전체를 다음으로 교체한다:
 
@@ -3464,7 +3466,7 @@ npm run test --workspace @trace/api -- src/routes/auth.test.ts src/routes/admin.
 ```
 ````
 
-- [ ] **Step 2: 문서에 남은 콘솔 절차가 없는지 확인**
+- [x] **Step 2: 문서에 남은 콘솔 절차가 없는지 확인**
 
 Run:
 
@@ -3474,7 +3476,7 @@ grep -rn "x-trace-csrf\|VITE_PROJECT_ID\|개발자 도구" README.md || echo "�
 
 Expected: `잔여 없음`.
 
-- [ ] **Step 3: 사내 고유값이 커밋되지 않았는지 확인**
+- [x] **Step 3: 사내 고유값이 커밋되지 않았는지 확인**
 
 Run:
 
@@ -3486,7 +3488,7 @@ grep -rniE "douzone|더존|amaranth|oneffice|gwa\." README.md docs apps packages
 
 Expected: `사내 고유값 없음`. 저장소를 public으로 전환하면 커밋 히스토리도 공개된다.
 
-- [ ] **Step 4: 전체 검증**
+- [x] **Step 4: 전체 검증**
 
 Run:
 
@@ -3498,7 +3500,7 @@ npm run build
 
 Expected: 전부 통과.
 
-- [ ] **Step 5: 번들에 비밀값이 들어가지 않았는지 확인**
+- [x] **Step 5: 번들에 비밀값이 들어가지 않았는지 확인**
 
 Run:
 
@@ -3509,7 +3511,7 @@ grep -rn "GOOGLE_CLIENT_SECRET\|SESSION_SECRET\|TRACE_ADMIN_TOKEN\|VITE_TRACE_AD
 
 Expected: `비밀값 없음`.
 
-- [ ] **Step 6: 설치 경험을 처음부터 끝까지 수동 확인**
+- [x] **Step 6: 설치 경험을 처음부터 끝까지 수동 확인**
 
 깨끗한 상태에서 성공 기준을 직접 밟아본다.
 
@@ -3559,22 +3561,22 @@ MSG
 
 구현을 마친 뒤 확인한다.
 
-- [ ] `npm test`가 통과한다.
-- [ ] `npm run typecheck`가 통과한다.
-- [ ] `npm run build`가 통과한다.
-- [ ] `SqliteStore`와 `MemoryStore`가 같은 계약 테스트를 통과한다.
-- [ ] SDK 번들 gzip 크기가 10KB 미만이다.
-- [ ] SDK 번들에 zod가 없다. `grep -c "ZodError" packages/sdk/dist/trace.js`가 0이다.
-- [ ] `GET /trace.js`가 200과 JavaScript content type을 반환한다.
-- [ ] 데모 사이트에서 클릭한 이벤트가 5초 안에 서버에 도착한다.
-- [ ] 서버를 재시작해도 대시보드 데이터가 남아 있다.
-- [ ] 브라우저 콘솔을 열지 않고 프로젝트를 만들고 스크립트를 붙일 수 있다.
-- [ ] `VITE_PROJECT_ID` 참조가 코드와 문서에 남아 있지 않다.
-- [ ] 사내 고유값이 코드, 문서, 테스트 픽스처에 없다.
+- [x] `npm test`가 통과한다.
+- [x] `npm run typecheck`가 통과한다.
+- [x] `npm run build`가 통과한다.
+- [x] `SqliteStore`와 `MemoryStore`가 같은 계약 테스트를 통과한다.
+- [x] SDK 번들 gzip 크기가 10KB 미만이다.
+- [x] SDK 번들에 zod가 없다. `grep -c "ZodError" packages/sdk/dist/trace.js`가 0이다.
+- [x] `GET /trace.js`가 200과 JavaScript content type을 반환한다.
+- [x] 데모 사이트에서 클릭한 이벤트가 5초 안에 서버에 도착한다.
+- [x] 서버를 재시작해도 대시보드 데이터가 남아 있다.
+- [x] 브라우저 콘솔을 열지 않고 프로젝트를 만들고 스크립트를 붙일 수 있다.
+- [x] `VITE_PROJECT_ID` 참조가 코드와 문서에 남아 있지 않다.
+- [x] 사내 고유값이 코드, 문서, 테스트 픽스처에 없다.
 
 ## 이번 범위에서 해소하지 않는 알려진 마찰
 
 - **Google OAuth 클라이언트 준비가 필요하다.** 처음 써보는 사용자가 Google Cloud Console에서 OAuth 클라이언트를 만들어야 하므로 실제 소요 시간이 5분을 넘는다. 인증 방식은 이전 사이클에서 확정된 사항이라 이번 범위에서 바꾸지 않고, README에 필수 단계로 명시한다. 다음 사이클에서 로컬 전용 간편 로그인을 검토할 수 있다.
-- **`allowedDomains`를 나중에 수정할 수 없다.** 잘못 입력하면 프로젝트를 다시 만들어야 한다. 프로젝트 설정 화면과 함께 해소한다.
+- **`allowedDomains`를 나중에 수정할 수 없다.** 입력값은 origin 으로 정규화되지만, 다른 도메인을 추가하려면 아직 프로젝트를 다시 만들어야 한다. 프로젝트 설정 화면과 함께 해소한다.
 - **이벤트 보관 기간 정책이 없다.** SQLite 파일이 무한히 커진다.
 - **프로젝트 전환 UI가 없다.** 프로젝트가 여러 개면 `localStorage`를 직접 지워야 다른 프로젝트로 갈 수 있다.
