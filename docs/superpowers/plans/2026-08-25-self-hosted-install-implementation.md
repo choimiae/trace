@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0 ~ Task 7 |
-| 다음 | Task 8 — Admin 설정 모듈과 프로젝트 선택 저장 |
+| 완료 | Task 0 ~ Task 8 |
+| 다음 | Task 9 — 온보딩 화면 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 21 파일 154 건 통과 |
+| `npm test` | 22 파일 157 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -42,6 +42,7 @@
 - **Task 1 Step 1(`.nvmrc`)은 Task 0 커밋에 포함됐다.** Task 1 은 Step 2 부터 수행했다.
 - **Task 3 `SqliteStore`의 `totalEventsCount`는 `COUNT(*)`를 유지한다.** Global Constraints의 "집계는 SQL이 아니라 JS에서 한다"는 friction score, issue type distribution, top targets 같은 제품 집계 로직을 뜻한다. `totalEventsCount`는 온보딩 상태 확인용 단순 row count이고 Task 3 Step 5가 구체적으로 `COUNT`를 지시하므로 SQL count를 허용한다.
 - **로컬 기동에는 `NODE_ENV=development` 가 필요하다.** `auth/config.ts` 의 `assertDeployableAdminAuthConfig` 가 `COOKIE_SECURE=false` 를 `NODE_ENV` 가 `development` 나 `test` 일 때만 허용한다. `tsx watch` 는 `NODE_ENV` 를 설정하지 않으므로 지정하지 않으면 기동이 거부된다. Task 7 Step 9 의 수동 확인 블록과 Task 10 의 README 초안에 이 변수가 빠져 있어 채웠다. 현재 `README.md` 에도 같은 누락이 있으나 Task 10 이 전체를 다시 쓰므로 그때 해소된다.
+- **jsdom 의 `localStorage` 에는 인스턴스 스파이가 걸리지 않는다.** Proxy 라서 `vi.spyOn(window.localStorage, ...)` 이 `defineProperty` 트랩에 삼켜져 조용히 무시된다. 원래 코드는 아무것도 가로채지 못한 채 통과했다. Task 8 Step 1 의 테스트를 `Storage.prototype` 에 거는 방식으로 고쳤다.
 - **최종 검증 체크리스트 12 항목 중 3 항목은 실제 Google 로그인이 필요하다.** 저장소가 브라우저용 fake OAuth 서버를 제공하지 않으므로 Task 10 전까지 Google Cloud Console 에서 OAuth 클라이언트를 준비해야 한다. redirect URI 는 `http://localhost:4000/auth/google/callback` 이다.
 
 ---
@@ -2574,7 +2575,7 @@ MSG
 
 `API_BASE_URL`은 현재 `api.ts:3`과 `App.tsx:7`에 중복 선언되어 있다. `config.ts`로 모아 한 곳에서 정의한다.
 
-- [ ] **Step 1: 실패하는 저장 테스트 작성**
+- [x] **Step 1: 실패하는 저장 테스트 작성**
 
 Create `apps/admin/src/storage.test.ts`:
 
@@ -2598,10 +2599,12 @@ describe("선택한 프로젝트 저장", () => {
   });
 
   it("localStorage 접근이 실패해도 예외를 던지지 않는다", () => {
-    const getItem = vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
+    // jsdom 의 localStorage 는 Proxy 라 인스턴스에 스파이를 얹으면 defineProperty
+    // 트랩이 삼켜 버린다. 실제로 가로채려면 Storage.prototype 에 걸어야 한다.
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");
     });
-    const setItem = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("blocked");
     });
 
@@ -2614,7 +2617,7 @@ describe("선택한 프로젝트 저장", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트를 실행해 실패 확인**
+- [x] **Step 2: 테스트를 실행해 실패 확인**
 
 Run:
 
@@ -2624,7 +2627,7 @@ npm run test --workspace @trace/admin -- src/storage.test.ts
 
 Expected: FAIL. `Failed to resolve import "./storage.js"`.
 
-- [ ] **Step 3: config 모듈 작성**
+- [x] **Step 3: config 모듈 작성**
 
 Create `apps/admin/src/config.ts`:
 
@@ -2632,7 +2635,7 @@ Create `apps/admin/src/config.ts`:
 export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 ```
 
-- [ ] **Step 4: storage 모듈 작성**
+- [x] **Step 4: storage 모듈 작성**
 
 Create `apps/admin/src/storage.ts`:
 
@@ -2656,7 +2659,7 @@ export function writeSelectedProjectId(projectId: string): void {
 }
 ```
 
-- [ ] **Step 5: 테스트를 실행해 통과 확인**
+- [x] **Step 5: 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -2666,7 +2669,7 @@ npm run test --workspace @trace/admin -- src/storage.test.ts
 
 Expected: PASS. 3개 통과.
 
-- [ ] **Step 6: api.ts에 createProject 추가하고 중복 선언 제거**
+- [x] **Step 6: api.ts에 createProject 추가하고 중복 선언 제거**
 
 Modify `apps/admin/src/api.ts` — 파일 앞부분의 다음 두 줄을 제거한다:
 
@@ -2705,7 +2708,7 @@ export async function createProject(
 }
 ```
 
-- [ ] **Step 7: App.tsx가 저장된 프로젝트를 쓰도록 변경**
+- [x] **Step 7: App.tsx가 저장된 프로젝트를 쓰도록 변경**
 
 Modify `apps/admin/src/App.tsx`.
 
@@ -2744,7 +2747,7 @@ import { readSelectedProjectId, writeSelectedProjectId } from "./storage.js";
 
 저장된 값이 현재 계정의 프로젝트 목록에 없으면 무시한다. 다른 계정으로 로그인했을 때 남의 프로젝트 ID를 요청해 403을 받는 것을 막는다.
 
-- [ ] **Step 8: 전체 검증**
+- [x] **Step 8: 전체 검증**
 
 Run:
 
@@ -2756,7 +2759,7 @@ npm run build
 
 Expected: 전부 통과. `App.test.tsx`의 기존 5개 테스트가 그대로 통과한다. `localStorage`가 비어 있으면 `auth.projects[0]`을 쓰므로 기존 동작과 같다.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add apps/admin/src/config.ts apps/admin/src/storage.ts apps/admin/src/storage.test.ts \
