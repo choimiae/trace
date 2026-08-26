@@ -1,4 +1,4 @@
-import { eventBatchSchema, redactMetadata, redactUrl } from "@trace/shared";
+import { redactMetadata, redactUrl } from "@trace/shared/privacy";
 import type { EventBatch, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
 
@@ -79,7 +79,7 @@ export class TraceClient {
           ? { urlQueryRedacted: redactedUrl.urlQueryRedacted }
           : {}),
     }));
-    const batch: EventBatch = eventBatchSchema.parse({
+    const batch: EventBatch = {
       projectId: this.projectId,
       anonymousUserId: this.anonymousUserId,
       sessionId: this.sessionId,
@@ -87,7 +87,7 @@ export class TraceClient {
       sdkVersion: "0.1.0",
       url: `${redactedUrl.origin}${redactedUrl.urlPath}${redactedUrl.urlQueryRedacted}`,
       events,
-    });
+    };
 
     const response = await this.fetcher(this.endpoint, {
       method: "POST",

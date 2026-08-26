@@ -1,4 +1,4 @@
-import { isSensitiveField, redactText } from "@trace/shared";
+import { isSensitiveField, redactText } from "@trace/shared/privacy";
 
 export interface ElementMetadata {
   elementSelectorHash?: string;

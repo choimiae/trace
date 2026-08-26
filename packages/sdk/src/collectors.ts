@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { redactUrl } from "@trace/shared";
+import { redactUrl } from "@trace/shared/privacy";
 import type { TraceClient } from "./client.js";
 import { getElementMetadata } from "./dom.js";
 

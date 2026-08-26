@@ -13,6 +13,7 @@
     "baseUrl": ".",
     "paths": {
       "@trace/shared": ["packages/shared/src/index.ts"],
+      "@trace/shared/privacy": ["packages/shared/src/privacy.ts"],
       "@trace/sdk": ["packages/sdk/src/index.ts"]
     }
   }

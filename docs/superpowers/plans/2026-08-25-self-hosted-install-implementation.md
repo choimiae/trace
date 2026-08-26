@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0, Task 1, Task 2, Task 3 |
-| 다음 | Task 4 — SDK import 경계 정리와 번들 크기 예산 |
+| 완료 | Task 0, Task 1, Task 2, Task 3, Task 4 |
+| 다음 | Task 5 — SDK 자동 전송 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 17 파일 131 건 통과 |
+| `npm test` | 18 파일 132 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -40,6 +40,7 @@
 
 - **Task 0 을 Task 1 앞에 추가했다.** 계획 작성 시점에는 기준선이 초록이었으나 이후 날짜가 바뀌면서 `admin.test.ts` 4 건이 깨졌다. 아래 Task 0 절을 참고한다.
 - **Task 1 Step 1(`.nvmrc`)은 Task 0 커밋에 포함됐다.** Task 1 은 Step 2 부터 수행했다.
+- **Task 3 `SqliteStore`의 `totalEventsCount`는 `COUNT(*)`를 유지한다.** Global Constraints의 "집계는 SQL이 아니라 JS에서 한다"는 friction score, issue type distribution, top targets 같은 제품 집계 로직을 뜻한다. `totalEventsCount`는 온보딩 상태 확인용 단순 row count이고 Task 3 Step 5가 구체적으로 `COUNT`를 지시하므로 SQL count를 허용한다.
 - **최종 검증 체크리스트 12 항목 중 3 항목은 실제 Google 로그인이 필요하다.** 저장소가 브라우저용 fake OAuth 서버를 제공하지 않으므로 Task 10 전까지 Google Cloud Console 에서 OAuth 클라이언트를 준비해야 한다. redirect URI 는 `http://localhost:4000/auth/google/callback` 이다.
 
 ---
@@ -1412,7 +1413,7 @@ MSG
 | vitest `alias` | `packages/sdk/vitest.config.ts` | Vitest |
 | package `exports` | `packages/shared/package.json` | Node 런타임 |
 
-- [ ] **Step 1: 번들러를 SDK 개발 의존성으로 선언**
+- [x] **Step 1: 번들러를 SDK 개발 의존성으로 선언**
 
 Run:
 
@@ -1422,7 +1423,7 @@ npm install -D esbuild --workspace @trace/sdk
 
 루트에 이미 esbuild가 있지만 SDK 테스트가 직접 쓰므로 명시적으로 선언한다.
 
-- [ ] **Step 2: 실패하는 번들 크기 테스트 작성**
+- [x] **Step 2: 실패하는 번들 크기 테스트 작성**
 
 Create `packages/sdk/src/bundle-size.test.ts`:
 
@@ -1455,7 +1456,7 @@ describe("SDK 번들 크기", () => {
 });
 ```
 
-- [ ] **Step 3: 테스트를 실행해 실패 확인**
+- [x] **Step 3: 테스트를 실행해 실패 확인**
 
 Run:
 
@@ -1465,7 +1466,7 @@ npm run test --workspace @trace/sdk -- src/bundle-size.test.ts
 
 Expected: FAIL. `expected 17867 to be less than 10240` 근처의 값이 나온다. 정확한 숫자는 zod 버전에 따라 다를 수 있다.
 
-- [ ] **Step 4: tsconfig paths에 서브패스 추가**
+- [x] **Step 4: tsconfig paths에 서브패스 추가**
 
 Modify `tsconfig.base.json` — `paths`를 다음으로 교체한다:
 
@@ -1477,7 +1478,7 @@ Modify `tsconfig.base.json` — `paths`를 다음으로 교체한다:
     }
 ```
 
-- [ ] **Step 5: vitest alias에 서브패스 추가**
+- [x] **Step 5: vitest alias에 서브패스 추가**
 
 Modify `packages/sdk/vitest.config.ts` 전체를 다음으로 교체한다. **`@trace/shared/privacy`를 먼저 둔다.** Vite alias는 앞에서부터 부분 일치로 치환하므로 `@trace/shared`가 먼저 오면 서브패스가 잘못 치환된다:
 
@@ -1503,7 +1504,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 6: package exports 추가**
+- [x] **Step 6: package exports 추가**
 
 Modify `packages/shared/package.json` — `"types"` 줄 다음에 추가한다:
 
@@ -1522,7 +1523,7 @@ Modify `packages/shared/package.json` — `"types"` 줄 다음에 추가한다:
 
 `main`과 `types`는 지우지 않는다. 구형 해석기가 참조한다.
 
-- [ ] **Step 7: client.ts에서 zod 제거**
+- [x] **Step 7: client.ts에서 zod 제거**
 
 Modify `packages/sdk/src/client.ts` — 첫 두 줄의 import를 다음으로 교체한다:
 
@@ -1545,7 +1546,7 @@ import type { EventBatch, TraceEvent } from "@trace/shared";
     };
 ```
 
-- [ ] **Step 8: collectors.ts와 dom.ts의 import 경계 정리**
+- [x] **Step 8: collectors.ts와 dom.ts의 import 경계 정리**
 
 Modify `packages/sdk/src/collectors.ts` — `redactUrl` import를 교체한다:
 
@@ -1559,7 +1560,7 @@ Modify `packages/sdk/src/dom.ts` — 첫 줄 import를 교체한다:
 import { isSensitiveField, redactText } from "@trace/shared/privacy";
 ```
 
-- [ ] **Step 9: 번들 크기 테스트를 실행해 통과 확인**
+- [x] **Step 9: 번들 크기 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -1569,7 +1570,7 @@ npm run test --workspace @trace/sdk -- src/bundle-size.test.ts
 
 Expected: PASS. gzip 3KB 미만.
 
-- [ ] **Step 10: 기존 SDK 테스트가 그대로 통과하는지 확인**
+- [x] **Step 10: 기존 SDK 테스트가 그대로 통과하는지 확인**
 
 Run:
 
@@ -1581,7 +1582,7 @@ Expected: PASS. `client.test.ts` 3개, `dom.test.ts` 2개, `bundle-size.test.ts`
 
 `client.test.ts`의 세 테스트는 zod 검증에 의존하지 않고 전송된 payload 내용만 확인하므로 수정이 필요 없다.
 
-- [ ] **Step 11: 전체 검증**
+- [x] **Step 11: 전체 검증**
 
 Run:
 
@@ -1593,7 +1594,7 @@ npm run build
 
 Expected: 전부 통과.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add tsconfig.base.json packages/shared/package.json packages/sdk/package.json \
