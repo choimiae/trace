@@ -1,6 +1,9 @@
 {
   "name": "trace",
   "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "type": "module",
   "workspaces": [
     "apps/*",
