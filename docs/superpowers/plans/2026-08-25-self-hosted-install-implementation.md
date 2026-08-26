@@ -10,6 +10,65 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-25-self-hosted-install-design.md`
 
+---
+
+## 진행 상태
+
+이어받는 사람이 이 절만 읽으면 현재 위치를 알 수 있게 유지한다. 태스크를 끝낼 때마다 갱신한다.
+
+| 항목 | 값 |
+| --- | --- |
+| 브랜치 | `design/self-hosted-install` (base: `main`) |
+| 완료 | Task 0, Task 1 |
+| 다음 | Task 2 — SqliteStore와 기본 저장소 승격 |
+| 최종 갱신 | 2026-08-26 |
+
+검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
+
+| 명령 | 상태 |
+| --- | --- |
+| `npm test` | 17 파일 122 건 통과 |
+| `npm run typecheck` | 통과 |
+| `npm run build` | 통과 |
+
+### 실행 환경
+
+- **Node 22 이상이 필수다.** Node 16 에서는 Vite 가 `crypto.getRandomValues` 오류로 기동하지 못해 `npm test` 가 시작조차 하지 못한다. 저장소에 `.nvmrc`(`22`)와 `engines`(`>=22.5.0`)가 있으므로 `nvm use` 로 맞춘다.
+- nvm 은 전역 npm 패키지를 Node 버전별로 따로 둔다. 다른 버전에 설치해 둔 전역 CLI 는 이 저장소에서 보이지 않으므로 필요하면 Node 22 쪽에 다시 설치한다.
+
+### 계획 작성 이후 확정한 사항
+
+- **Task 0 을 Task 1 앞에 추가했다.** 계획 작성 시점에는 기준선이 초록이었으나 이후 날짜가 바뀌면서 `admin.test.ts` 4 건이 깨졌다. 아래 Task 0 절을 참고한다.
+- **Task 1 Step 1(`.nvmrc`)은 Task 0 커밋에 포함됐다.** Task 1 은 Step 2 부터 수행했다.
+- **최종 검증 체크리스트 12 항목 중 3 항목은 실제 Google 로그인이 필요하다.** 저장소가 브라우저용 fake OAuth 서버를 제공하지 않으므로 Task 10 전까지 Google Cloud Console 에서 OAuth 클라이언트를 준비해야 한다. redirect URI 는 `http://localhost:4000/auth/google/callback` 이다.
+
+---
+
+## Task 0: 기준선 테스트 복구
+
+> 계획 작성 이후 추가한 태스크다. 완료됐다.
+
+**Files:**
+- Modify: `apps/api/src/routes/admin.test.ts`
+
+`admin.test.ts` 의 `signedInStore()` 가 세션을 `2026-08-25T00:00:00.000Z` 로 고정 발급하는데 `sessionTtlSeconds` 가 28800(8 시간)이고, 만료 판정은 라우트 핸들러가 실제 시계로 한다(`auth/session.ts` 의 `requireAdminSession`). `app.inject()` 경로에는 `now` 를 주입할 수 없으므로 그 날이 지나는 순간부터 4 건이 모두 401 을 받았다. 작성 당일에만 통과하는 테스트였다.
+
+이후 모든 태스크가 `npm test` 통과를 완료 게이트로 쓰므로 기준선이 먼저 초록이어야 한다.
+
+- [x] **Step 1: 시계 의존 제거**
+
+세션을 실제 시각으로 발급하게 바꿨다. 프로덕션 경로인 `routes/auth.ts` 가 `now` 없이 호출하는 것과 같아진다. 단언은 하나도 바꾸지 않았다. 픽스처의 고정 날짜는 저장값일 뿐 시계와 비교되지 않으므로 그대로 뒀다.
+
+- [x] **Step 2: 같은 결함이 더 있는지 확인**
+
+`auth/session.test.ts` 도 날짜를 고정하지만 `createAdminSessionForUser` 와 `requireAdminSession` 양쪽에 `now` 를 넘겨 자기완결적이다. 이슈와 이벤트에 "최근 N 일" 같은 시간 창 필터가 없고, 시계와 비교하는 곳은 세션 만료·OAuth state 만료·레이트리밋 셋뿐이며 모두 `now` 주입이 되거나 자기 상대적이다. 추가 시한폭탄은 없다.
+
+- [x] **Step 3: Commit**
+
+커밋 `12b5ac6`. `.nvmrc` 를 함께 넣었다.
+
+---
+
 ## Global Constraints
 
 - 기본 언어는 한국어다. 프로젝트 논의, 스펙, 구현 요약, 커밋 메시지는 한국어로 작성한다. 코드 식별자, 명령어, 파일 경로, 패키지명, API 이름은 원문 언어를 유지한다.
@@ -162,7 +221,7 @@ export async function createProject(
 
 이 태스크는 기능을 바꾸지 않는다. 이후 모든 태스크의 검증이 안정적으로 돌게 만드는 준비 작업이다. 현재 셸 기본 Node가 v16이면 `npm test`가 시작조차 하지 못한다.
 
-- [ ] **Step 1: Node 버전 파일 추가**
+- [x] **Step 1: Node 버전 파일 추가** — Task 0 커밋(`12b5ac6`)에 포함됐다.
 
 Create `.nvmrc`:
 
@@ -170,7 +229,7 @@ Create `.nvmrc`:
 22
 ```
 
-- [ ] **Step 2: `engines` 필드 추가**
+- [x] **Step 2: `engines` 필드 추가**
 
 Modify `package.json` — `"private": true` 아래에 추가한다:
 
@@ -180,7 +239,7 @@ Modify `package.json` — `"private": true` 아래에 추가한다:
   },
 ```
 
-- [ ] **Step 3: 현재 테스트가 통과하는 것을 확인**
+- [x] **Step 3: 현재 테스트가 통과하는 것을 확인**
 
 Run:
 
@@ -193,7 +252,7 @@ Expected: `node -v`가 `v22.x` 이상. 테스트 17개 파일 121개 통과.
 
 `v16`이 나오면 Node 22로 전환한 뒤 다시 실행한다. `nvm`을 쓰면 `nvm use`가 `.nvmrc`를 읽는다.
 
-- [ ] **Step 4: 계약 테스트 파일 작성**
+- [x] **Step 4: 계약 테스트 파일 작성**
 
 Create `apps/api/src/store/store-contract.test.ts`. 기존 `admin-auth-store.test.ts`의 6개 검증을 store 팩토리를 받는 함수로 감싼다. `assertDeployableTraceStore` 검증은 store마다 기대값이 다르므로 팩토리와 함께 `expectedDurable`을 받는다:
 
@@ -398,7 +457,7 @@ function describeTraceStoreContract(
 describeTraceStoreContract("MemoryStore", () => ({ store: new MemoryStore() }), false);
 ```
 
-- [ ] **Step 5: 계약 테스트를 실행해 통과 확인**
+- [x] **Step 5: 계약 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -410,7 +469,7 @@ Expected: PASS. 7개 테스트 통과.
 
 기존 `admin-auth-store.test.ts`의 6개 검증이 모두 옮겨졌고, `saveBatch` 중복 무시 검증 1개가 추가되었다.
 
-- [ ] **Step 6: 이관 완료한 기존 테스트 삭제**
+- [x] **Step 6: 이관 완료한 기존 테스트 삭제**
 
 Run:
 
@@ -421,7 +480,7 @@ npm test
 
 Expected: 17개 파일 122개 통과. 파일 수는 같고(삭제 1, 추가 1) 테스트 수가 1개 늘어난다.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit** — 커밋 `7a14ace`. `.nvmrc` 는 이미 커밋돼 있어 `git add` 대상에서 뺐다.
 
 ```bash
 git add .nvmrc package.json apps/api/src/store/store-contract.test.ts
