@@ -19,15 +19,15 @@
 | 항목 | 값 |
 | --- | --- |
 | 브랜치 | `design/self-hosted-install` (base: `main`) |
-| 완료 | Task 0, Task 1, Task 2, Task 3, Task 4, Task 5, Task 6 |
-| 다음 | Task 7 — 번들 빌드, API 서버 서빙, 데모 사이트 전환 |
+| 완료 | Task 0 ~ Task 7 |
+| 다음 | Task 8 — Admin 설정 모듈과 프로젝트 선택 저장 |
 | 최종 갱신 | 2026-08-26 |
 
 검증 게이트 최근 실측값이다. 태스크마다 셋 다 통과해야 다음으로 넘어간다.
 
 | 명령 | 상태 |
 | --- | --- |
-| `npm test` | 20 파일 151 건 통과 |
+| `npm test` | 21 파일 154 건 통과 |
 | `npm run typecheck` | 통과 |
 | `npm run build` | 통과 |
 
@@ -41,6 +41,7 @@
 - **Task 0 을 Task 1 앞에 추가했다.** 계획 작성 시점에는 기준선이 초록이었으나 이후 날짜가 바뀌면서 `admin.test.ts` 4 건이 깨졌다. 아래 Task 0 절을 참고한다.
 - **Task 1 Step 1(`.nvmrc`)은 Task 0 커밋에 포함됐다.** Task 1 은 Step 2 부터 수행했다.
 - **Task 3 `SqliteStore`의 `totalEventsCount`는 `COUNT(*)`를 유지한다.** Global Constraints의 "집계는 SQL이 아니라 JS에서 한다"는 friction score, issue type distribution, top targets 같은 제품 집계 로직을 뜻한다. `totalEventsCount`는 온보딩 상태 확인용 단순 row count이고 Task 3 Step 5가 구체적으로 `COUNT`를 지시하므로 SQL count를 허용한다.
+- **로컬 기동에는 `NODE_ENV=development` 가 필요하다.** `auth/config.ts` 의 `assertDeployableAdminAuthConfig` 가 `COOKIE_SECURE=false` 를 `NODE_ENV` 가 `development` 나 `test` 일 때만 허용한다. `tsx watch` 는 `NODE_ENV` 를 설정하지 않으므로 지정하지 않으면 기동이 거부된다. Task 7 Step 9 의 수동 확인 블록과 Task 10 의 README 초안에 이 변수가 빠져 있어 채웠다. 현재 `README.md` 에도 같은 누락이 있으나 Task 10 이 전체를 다시 쓰므로 그때 해소된다.
 - **최종 검증 체크리스트 12 항목 중 3 항목은 실제 Google 로그인이 필요하다.** 저장소가 브라우저용 fake OAuth 서버를 제공하지 않으므로 Task 10 전까지 Google Cloud Console 에서 OAuth 클라이언트를 준비해야 한다. redirect URI 는 `http://localhost:4000/auth/google/callback` 이다.
 
 ---
@@ -2316,7 +2317,7 @@ self-hosted 모델에서 이미 실행 중인 API 서버가 번들을 서빙하�
 
 CORS는 현재 설정으로 이미 통과한다. `app.ts`의 delegator가 `/auth/`와 `/admin/api/`만 origin을 제한하고 나머지는 `origin: true`다.
 
-- [ ] **Step 1: SDK 번들 빌드 스크립트 추가**
+- [x] **Step 1: SDK 번들 빌드 스크립트 추가**
 
 Modify `packages/sdk/package.json` — `scripts`를 다음으로 교체한다:
 
@@ -2328,7 +2329,7 @@ Modify `packages/sdk/package.json` — `scripts`를 다음으로 교체한다:
   },
 ```
 
-- [ ] **Step 2: 번들이 생성되는지 확인**
+- [x] **Step 2: 번들이 생성되는지 확인**
 
 Run:
 
@@ -2340,7 +2341,7 @@ gzip -c packages/sdk/dist/trace.js | wc -c
 
 Expected: `dist/trace.js`가 생성되고 gzip 크기가 10,240 미만이다.
 
-- [ ] **Step 3: 실패하는 번들 서빙 테스트 작성**
+- [x] **Step 3: 실패하는 번들 서빙 테스트 작성**
 
 Create `apps/api/src/routes/sdk-bundle.test.ts`:
 
@@ -2399,7 +2400,7 @@ describe("GET /trace.js", () => {
 });
 ```
 
-- [ ] **Step 4: 테스트를 실행해 실패 확인**
+- [x] **Step 4: 테스트를 실행해 실패 확인**
 
 Run:
 
@@ -2409,7 +2410,7 @@ npm run test --workspace @trace/api -- src/routes/sdk-bundle.test.ts
 
 Expected: FAIL. `Failed to resolve import "./sdk-bundle.js"`.
 
-- [ ] **Step 5: 번들 서빙 라우트 구현**
+- [x] **Step 5: 번들 서빙 라우트 구현**
 
 Create `apps/api/src/routes/sdk-bundle.ts`:
 
@@ -2446,7 +2447,7 @@ export async function registerSdkBundleRoutes(
 }
 ```
 
-- [ ] **Step 6: 테스트를 실행해 통과 확인**
+- [x] **Step 6: 테스트를 실행해 통과 확인**
 
 Run:
 
@@ -2456,7 +2457,7 @@ npm run test --workspace @trace/api -- src/routes/sdk-bundle.test.ts
 
 Expected: PASS. 3개 통과.
 
-- [ ] **Step 7: 라우트를 앱에 등록**
+- [x] **Step 7: 라우트를 앱에 등록**
 
 Modify `apps/api/src/app.ts` — import에 추가한다:
 
@@ -2470,7 +2471,7 @@ import { registerSdkBundleRoutes } from "./routes/sdk-bundle.js";
   app.register(registerSdkBundleRoutes, {});
 ```
 
-- [ ] **Step 8: 데모 사이트를 script 태그 방식으로 전환**
+- [x] **Step 8: 데모 사이트를 script 태그 방식으로 전환**
 
 Modify `examples/demo-site/index.html` — `<script type="module">` 블록 전체를 다음으로 교체한다:
 
@@ -2489,7 +2490,7 @@ Modify `examples/demo-site/index.html` — `<script type="module">` 블록 전�
 
 `window.trace?.track('report_export_clicked')`를 쓰는 버튼은 그대로 둔다. `index.ts`가 `window.trace`를 계속 설정한다.
 
-- [ ] **Step 9: 수동 확인**
+- [x] **Step 9: 수동 확인**
 
 터미널 두 개를 쓴다.
 
@@ -2497,6 +2498,7 @@ Modify `examples/demo-site/index.html` — `<script type="module">` 블록 전�
 # 터미널 1
 npm run build --workspace @trace/shared
 npm run build --workspace @trace/sdk
+NODE_ENV=development \
 GOOGLE_CLIENT_ID=dummy \
 GOOGLE_CLIENT_SECRET=dummy \
 GOOGLE_REDIRECT_URI=http://localhost:4000/auth/google/callback \
@@ -2514,7 +2516,7 @@ curl -sI http://localhost:4000/trace.js | head -5
 
 Expected: `200`과 `content-type: application/javascript; charset=utf-8`.
 
-- [ ] **Step 10: 전체 검증**
+- [x] **Step 10: 전체 검증**
 
 Run:
 
@@ -2526,7 +2528,7 @@ npm run build
 
 Expected: 전부 통과.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add packages/sdk/package.json apps/api/src/routes/sdk-bundle.ts \
@@ -3338,6 +3340,7 @@ http://localhost:4000/auth/google/callback
 ### 3. API 서버 실행
 
 ```bash
+NODE_ENV=development \
 GOOGLE_CLIENT_ID=<client-id> \
 GOOGLE_CLIENT_SECRET=<client-secret> \
 GOOGLE_REDIRECT_URI=http://localhost:4000/auth/google/callback \
@@ -3347,6 +3350,8 @@ ADMIN_ALLOWED_EMAILS=<로그인할 Google 계정 이메일> \
 COOKIE_SECURE=false \
 npm run dev:api
 ```
+
+`COOKIE_SECURE=false`는 `NODE_ENV`가 `development`나 `test`일 때만 허용됩니다. HTTPS 없이 로컬에서 띄우려면 위처럼 둘을 함께 지정합니다.
 
 `ADMIN_ALLOWED_EMAILS`에 적은 이메일만 로그인할 수 있습니다. 데이터는 `./trace.db`에 저장되고 서버를 재시작해도 남습니다.
 
@@ -3421,7 +3426,8 @@ window.trace.consent.grant();
 | `ADMIN_APP_ORIGIN` | 필수 | — | 관리자 페이지 origin. CORS 허용 대상 |
 | `ADMIN_ALLOWED_EMAILS` | 필수 | — | 로그인 허용 이메일. 쉼표로 구분 |
 | `GOOGLE_ALLOWED_DOMAIN` | 선택 | — | 특정 Google Workspace 도메인으로 제한 |
-| `COOKIE_SECURE` | 선택 | `true` | 로컬 개발에서만 `false`로 둡니다 |
+| `NODE_ENV` | 선택 | — | `development` 또는 `test`일 때만 `COOKIE_SECURE=false`를 허용합니다 |
+| `COOKIE_SECURE` | 선택 | `true` | 로컬 개발에서만 `false`로 둡니다. `NODE_ENV`와 함께 지정합니다 |
 | `TRACE_DB_PATH` | 선택 | `./trace.db` | SQLite 데이터베이스 파일 경로 |
 | `PORT` | 선택 | `4000` | API 서버 포트 |
 | `SESSION_TTL_SECONDS` | 선택 | — | 세션 유효 기간 |
