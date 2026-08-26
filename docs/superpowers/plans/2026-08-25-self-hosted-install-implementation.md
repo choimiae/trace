@@ -3537,7 +3537,7 @@ rm -f trace.db trace.db-wal trace.db-shm
 
 브라우저 개발자 도구 콘솔을 한 번도 열지 않고 위 과정을 마쳐야 한다.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add README.md
