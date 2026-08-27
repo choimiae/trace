@@ -37,6 +37,13 @@ type AppState =
       csrfToken: string;
     }
   | {
+      type: "settings-not-found";
+      dashboardData: { summary: DashboardSummary; issues: Issue[] };
+      projectId: string;
+      userEmail: string;
+      csrfToken: string;
+    }
+  | {
       type: "settings";
       project: ProjectSettingsResponse;
       dashboardData: { summary: DashboardSummary; issues: Issue[] };
@@ -47,6 +54,22 @@ type AppState =
       error?: string | undefined;
       savedMessage?: string | undefined;
     };
+
+// 설정 조회/저장 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
+// apps/api/src/routes/admin-proxy.ts 의 GET/PATCH project settings 핸들러 기준.
+const PROJECT_SETTINGS_ERROR_MESSAGES: Record<string, string> = {
+  invalid_project_settings: "프로젝트 설정 값이 올바르지 않습니다.",
+  invalid_allowed_domains: "허용 도메인 형식이 올바르지 않습니다.",
+  project_role_forbidden: "이 작업을 수행할 권한이 없습니다.",
+  project_not_found: "프로젝트를 찾을 수 없습니다.",
+};
+
+function describeProjectSettingsError(error: unknown): string {
+  if (error instanceof ApiError) {
+    return PROJECT_SETTINGS_ERROR_MESSAGES[error.message] ?? "프로젝트 설정을 저장하지 못했습니다.";
+  }
+  return "프로젝트 설정을 저장하지 못했습니다.";
+}
 
 export function App() {
   const [state, setState] = useState<AppState>({ type: "loading" });
@@ -188,26 +211,60 @@ export function App() {
     );
   }
 
+  if (state.type === "settings-not-found") {
+    return (
+      <StatusPage
+        title="프로젝트를 찾을 수 없습니다."
+        action={{
+          label: "대시보드로 돌아가기",
+          onClick: () =>
+            setState({
+              type: "ready",
+              data: state.dashboardData,
+              projectId: state.projectId,
+              userEmail: state.userEmail,
+              csrfToken: state.csrfToken,
+            }),
+        }}
+      />
+    );
+  }
+
   const handleShowSettings = async () => {
     if (state.type !== "ready") return;
+    const projectId = state.projectId;
     try {
-      const project = await getProjectSettings(state.projectId);
-      setState({
-        type: "settings",
-        project,
-        dashboardData: state.data,
-        projectId: state.projectId,
-        userEmail: state.userEmail,
-        csrfToken: state.csrfToken,
-      });
+      const project = await getProjectSettings(projectId);
+      // 조회가 끝나기 전에 로그아웃 등으로 화면이 바뀌었다면 지연 응답으로
+      // 덮어쓰지 않는다.
+      setState((current) =>
+        current.type === "ready"
+          ? {
+              type: "settings",
+              project,
+              dashboardData: current.data,
+              projectId: current.projectId,
+              userEmail: current.userEmail,
+              csrfToken: current.csrfToken,
+            }
+          : current,
+      );
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        setState({ type: "login" });
-      } else if (error instanceof ApiError && error.status === 403) {
-        setState({ type: "forbidden" });
-      } else {
-        setState({ type: "network" });
-      }
+      setState((current) => {
+        if (current.type !== "ready") return current;
+        if (error instanceof ApiError && error.status === 401) return { type: "login" };
+        if (error instanceof ApiError && error.status === 403) return { type: "forbidden" };
+        if (error instanceof ApiError && error.status === 404) {
+          return {
+            type: "settings-not-found",
+            dashboardData: current.data,
+            projectId: current.projectId,
+            userEmail: current.userEmail,
+            csrfToken: current.csrfToken,
+          };
+        }
+        return { type: "network" };
+      });
     }
   };
 
@@ -231,7 +288,7 @@ export function App() {
             ? {
                 ...current,
                 saving: false,
-                error: error instanceof ApiError ? error.message : "프로젝트 설정을 저장하지 못했습니다.",
+                error: describeProjectSettingsError(error),
               }
             : current,
         );

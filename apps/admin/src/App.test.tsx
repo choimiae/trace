@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 
@@ -257,6 +257,23 @@ describe("App 프로젝트 설정", () => {
     expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("Demo");
   });
 
+  it("설정 조회에서 프로젝트를 찾지 못하면 대시보드로 돌아갈 수 있다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectSettings.mockRejectedValue(new api.ApiError(404, "project_not_found"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+
+    expect(await screen.findByRole("heading", { name: "프로젝트를 찾을 수 없습니다." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "대시보드로 돌아가기" }));
+    expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
+  });
+
   it("프로젝트 설정을 저장하고 성공 메시지를 보여준다", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
@@ -302,7 +319,7 @@ describe("App 프로젝트 설정", () => {
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
   });
 
-  it("프로젝트 설정 저장 실패를 화면에 표시한다", async () => {
+  it("프로젝트 설정 저장 실패를 한국어 안내로 표시한다", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
       projects: [{ projectId: "proj_demo", role: "owner" }],
@@ -316,7 +333,45 @@ describe("App 프로젝트 설정", () => {
     fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "New Demo" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
-    expect(await screen.findByText("invalid_project_settings")).toBeInTheDocument();
+    expect(await screen.findByText("프로젝트 설정 값이 올바르지 않습니다.")).toBeInTheDocument();
+    expect(screen.queryByText("invalid_project_settings")).not.toBeInTheDocument();
     expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("New Demo");
+  });
+
+  it("로그아웃 뒤 지연된 설정 조회 응답이 화면을 덮어쓰지 않는다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    let resolveSettings: (project: {
+      projectId: string;
+      name: string;
+      allowedDomains: string[];
+      role: "owner";
+    }) => void;
+    api.getProjectSettings.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSettings = resolve;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveSettings!({
+        projectId: "proj_demo",
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+        role: "owner",
+      });
+    });
+
+    expect(screen.getByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
   });
 });
