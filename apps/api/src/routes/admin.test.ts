@@ -252,6 +252,40 @@ describe("admin bff routes", () => {
     });
   });
 
+  it("returns 403 and audits when project settings are updated by a non-member", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const project = await store.createProject({
+      name: "Private",
+      allowedDomains: ["https://private.example.com"],
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: {
+        name: "Blocked",
+        allowedDomains: ["https://blocked.example.com"],
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_access_denied" });
+    expect(await store.getProject(project.projectId)).toMatchObject({
+      name: "Private",
+      allowedDomains: ["https://private.example.com"],
+    });
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "project_settings" },
+      }),
+    ]));
+  });
+
   it("rejects invalid project settings updates", async () => {
     const { store, user, cookie, csrfToken } = await signedInStore();
     const project = await store.createProject({
