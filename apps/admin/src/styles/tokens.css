@@ -36,6 +36,7 @@
   --status-warn: var(--amber-500);
   --status-serious: var(--orange-500);
   --status-crit: var(--red-500);
+  --shadow-drawer: rgb(22 32 43 / 18%);
 
   /* --- 간격 --- */
   --space-1: 2px;

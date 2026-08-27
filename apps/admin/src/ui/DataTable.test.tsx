@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import { DataTable } from "./DataTable.js";
 
 expect.extend(matchers);
+afterEach(cleanup);
 
 type Row = { id: string; name: string };
 

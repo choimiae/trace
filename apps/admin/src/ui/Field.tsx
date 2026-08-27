@@ -15,9 +15,11 @@ export function Field({
   onChange: (value: string) => void;
   placeholder?: string;
   hint?: string;
-  error?: string;
+  error?: string | undefined;
 }) {
   const hintId = hint ? `${id}-hint` : undefined;
+  const errorId = error ? `${id}-error` : undefined;
+  const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
 
   return (
     <div className="field">
@@ -29,7 +31,8 @@ export function Field({
         type="text"
         value={value}
         placeholder={placeholder}
-        aria-describedby={hintId}
+        aria-describedby={describedBy}
+        aria-invalid={error ? true : undefined}
         onChange={(event) => onChange(event.target.value)}
       />
       {hint ? (
@@ -37,7 +40,11 @@ export function Field({
           {hint}
         </span>
       ) : null}
-      {error ? <span className="field-error">{error}</span> : null}
+      {error ? (
+        <span className="field-error" id={errorId}>
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }

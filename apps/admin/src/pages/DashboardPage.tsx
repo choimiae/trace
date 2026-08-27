@@ -4,6 +4,7 @@ import { IssueTable } from "../components/IssueTable.js";
 import { MetricStrip } from "../components/MetricStrip.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
+import { Chip } from "../ui/Chip.js";
 
 const FrictionTrendChart = lazy(() =>
   import("../components/charts/FrictionTrendChart.js").then((module) => ({
@@ -46,9 +47,19 @@ export function DashboardPage({
         </div>
       </header>
       <MetricStrip summary={summary} />
-      <section className="insight">{summary.insight}</section>
+      <section className="insight">
+        <Chip status="crit" label="심각" />
+        <span>{summary.insight}</span>
+      </section>
       <section className="chart-grid" aria-label="막힘 분석 차트">
-        <Suspense fallback={<Card as="section" className="chart-panel" />}>
+        <Suspense
+          fallback={
+            <>
+              <Card as="section" className="chart-panel" />
+              <Card as="section" className="chart-panel" />
+            </>
+          }
+        >
           <FrictionTrendChart data={summary.trend} />
           <IssueTypeChart data={summary.issueTypeDistribution} />
         </Suspense>

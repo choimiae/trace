@@ -108,7 +108,7 @@ export function App() {
     };
   }, [state]);
 
-  if (state.type === "loading") return <main className="app-shell">불러오는 중</main>;
+  if (state.type === "loading") return <StatusPage title="불러오는 중" />;
 
   if (state.type === "login") {
     return (

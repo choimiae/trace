@@ -36,9 +36,8 @@ export function CreateProjectPage({
         onChange={setDomains}
         placeholder="http://localhost:5174"
         hint="이 프로젝트의 이벤트를 받을 사이트 주소입니다. 여러 개면 쉼표로 구분합니다."
+        error={error}
       />
-
-      {error ? <p className="field-error">{error}</p> : null}
 
       <Button
         variant="primary"
