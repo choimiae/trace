@@ -58,10 +58,13 @@ type AppState =
 // 설정 조회/저장 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
 // apps/api/src/routes/admin-proxy.ts 의 GET/PATCH project settings 핸들러 기준.
 const PROJECT_SETTINGS_ERROR_MESSAGES: Record<string, string> = {
-  invalid_project_settings: "프로젝트 설정 값이 올바르지 않습니다.",
-  invalid_allowed_domains: "허용 도메인 형식이 올바르지 않습니다.",
+  admin_auth_required: "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
+  csrf_origin_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
+  csrf_token_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
+  project_access_denied: "더 이상 이 프로젝트의 멤버가 아닙니다.",
   project_role_forbidden: "이 작업을 수행할 권한이 없습니다.",
   project_not_found: "프로젝트를 찾을 수 없습니다.",
+  invalid_project_settings: "프로젝트 설정 값이 올바르지 않습니다.",
 };
 
 function describeProjectSettingsError(error: unknown): string {

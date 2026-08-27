@@ -338,6 +338,24 @@ describe("App 프로젝트 설정", () => {
     expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("New Demo");
   });
 
+  it("멤버십이 해제된 상태로 저장하면 한국어 안내로 표시한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.updateProjectSettings.mockRejectedValue(new api.ApiError(403, "project_access_denied"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "New Demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByText("더 이상 이 프로젝트의 멤버가 아닙니다.")).toBeInTheDocument();
+    expect(screen.queryByText("project_access_denied")).not.toBeInTheDocument();
+  });
+
   it("로그아웃 뒤 지연된 설정 조회 응답이 화면을 덮어쓰지 않는다", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
