@@ -15,7 +15,9 @@ const api = vi.hoisted(() => ({
   getAuthMe: vi.fn(),
   createProject: vi.fn(),
   getDashboardData: vi.fn(),
+  getProjectSettings: vi.fn(),
   logout: vi.fn(),
+  updateProjectSettings: vi.fn(),
   getIssueDetail: vi.fn(),
   getSessionTimeline: vi.fn(),
 }));
@@ -25,7 +27,9 @@ vi.mock("./api", () => ({
   getAuthMe: api.getAuthMe,
   createProject: api.createProject,
   getDashboardData: api.getDashboardData,
+  getProjectSettings: api.getProjectSettings,
   logout: api.logout,
+  updateProjectSettings: api.updateProjectSettings,
   getIssueDetail: api.getIssueDetail,
   getSessionTimeline: api.getSessionTimeline,
 }));
@@ -62,6 +66,18 @@ beforeEach(() => {
       exampleSessionIds: ["sess_1"],
       status: "new",
     }],
+  });
+  api.getProjectSettings.mockResolvedValue({
+    projectId: "proj_demo",
+    name: "Demo",
+    allowedDomains: ["https://demo.example.com"],
+    role: "owner",
+  });
+  api.updateProjectSettings.mockResolvedValue({
+    projectId: "proj_demo",
+    name: "New Demo",
+    allowedDomains: ["https://new.example.com"],
+    role: "owner",
   });
 });
 
@@ -221,5 +237,86 @@ describe("App 온보딩", () => {
     fireEvent.click(await screen.findByRole("button", { name: "설치 안내" }));
 
     expect(await screen.findByRole("heading", { name: "스크립트를 붙여주세요." })).toBeInTheDocument();
+  });
+});
+
+describe("App 프로젝트 설정", () => {
+  it("대시보드에서 프로젝트 설정 화면으로 이동한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+
+    expect(api.getProjectSettings).toHaveBeenCalledWith("proj_demo");
+    expect(await screen.findByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
+    expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("Demo");
+  });
+
+  it("프로젝트 설정을 저장하고 성공 메시지를 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "New Demo" } });
+    fireEvent.change(screen.getByLabelText("허용 도메인"), {
+      target: { value: "https://new.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(api.updateProjectSettings).toHaveBeenCalledWith(
+      "proj_demo",
+      { name: "New Demo", allowedDomains: ["https://new.example.com"] },
+      "csrf_1",
+    );
+    expect(await screen.findByText("저장했습니다.")).toBeInTheDocument();
+  });
+
+  it("viewer는 프로젝트 설정을 읽기 전용으로 본다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "viewer@example.com", name: "Viewer" },
+      projects: [{ projectId: "proj_demo", role: "viewer" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectSettings.mockResolvedValue({
+      projectId: "proj_demo",
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+      role: "viewer",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+
+    expect(await screen.findByText("읽기 전용 권한입니다.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+  });
+
+  it("프로젝트 설정 저장 실패를 화면에 표시한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.updateProjectSettings.mockRejectedValue(new api.ApiError(400, "invalid_project_settings"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "New Demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByText("invalid_project_settings")).toBeInTheDocument();
+    expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("New Demo");
   });
 });

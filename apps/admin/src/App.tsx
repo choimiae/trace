@@ -1,12 +1,22 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
 import { useEffect, useState } from "react";
-import { ApiError, createProject, getAuthMe, getDashboardData, logout } from "./api.js";
+import {
+  ApiError,
+  createProject,
+  getAuthMe,
+  getDashboardData,
+  getProjectSettings,
+  logout,
+  updateProjectSettings,
+  type ProjectSettingsResponse,
+} from "./api.js";
 import { API_BASE_URL } from "./config.js";
 import { readSelectedProjectId, writeSelectedProjectId } from "./storage.js";
 import { CreateProjectPage } from "./pages/CreateProjectPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
+import { ProjectSettingsPage } from "./pages/ProjectSettingsPage.js";
 import { StatusPage } from "./pages/StatusPage.js";
 import "./styles/tokens.css";
 import "./styles/base.css";
@@ -25,6 +35,17 @@ type AppState =
       projectId: string;
       userEmail: string;
       csrfToken: string;
+    }
+  | {
+      type: "settings";
+      project: ProjectSettingsResponse;
+      dashboardData: { summary: DashboardSummary; issues: Issue[] };
+      projectId: string;
+      userEmail: string;
+      csrfToken: string;
+      saving?: boolean;
+      error?: string | undefined;
+      savedMessage?: string | undefined;
     };
 
 export function App() {
@@ -167,6 +188,76 @@ export function App() {
     );
   }
 
+  const handleShowSettings = async () => {
+    if (state.type !== "ready") return;
+    try {
+      const project = await getProjectSettings(state.projectId);
+      setState({
+        type: "settings",
+        project,
+        dashboardData: state.data,
+        projectId: state.projectId,
+        userEmail: state.userEmail,
+        csrfToken: state.csrfToken,
+      });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setState({ type: "login" });
+      } else if (error instanceof ApiError && error.status === 403) {
+        setState({ type: "forbidden" });
+      } else {
+        setState({ type: "network" });
+      }
+    }
+  };
+
+  if (state.type === "settings") {
+    const handleSaveSettings = async (input: { name: string; allowedDomains: string[] }) => {
+      setState((current) =>
+        current.type === "settings"
+          ? { ...current, saving: true, error: undefined, savedMessage: undefined }
+          : current,
+      );
+      try {
+        const project = await updateProjectSettings(state.projectId, input, state.csrfToken);
+        setState((current) =>
+          current.type === "settings"
+            ? { ...current, project, saving: false, savedMessage: "저장했습니다." }
+            : current,
+        );
+      } catch (error) {
+        setState((current) =>
+          current.type === "settings"
+            ? {
+                ...current,
+                saving: false,
+                error: error instanceof ApiError ? error.message : "프로젝트 설정을 저장하지 못했습니다.",
+              }
+            : current,
+        );
+      }
+    };
+
+    return (
+      <ProjectSettingsPage
+        project={state.project}
+        saving={state.saving ?? false}
+        error={state.error}
+        savedMessage={state.savedMessage}
+        onSave={(input) => { void handleSaveSettings(input); }}
+        onBack={() =>
+          setState({
+            type: "ready",
+            data: state.dashboardData,
+            projectId: state.projectId,
+            userEmail: state.userEmail,
+            csrfToken: state.csrfToken,
+          })
+        }
+      />
+    );
+  }
+
   const handleLogout = async () => {
     try {
       await logout(state.csrfToken);
@@ -199,6 +290,7 @@ export function App() {
             eventsSeen: state.data.summary.totalEventsCount,
           })
         }
+        onShowSettings={() => { void handleShowSettings(); }}
       />
       {selectedIssue ? <IssueDetailPage issue={selectedIssue} onClose={() => setSelectedIssue(undefined)} /> : null}
     </>

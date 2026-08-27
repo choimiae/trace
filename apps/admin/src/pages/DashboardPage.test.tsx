@@ -28,9 +28,25 @@ describe("DashboardPage", () => {
         userEmail="admin@example.com"
         onLogout={vi.fn()}
         onShowInstall={vi.fn()}
+        onShowSettings={vi.fn()}
       />,
     );
     expect(screen.getByText("심각")).toBeInTheDocument();
     expect(screen.getByText(summary.insight)).toBeInTheDocument();
+  });
+
+  it("프로젝트 설정 버튼을 보여준다", () => {
+    render(
+      <DashboardPage
+        summary={summary}
+        issues={[]}
+        userEmail="admin@example.com"
+        onLogout={vi.fn()}
+        onShowInstall={vi.fn()}
+        onShowSettings={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "프로젝트 설정" })).toBeInTheDocument();
   });
 });

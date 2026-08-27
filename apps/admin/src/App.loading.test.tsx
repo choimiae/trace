@@ -16,7 +16,9 @@ vi.mock("./api", () => ({
   getAuthMe: vi.fn(() => new Promise(() => undefined)),
   createProject: vi.fn(),
   getDashboardData: vi.fn(),
+  getProjectSettings: vi.fn(),
   logout: vi.fn(),
+  updateProjectSettings: vi.fn(),
   getSessionTimeline: vi.fn(),
 }));
 
