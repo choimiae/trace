@@ -66,8 +66,10 @@ function describeApiError(
   return fallback;
 }
 
-// 설정 조회/저장 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
-// apps/api/src/routes/admin-proxy.ts 의 GET/PATCH project settings 핸들러 기준.
+// 설정 저장(PATCH) 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
+// apps/api/src/routes/admin-proxy.ts 의 PATCH project settings 핸들러 기준.
+// 조회(GET) 경로는 handleShowSettings 에서 상태 코드로 직접 분기하므로 이 지도를 쓰지 않는다.
+// 401 admin_auth_required 는 login 화면으로 전이하므로 이 지도에 담지 않는다.
 const PROJECT_SETTINGS_ERROR_MESSAGES: Record<string, string> = {
   csrf_origin_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
   csrf_token_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
@@ -83,6 +85,7 @@ function describeProjectSettingsError(error: unknown): string {
 
 // 프로젝트 생성 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
 // apps/api/src/routes/admin-proxy.ts 의 POST project 핸들러(20-34) 기준.
+// 401 admin_auth_required 는 login 화면으로 전이하므로 이 지도에 담지 않는다.
 const CREATE_PROJECT_ERROR_MESSAGES: Record<string, string> = {
   csrf_origin_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
   csrf_token_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
