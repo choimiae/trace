@@ -8,6 +8,9 @@ export function Field({
   placeholder,
   hint,
   error,
+  multiline = false,
+  rows = 4,
+  disabled = false,
 }: {
   id: string;
   label: string;
@@ -16,6 +19,9 @@ export function Field({
   placeholder?: string;
   hint?: string;
   error?: string | undefined;
+  multiline?: boolean;
+  rows?: number;
+  disabled?: boolean;
 }) {
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
@@ -26,15 +32,29 @@ export function Field({
       {/* 힌트를 label 안에 두면 접근 가능한 이름에 힌트 문구가 붙어
           getByLabelText 로 조회되지 않는다. 반드시 밖에 둔다. */}
       <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        aria-describedby={describedBy}
-        aria-invalid={error ? true : undefined}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {multiline ? (
+        <textarea
+          id={id}
+          value={value}
+          rows={rows}
+          placeholder={placeholder}
+          disabled={disabled}
+          aria-describedby={describedBy}
+          aria-invalid={error ? true : undefined}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <input
+          id={id}
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          disabled={disabled}
+          aria-describedby={describedBy}
+          aria-invalid={error ? true : undefined}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
       {hint ? (
         <span className="field-description" id={hintId}>
           {hint}

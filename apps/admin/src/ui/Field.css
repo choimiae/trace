@@ -7,7 +7,8 @@
   text-align: left;
 }
 
-.field input {
+.field input,
+.field textarea {
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -16,7 +17,21 @@
   font: inherit;
 }
 
-.field input:focus-visible {
+.field textarea {
+  resize: vertical;
+  min-height: 104px;
+  line-height: 1.5;
+}
+
+.field input:disabled,
+.field textarea:disabled {
+  background: var(--surface-sunk);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible {
   border-color: var(--accent);
 }
 

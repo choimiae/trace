@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Field } from "./Field.js";
 
@@ -56,5 +56,39 @@ describe("Field", () => {
     );
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(document.getElementById("allowed-domains-error")).toHaveTextContent("invalid_allowed_domains");
+  });
+
+  it("multiline 이 true이면 textarea를 렌더링한다", () => {
+    const onChange = vi.fn();
+
+    render(
+      <Field
+        id="allowed-domains"
+        label="허용 도메인"
+        value={"https://example.com\nhttps://app.example.com"}
+        onChange={onChange}
+        multiline
+        rows={4}
+      />,
+    );
+
+    const field = screen.getByLabelText("허용 도메인");
+    expect(field.tagName).toBe("TEXTAREA");
+    fireEvent.change(field, { target: { value: "https://new.example.com" } });
+    expect(onChange).toHaveBeenCalledWith("https://new.example.com");
+  });
+
+  it("렌더링된 컨트롤에 disabled를 전달한다", () => {
+    render(
+      <Field
+        id="project-name"
+        label="프로젝트 이름"
+        value="Demo"
+        onChange={() => undefined}
+        disabled
+      />,
+    );
+
+    expect(screen.getByLabelText("프로젝트 이름")).toBeDisabled();
   });
 });
