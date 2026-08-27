@@ -1,6 +1,7 @@
 import type { Issue } from "@trace/shared";
 import { Eye } from "lucide-react";
 import { Button } from "../ui/Button.js";
+import { Chip, issueStatusToChip } from "../ui/Chip.js";
 
 export function IssueTable({
   issues,
@@ -36,7 +37,12 @@ export function IssueTable({
                   <strong>{issue.title}</strong>
                   <span>{issue.summary}</span>
                 </td>
-                <td>{issue.issueType}</td>
+                <td>
+                  {(() => {
+                    const chip = issueStatusToChip(issue.status);
+                    return <Chip status={chip.status} label={chip.label} />;
+                  })()}
+                </td>
                 <td>{issue.relatedUrlPath ?? "-"}</td>
                 <td>{issue.affectedSessionsCount}</td>
                 <td>{issue.severityScore}</td>

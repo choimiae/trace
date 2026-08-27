@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { getSessionTimeline } from "../api.js";
 import { SessionTimeline } from "../components/SessionTimeline.js";
 import { Button } from "../ui/Button.js";
+import { Chip, issueStatusToChip } from "../ui/Chip.js";
 
 export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () => void }) {
   const [timeline, setTimeline] = useState<SessionTimelineEvent[]>([]);
@@ -40,7 +41,12 @@ export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () 
         </div>
         <div>
           <dt>상태</dt>
-          <dd>{issue.status}</dd>
+          <dd>
+            {(() => {
+              const chip = issueStatusToChip(issue.status);
+              return <Chip status={chip.status} label={chip.label} />;
+            })()}
+          </dd>
         </div>
       </dl>
       <p className="detail-summary">{issue.summary}</p>
