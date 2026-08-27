@@ -7,7 +7,7 @@ import { CreateProjectPage } from "./pages/CreateProjectPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
-import { Button } from "./ui/Button.js";
+import { StatusPage } from "./pages/StatusPage.js";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles.css";
@@ -112,23 +112,20 @@ export function App() {
 
   if (state.type === "login") {
     return (
-      <main className="app-shell auth-state">
-        <p className="eyebrow">Trace 관리자</p>
-        <h1>관리자 로그인이 필요합니다.</h1>
-        <Button
-          variant="primary"
-          onClick={() => {
+      <StatusPage
+        title="관리자 로그인이 필요합니다."
+        action={{
+          label: "Google로 로그인",
+          onClick: () => {
             window.location.href = `${API_BASE_URL}/auth/google/start`;
-          }}
-        >
-          Google로 로그인
-        </Button>
-      </main>
+          },
+        }}
+      />
     );
   }
 
   if (state.type === "forbidden") {
-    return <AppMessage title="접근 권한이 없습니다." />;
+    return <StatusPage title="접근 권한이 없습니다." />;
   }
 
   if (state.type === "create-project") {
@@ -162,14 +159,11 @@ export function App() {
 
   if (state.type === "network") {
     return (
-      <main className="app-shell auth-state">
-        <p className="eyebrow">Trace 관리자</p>
-        <h1>연결할 수 없습니다.</h1>
-        <p>잠시 후 다시 시도해주세요.</p>
-        <Button variant="primary" onClick={() => setReloadKey((key) => key + 1)}>
-          다시 시도
-        </Button>
-      </main>
+      <StatusPage
+        title="연결할 수 없습니다."
+        description="잠시 후 다시 시도해주세요."
+        action={{ label: "다시 시도", onClick: () => setReloadKey((key) => key + 1) }}
+      />
     );
   }
 
@@ -208,15 +202,6 @@ export function App() {
       />
       {selectedIssue ? <IssueDetailPage issue={selectedIssue} onClose={() => setSelectedIssue(undefined)} /> : null}
     </>
-  );
-}
-
-function AppMessage({ title }: { title: string }) {
-  return (
-    <main className="app-shell auth-state">
-      <p className="eyebrow">Trace 관리자</p>
-      <h1>{title}</h1>
-    </main>
   );
 }
 
