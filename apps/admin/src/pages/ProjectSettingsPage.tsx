@@ -27,12 +27,28 @@ export function ProjectSettingsPage({
 }) {
   const [name, setName] = useState(project.name);
   const [domains, setDomains] = useState(project.allowedDomains.join("\n"));
+  const [successDismissed, setSuccessDismissed] = useState(false);
   const readOnly = project.role === "viewer";
 
   useEffect(() => {
     setName(project.name);
     setDomains(project.allowedDomains.join("\n"));
   }, [project.projectId, project.name, project.allowedDomains]);
+
+  // 새 저장 결과가 도착하면 성공 메시지를 다시 보여줄 수 있게 초기화한다.
+  useEffect(() => {
+    setSuccessDismissed(false);
+  }, [savedMessage]);
+
+  const handleNameChange = (value: string) => {
+    setName(value);
+    setSuccessDismissed(true);
+  };
+
+  const handleDomainsChange = (value: string) => {
+    setDomains(value);
+    setSuccessDismissed(true);
+  };
 
   const allowedDomains = domains
     .split("\n")
@@ -61,14 +77,14 @@ export function ProjectSettingsPage({
           id="settings-project-name"
           label="프로젝트 이름"
           value={name}
-          onChange={setName}
+          onChange={handleNameChange}
           disabled={readOnly || saving}
         />
         <Field
           id="settings-allowed-domains"
           label="허용 도메인"
           value={domains}
-          onChange={setDomains}
+          onChange={handleDomainsChange}
           multiline
           rows={5}
           disabled={readOnly || saving}
@@ -83,7 +99,9 @@ export function ProjectSettingsPage({
           >
             {saving ? "저장 중" : "저장"}
           </Button>
-          {savedMessage ? <span className="settings-success">{savedMessage}</span> : null}
+          {savedMessage && !successDismissed ? (
+            <span className="settings-success">{savedMessage}</span>
+          ) : null}
         </div>
       </Card>
     </main>

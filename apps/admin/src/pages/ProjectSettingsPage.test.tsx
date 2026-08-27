@@ -110,12 +110,27 @@ describe("ProjectSettingsPage", () => {
         project={ownerProject}
         onBack={() => undefined}
         onSave={() => undefined}
-        error="invalid_project_settings"
+        error="프로젝트 설정 값이 올바르지 않습니다."
         savedMessage="저장했습니다."
       />,
     );
 
-    expect(screen.getByText("invalid_project_settings")).toBeInTheDocument();
+    expect(screen.getByText("프로젝트 설정 값이 올바르지 않습니다.")).toBeInTheDocument();
     expect(screen.getByText("저장했습니다.")).toBeInTheDocument();
+  });
+
+  it("저장한 필드를 다시 수정하면 성공 메시지를 숨긴다", () => {
+    render(
+      <ProjectSettingsPage
+        project={ownerProject}
+        onBack={() => undefined}
+        onSave={() => undefined}
+        savedMessage="저장했습니다."
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "새 프로젝트" } });
+
+    expect(screen.queryByText("저장했습니다.")).not.toBeInTheDocument();
   });
 });
