@@ -69,7 +69,6 @@ function describeApiError(
 // 설정 조회/저장 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
 // apps/api/src/routes/admin-proxy.ts 의 GET/PATCH project settings 핸들러 기준.
 const PROJECT_SETTINGS_ERROR_MESSAGES: Record<string, string> = {
-  admin_auth_required: "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
   csrf_origin_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
   csrf_token_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
   project_access_denied: "더 이상 이 프로젝트의 멤버가 아닙니다.",
@@ -85,7 +84,6 @@ function describeProjectSettingsError(error: unknown): string {
 // 프로젝트 생성 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
 // apps/api/src/routes/admin-proxy.ts 의 POST project 핸들러(20-34) 기준.
 const CREATE_PROJECT_ERROR_MESSAGES: Record<string, string> = {
-  admin_auth_required: "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
   csrf_origin_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
   csrf_token_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
   invalid_allowed_domains: "허용 도메인 형식이 올바르지 않습니다.",
@@ -203,10 +201,14 @@ export function App() {
         writeSelectedProjectId(project.projectId);
         setState({ type: "install", projectId: project.projectId, eventsSeen: 0 });
       } catch (error) {
-        setState({
-          type: "create-project",
-          csrfToken: state.csrfToken,
-          createError: describeCreateProjectError(error),
+        setState((current) => {
+          if (current.type !== "create-project") return current;
+          if (error instanceof ApiError && error.status === 401) return { type: "login" };
+          return {
+            type: "create-project",
+            csrfToken: current.csrfToken,
+            createError: describeCreateProjectError(error),
+          };
         });
       }
     };
@@ -307,15 +309,15 @@ export function App() {
             : current,
         );
       } catch (error) {
-        setState((current) =>
-          current.type === "settings"
-            ? {
-                ...current,
-                saving: false,
-                error: describeProjectSettingsError(error),
-              }
-            : current,
-        );
+        setState((current) => {
+          if (current.type !== "settings") return current;
+          if (error instanceof ApiError && error.status === 401) return { type: "login" };
+          return {
+            ...current,
+            saving: false,
+            error: describeProjectSettingsError(error),
+          };
+        });
       }
     };
 

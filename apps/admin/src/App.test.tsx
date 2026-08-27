@@ -226,6 +226,20 @@ describe("App 온보딩", () => {
     expect(screen.queryByText("invalid_allowed_domains")).not.toBeInTheDocument();
   });
 
+  it("프로젝트 생성이 401을 받으면 로그인 화면으로 전환한다", async () => {
+    api.getAuthMe.mockResolvedValue(emptyAuth);
+    api.createProject.mockRejectedValue(new api.ApiError(401, "admin_auth_required"));
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "내 사이트" } });
+    fireEvent.change(screen.getByLabelText("허용 도메인"), { target: { value: "http://localhost:5174" } });
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
+
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "첫 프로젝트를 만들어주세요." })).not.toBeInTheDocument();
+  });
+
   it("대시보드에서 설치 안내로 돌아갈 수 있다", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
@@ -355,6 +369,24 @@ describe("App 프로젝트 설정", () => {
 
     expect(await screen.findByText("더 이상 이 프로젝트의 멤버가 아닙니다.")).toBeInTheDocument();
     expect(screen.queryByText("project_access_denied")).not.toBeInTheDocument();
+  });
+
+  it("설정 저장이 401을 받으면 로그인 화면으로 전환한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.updateProjectSettings.mockRejectedValue(new api.ApiError(401, "admin_auth_required"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "New Demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
   });
 
   it("로그아웃 뒤 지연된 설정 조회 응답이 화면을 덮어쓰지 않는다", async () => {
