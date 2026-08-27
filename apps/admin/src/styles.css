@@ -62,7 +62,6 @@
   margin-bottom: 16px;
 }
 
-.metric-strip div,
 .chart-panel,
 .table-panel,
 .detail-drawer {
@@ -71,7 +70,7 @@
   background: var(--surface);
 }
 
-.metric-strip div {
+.metric-strip .card {
   min-height: 96px;
   padding: 18px;
 }
@@ -85,10 +84,11 @@
 
 .metric-strip strong {
   display: block;
-  margin-top: 10px;
+  margin-top: var(--space-4);
   color: var(--accent);
-  font-size: 2rem;
+  font-size: var(--text-2xl);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .insight {

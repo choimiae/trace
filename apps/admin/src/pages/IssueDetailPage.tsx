@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { getSessionTimeline } from "../api.js";
 import { SessionTimeline } from "../components/SessionTimeline.js";
 import { Button } from "../ui/Button.js";
+import { Card } from "../ui/Card.js";
 import { Chip, issueStatusToChip } from "../ui/Chip.js";
 
 export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () => void }) {
@@ -20,7 +21,7 @@ export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () 
   }, [issue.projectId, sessionId]);
 
   return (
-    <aside className="detail-drawer" aria-label="문제 상세">
+    <Card as="aside" className="detail-drawer" aria-label="문제 상세">
       <div className="detail-header">
         <div>
           <p className="eyebrow">문제 상세</p>
@@ -51,6 +52,6 @@ export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () 
       </dl>
       <p className="detail-summary">{issue.summary}</p>
       <SessionTimeline events={timeline} />
-    </aside>
+    </Card>
   );
 }
