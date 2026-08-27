@@ -20,7 +20,7 @@
   border-color: var(--accent);
 }
 
-.field-hint {
+.field-description {
   color: var(--ink-muted);
   font-size: var(--text-md);
 }

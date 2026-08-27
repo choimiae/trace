@@ -10,7 +10,7 @@ import { IssueDetailPage } from "./pages/IssueDetailPage.js";
 import { StatusPage } from "./pages/StatusPage.js";
 import "./styles/tokens.css";
 import "./styles/base.css";
-import "./styles.css";
+import "./pages/pages.css";
 
 type AppState =
   | { type: "loading" }

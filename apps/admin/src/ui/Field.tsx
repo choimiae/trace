@@ -33,7 +33,7 @@ export function Field({
         onChange={(event) => onChange(event.target.value)}
       />
       {hint ? (
-        <span className="field-hint" id={hintId}>
+        <span className="field-description" id={hintId}>
           {hint}
         </span>
       ) : null}

@@ -31,7 +31,7 @@ export function InstallPage({
         {arrived ? "대시보드 보기" : "대시보드로 이동"}
       </Button>
 
-      <p className="field-hint">
+      <p className="install-note">
         프로젝트 ID는 <code>{projectId}</code>입니다. 동의 배너를 쓰는 사이트는{" "}
         <code>data-consent="pending"</code>을 추가하고 <code>window.trace.consent.grant()</code>로
         수집을 시작하세요.
