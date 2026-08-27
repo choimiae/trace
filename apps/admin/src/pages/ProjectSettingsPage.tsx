@@ -91,7 +91,7 @@ export function ProjectSettingsPage({
 }
 
 function roleLabel(role: ProjectSettingsViewModel["role"]): string {
-  if (role === "owner") return "Owner";
-  if (role === "admin") return "Admin";
-  return "Viewer";
+  if (role === "owner") return "소유자";
+  if (role === "admin") return "관리자";
+  return "조회자";
 }

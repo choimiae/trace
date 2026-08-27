@@ -25,6 +25,7 @@ describe("ProjectSettingsPage", () => {
     );
 
     expect(screen.getByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
+    expect(screen.getByText("소유자")).toBeInTheDocument();
     expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("Demo");
     expect(screen.getByLabelText("허용 도메인")).toHaveValue(
       "https://demo.example.com\nhttps://app.example.com",
@@ -54,6 +55,25 @@ describe("ProjectSettingsPage", () => {
     });
   });
 
+  it("allows admins to save project settings", () => {
+    const onSave = vi.fn();
+    render(
+      <ProjectSettingsPage
+        project={{ ...ownerProject, role: "admin" }}
+        onBack={() => undefined}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(screen.getByText("관리자")).toBeInTheDocument();
+    expect(onSave).toHaveBeenCalledWith({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com", "https://app.example.com"],
+    });
+  });
+
   it("disables saving when required fields are empty", () => {
     render(
       <ProjectSettingsPage
@@ -78,6 +98,7 @@ describe("ProjectSettingsPage", () => {
     );
 
     expect(screen.getByText("읽기 전용 권한입니다.")).toBeInTheDocument();
+    expect(screen.getByText("조회자")).toBeInTheDocument();
     expect(screen.getByLabelText("프로젝트 이름")).toBeDisabled();
     expect(screen.getByLabelText("허용 도메인")).toBeDisabled();
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
