@@ -76,7 +76,7 @@
 ```css
 /* 색·간격·타이포의 단일 출처. 컴포넌트는 의미값 층만 참조한다.
    값의 근거는 docs/superpowers/specs/2026-08-26-admin-ui-refresh-design.md 참고.
-   기존 청록 #117a7a 는 채도 0.086 으로 기준 미달이라 회색으로 읽혀 교체했다. */
+   기존 청록은 채도 0.086 으로 기준 미달이라 회색으로 읽혀 교체했다. */
 
 :root {
   /* --- 원시값: 중성 (slate) --- */
@@ -237,7 +237,7 @@ import "./styles.css";
 | `#ffffff` | `var(--surface)` |
 | `#66767f` · `#5b6b7c` · `#44525a` | `var(--ink-muted)` |
 | `#d8e1e8` · `#e6ecef` · `#d9e1ea` · `#ccd7dc` | `var(--border)` |
-| `#117a7a` | `var(--accent)` |
+| 기존 청록 | `var(--accent)` |
 | `#c4542d` | `var(--status-serious)` |
 | `#fff7f2` | `var(--accent-soft)` |
 | `#71351e` | `var(--ink)` |
@@ -261,7 +261,7 @@ npm run dev:api   # 터미널 1
 npm run dev:admin # 터미널 2
 ```
 
-`http://localhost:5173` 에서 로그인 화면과 대시보드가 감청 액센트에 slate 바탕으로 보이는지, 어디에도 이전 청록(`#117a7a`)이 남지 않았는지 확인한다.
+`http://localhost:5173` 에서 로그인 화면과 대시보드가 감청 액센트에 slate 바탕으로 보이는지, 어디에도 이전 청록 리터럴이 남지 않았는지 확인한다.
 
 - [ ] **Step 7: 3게이트**
 
@@ -1558,7 +1558,7 @@ git commit -m "관리자: styles.css 를 해체하고 토큰 체계로 마무리
 - [ ] 기존 `App.test.tsx` 를 **한 줄도 고치지 않고** 통과한다.
 - [ ] `grep -rn "recharts" apps/admin/src | grep -v "src/components/charts/"` 가 비어 있다.
 - [ ] `tokens.css` 와 `ui/Chip.css` 외의 파일에 hex 색이 없다.
-- [ ] `#117a7a` 가 저장소 어디에도 남아 있지 않다.
+- [ ] 이전 청록 리터럴이 저장소 어디에도 남아 있지 않다.
 - [ ] 차트가 별도 청크로 분리되고, 설치 경로 3화면에서 내려오지 않는다.
 - [ ] 상태 표시가 전부 점 + 글자를 함께 쓴다.
 - [ ] 창을 좁혔을 때 차트가 잘리지 않는다.
