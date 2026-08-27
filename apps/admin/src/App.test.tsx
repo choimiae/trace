@@ -222,7 +222,8 @@ describe("App 온보딩", () => {
     fireEvent.change(screen.getByLabelText("허용 도메인"), { target: { value: "localhost" } });
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
 
-    expect(await screen.findByText("invalid_allowed_domains")).toBeInTheDocument();
+    expect(await screen.findByText("허용 도메인 형식이 올바르지 않습니다.")).toBeInTheDocument();
+    expect(screen.queryByText("invalid_allowed_domains")).not.toBeInTheDocument();
   });
 
   it("대시보드에서 설치 안내로 돌아갈 수 있다", async () => {
