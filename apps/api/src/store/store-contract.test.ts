@@ -258,6 +258,30 @@ function describeTraceStoreContract(
         }),
       ).resolves.toBeUndefined();
     });
+
+    it("프로젝트 수정 시 허용 도메인을 origin으로 정규화하고 중복을 제거한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Old",
+        allowedDomains: ["https://old.example.com"],
+      });
+
+      const updated = await store.updateProject(project.projectId, {
+        name: "New",
+        allowedDomains: [
+          "https://example.com/path?source=docs",
+          "https://example.com",
+          "https://example.com/other",
+          "https://app.example.com/settings#overview",
+        ],
+      });
+
+      expect(updated?.allowedDomains).toEqual(["https://example.com", "https://app.example.com"]);
+      expect((await store.getProject(project.projectId))?.allowedDomains).toEqual([
+        "https://example.com",
+        "https://app.example.com",
+      ]);
+    });
   });
 }
 

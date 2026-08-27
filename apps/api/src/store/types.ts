@@ -18,6 +18,10 @@ export interface UpdateProjectInput {
   allowedDomains: string[];
 }
 
+export function normalizeAllowedDomains(domains: string[]): string[] {
+  return Array.from(new Set(domains.map((domain) => new URL(domain).origin)));
+}
+
 export type AdminRole = "owner" | "admin" | "viewer";
 
 export interface AdminUserRecord {

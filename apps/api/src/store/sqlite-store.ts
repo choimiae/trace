@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
 import { buildDashboardSummary } from "./dashboard-summary.js";
+import { normalizeAllowedDomains } from "./types.js";
 import type {
   AddProjectMembershipInput,
   AdminRole,
@@ -80,15 +81,16 @@ export class SqliteStore implements TraceStore {
   async updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectRecord | undefined> {
     const existing = await this.getProject(projectId);
     if (!existing) return undefined;
+    const allowedDomains = normalizeAllowedDomains(input.allowedDomains);
 
     this.db
       .prepare(`UPDATE projects SET name = ?, allowed_domains = ? WHERE project_id = ?`)
-      .run(input.name, JSON.stringify(input.allowedDomains), projectId);
+      .run(input.name, JSON.stringify(allowedDomains), projectId);
 
     return {
       ...existing,
       name: input.name,
-      allowedDomains: input.allowedDomains,
+      allowedDomains,
     };
   }
 

@@ -1,6 +1,7 @@
 import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
 import { buildDashboardSummary } from "./dashboard-summary.js";
+import { normalizeAllowedDomains } from "./types.js";
 import type {
   AddProjectMembershipInput,
   AdminSessionRecord,
@@ -51,7 +52,7 @@ export class MemoryStore implements TraceStore {
     const updated: ProjectRecord = {
       ...existing,
       name: input.name,
-      allowedDomains: input.allowedDomains,
+      allowedDomains: normalizeAllowedDomains(input.allowedDomains),
     };
     this.projects.set(projectId, updated);
     return updated;
