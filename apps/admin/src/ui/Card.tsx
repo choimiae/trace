@@ -9,7 +9,7 @@ export function Card({
 }: {
   as?: "div" | "section" | "aside";
   className?: string;
-  children: ReactNode;
+  children?: ReactNode;
   "aria-label"?: string;
 }) {
   return (

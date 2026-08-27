@@ -1,9 +1,21 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
-import { FrictionTrendChart } from "../components/charts/FrictionTrendChart.js";
+import { lazy, Suspense } from "react";
 import { IssueTable } from "../components/IssueTable.js";
-import { IssueTypeChart } from "../components/charts/IssueTypeChart.js";
 import { MetricStrip } from "../components/MetricStrip.js";
 import { Button } from "../ui/Button.js";
+import { Card } from "../ui/Card.js";
+
+const FrictionTrendChart = lazy(() =>
+  import("../components/charts/FrictionTrendChart.js").then((module) => ({
+    default: module.FrictionTrendChart,
+  })),
+);
+
+const IssueTypeChart = lazy(() =>
+  import("../components/charts/IssueTypeChart.js").then((module) => ({
+    default: module.IssueTypeChart,
+  })),
+);
 
 export function DashboardPage({
   summary,
@@ -36,8 +48,10 @@ export function DashboardPage({
       <MetricStrip summary={summary} />
       <section className="insight">{summary.insight}</section>
       <section className="chart-grid" aria-label="막힘 분석 차트">
-        <FrictionTrendChart data={summary.trend} />
-        <IssueTypeChart data={summary.issueTypeDistribution} />
+        <Suspense fallback={<Card as="section" className="chart-panel" />}>
+          <FrictionTrendChart data={summary.trend} />
+          <IssueTypeChart data={summary.issueTypeDistribution} />
+        </Suspense>
       </section>
       <IssueTable issues={issues} onSelectIssue={onSelectIssue} />
     </main>
