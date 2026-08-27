@@ -85,6 +85,211 @@ describe("admin bff routes", () => {
     expect(project?.allowedDomains).toEqual(["http://localhost:5174", "https://demo.example.com"]);
   });
 
+  it("returns project settings with the signed-in member role", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "admin",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      projectId: project.projectId,
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+      role: "admin",
+    });
+  });
+
+  it("returns 403 and audits when project settings are requested by a non-member", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Private",
+      allowedDomains: ["https://private.example.com"],
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_access_denied" });
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "project_settings" },
+      }),
+    ]));
+  });
+
+  it("lets an owner update project settings and audits the change", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const project = await store.createProject({
+      name: "Old",
+      allowedDomains: ["https://old.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: {
+        name: "New",
+        allowedDomains: ["https://new.example.com/path", "https://new.example.com"],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      projectId: project.projectId,
+      name: "New",
+      allowedDomains: ["https://new.example.com"],
+      role: "owner",
+    });
+    expect(await store.getProject(project.projectId)).toMatchObject({
+      name: "New",
+      allowedDomains: ["https://new.example.com"],
+    });
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.updated",
+        projectId: project.projectId,
+        metadata: {
+          before: { name: "Old", allowedDomains: ["https://old.example.com"] },
+          after: { name: "New", allowedDomains: ["https://new.example.com"] },
+        },
+      }),
+    ]));
+  });
+
+  it("lets an admin update project settings", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const project = await store.createProject({
+      name: "Old",
+      allowedDomains: ["https://old.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "admin",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: {
+        name: "Admin Updated",
+        allowedDomains: ["https://admin.example.com"],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      name: "Admin Updated",
+      allowedDomains: ["https://admin.example.com"],
+      role: "admin",
+    });
+  });
+
+  it("rejects project settings updates from a viewer", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const project = await store.createProject({
+      name: "Viewer Project",
+      allowedDomains: ["https://viewer.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "viewer",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: {
+        name: "Blocked",
+        allowedDomains: ["https://blocked.example.com"],
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_role_forbidden" });
+    expect(await store.getProject(project.projectId)).toMatchObject({
+      name: "Viewer Project",
+      allowedDomains: ["https://viewer.example.com"],
+    });
+  });
+
+  it("rejects invalid project settings updates", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const responses = await Promise.all([
+      app.inject({
+        method: "PATCH",
+        url: `/admin/api/projects/${project.projectId}`,
+        headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+        payload: { name: "", allowedDomains: ["https://demo.example.com"] },
+      }),
+      app.inject({
+        method: "PATCH",
+        url: `/admin/api/projects/${project.projectId}`,
+        headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+        payload: { name: "Demo", allowedDomains: [] },
+      }),
+      app.inject({
+        method: "PATCH",
+        url: `/admin/api/projects/${project.projectId}`,
+        headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+        payload: { name: "Demo", allowedDomains: ["localhost"] },
+      }),
+    ]);
+
+    expect(responses.map((response) => response.statusCode)).toEqual([400, 400, 400]);
+  });
+
   it("returns 403 when the signed-in admin lacks project membership", async () => {
     const { store, cookie } = await signedInStore();
     const project = await store.createProject({ name: "Private", allowedDomains: ["https://private.example.com"] });
