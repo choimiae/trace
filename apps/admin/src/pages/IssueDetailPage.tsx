@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getSessionTimeline } from "../api.js";
 import { SessionTimeline } from "../components/SessionTimeline.js";
+import { Button } from "../ui/Button.js";
 
 export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () => void }) {
   const [timeline, setTimeline] = useState<SessionTimelineEvent[]>([]);
@@ -24,9 +25,9 @@ export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () 
           <p className="eyebrow">문제 상세</p>
           <h2>{issue.title}</h2>
         </div>
-        <button className="icon-button" type="button" onClick={onClose} aria-label="닫기">
+        <Button variant="icon" aria-label="닫기" onClick={onClose}>
           <X aria-hidden="true" size={18} />
-        </button>
+        </Button>
       </div>
       <dl className="detail-metrics">
         <div>

@@ -1,3 +1,5 @@
+import { Button } from "../ui/Button.js";
+
 export function InstallPage({
   projectId,
   snippet,
@@ -25,9 +27,9 @@ export function InstallPage({
         {arrived ? "첫 이벤트가 도착했습니다." : "아직 이벤트를 기다리고 있습니다."}
       </p>
 
-      <button type="button" className="primary-button" onClick={onContinue}>
+      <Button variant="primary" onClick={onContinue}>
         {arrived ? "대시보드 보기" : "대시보드로 이동"}
-      </button>
+      </Button>
 
       <p className="field-hint">
         프로젝트 ID는 <code>{projectId}</code>입니다. 동의 배너를 쓰는 사이트는{" "}

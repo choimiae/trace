@@ -7,6 +7,7 @@ import { CreateProjectPage } from "./pages/CreateProjectPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
+import { Button } from "./ui/Button.js";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles.css";
@@ -114,9 +115,14 @@ export function App() {
       <main className="app-shell auth-state">
         <p className="eyebrow">Trace 관리자</p>
         <h1>관리자 로그인이 필요합니다.</h1>
-        <button type="button" className="primary-button" onClick={() => { window.location.href = `${API_BASE_URL}/auth/google/start`; }}>
+        <Button
+          variant="primary"
+          onClick={() => {
+            window.location.href = `${API_BASE_URL}/auth/google/start`;
+          }}
+        >
           Google로 로그인
-        </button>
+        </Button>
       </main>
     );
   }
@@ -160,7 +166,9 @@ export function App() {
         <p className="eyebrow">Trace 관리자</p>
         <h1>연결할 수 없습니다.</h1>
         <p>잠시 후 다시 시도해주세요.</p>
-        <button type="button" className="primary-button" onClick={() => setReloadKey((key) => key + 1)}>다시 시도</button>
+        <Button variant="primary" onClick={() => setReloadKey((key) => key + 1)}>
+          다시 시도
+        </Button>
       </main>
     );
   }

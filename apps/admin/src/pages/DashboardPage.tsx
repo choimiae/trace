@@ -3,6 +3,7 @@ import { FrictionTrendChart } from "../components/FrictionTrendChart.js";
 import { IssueTable } from "../components/IssueTable.js";
 import { IssueTypeChart } from "../components/IssueTypeChart.js";
 import { MetricStrip } from "../components/MetricStrip.js";
+import { Button } from "../ui/Button.js";
 
 export function DashboardPage({
   summary,
@@ -28,8 +29,8 @@ export function DashboardPage({
         </div>
         <div className="header-actions">
           <span className="user-email">{userEmail}</span>
-          <button className="secondary-button" type="button" onClick={onShowInstall}>설치 안내</button>
-          <button className="secondary-button" type="button" onClick={onLogout}>로그아웃</button>
+          <Button onClick={onShowInstall}>설치 안내</Button>
+          <Button onClick={onLogout}>로그아웃</Button>
         </div>
       </header>
       <MetricStrip summary={summary} />

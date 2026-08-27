@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "../ui/Button.js";
 
 export function CreateProjectPage({
   onCreate,
@@ -55,14 +56,13 @@ export function CreateProjectPage({
 
       {error ? <p className="field-error">{error}</p> : null}
 
-      <button
-        type="button"
-        className="primary-button"
+      <Button
+        variant="primary"
         disabled={name.trim().length === 0 || domains.trim().length === 0}
         onClick={submit}
       >
         프로젝트 만들기
-      </button>
+      </Button>
     </main>
   );
 }

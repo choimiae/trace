@@ -1,5 +1,6 @@
 import type { Issue } from "@trace/shared";
 import { Eye } from "lucide-react";
+import { Button } from "../ui/Button.js";
 
 export function IssueTable({
   issues,
@@ -40,14 +41,9 @@ export function IssueTable({
                 <td>{issue.affectedSessionsCount}</td>
                 <td>{issue.severityScore}</td>
                 <td>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={() => onSelectIssue?.(issue)}
-                    aria-label={`${issue.title} 보기`}
-                  >
+                  <Button variant="icon" aria-label={`${issue.title} 보기`} onClick={() => onSelectIssue?.(issue)}>
                     <Eye aria-hidden="true" size={18} />
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
