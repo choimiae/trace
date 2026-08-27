@@ -1,9 +1,18 @@
 import type { DashboardSummary, Issue, SessionTimelineEvent } from "@trace/shared";
 import { API_BASE_URL } from "./config.js";
 
+export type ProjectRole = "owner" | "admin" | "viewer";
+
+export interface ProjectSettingsResponse {
+  projectId: string;
+  name: string;
+  allowedDomains: string[];
+  role: ProjectRole;
+}
+
 export interface AuthMeResponse {
   user: { adminUserId: string; email: string; name?: string; pictureUrl?: string };
-  projects: Array<{ projectId: string; role: "owner" | "admin" | "viewer" }>;
+  projects: Array<{ projectId: string; role: ProjectRole }>;
   csrfToken: string;
 }
 
@@ -38,6 +47,24 @@ export async function createProject(
   });
 
   return response.json() as Promise<{ projectId: string }>;
+}
+
+export async function getProjectSettings(projectId: string): Promise<ProjectSettingsResponse> {
+  return getJson<ProjectSettingsResponse>(`/admin/api/projects/${projectId}`);
+}
+
+export async function updateProjectSettings(
+  projectId: string,
+  input: { name: string; allowedDomains: string[] },
+  csrfToken: string,
+): Promise<ProjectSettingsResponse> {
+  const response = await ensureSuccess(`/admin/api/projects/${projectId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", "x-trace-csrf": csrfToken },
+    body: JSON.stringify(input),
+  });
+
+  return response.json() as Promise<ProjectSettingsResponse>;
 }
 
 export async function getDashboardData(projectId: string): Promise<{ summary: DashboardSummary; issues: Issue[] }> {
