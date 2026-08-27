@@ -264,7 +264,9 @@ export function App() {
     if (state.type !== "ready") return;
     const projectId = state.projectId;
     setState((current) =>
-      current.type === "ready" ? { ...current, settingsError: undefined } : current,
+      current.type === "ready" && current.settingsError !== undefined
+        ? { ...current, settingsError: undefined }
+        : current,
     );
     try {
       const project = await getProjectSettings(projectId);

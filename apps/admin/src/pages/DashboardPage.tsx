@@ -52,7 +52,7 @@ export function DashboardPage({
         </div>
       </header>
       {settingsError ? (
-        <p className="settings-error-notice" role="alert">
+        <p className="dashboard-notice" role="alert">
           {settingsError}
         </p>
       ) : null}

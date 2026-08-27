@@ -35,6 +35,15 @@
   width: fit-content;
 }
 
+.dashboard-notice {
+  margin-bottom: var(--space-5);
+  border-left: 3px solid var(--status-crit);
+  background: var(--surface-sunk);
+  padding: 12px 14px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
 .metric-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -213,15 +222,6 @@
 .settings-notice {
   margin-bottom: var(--space-5);
   border-left: 3px solid var(--status-warn);
-  background: var(--surface-sunk);
-  padding: 12px 14px;
-  color: var(--ink);
-  font-weight: 700;
-}
-
-.settings-error-notice {
-  margin-bottom: var(--space-5);
-  border-left: 3px solid var(--status-crit);
   background: var(--surface-sunk);
   padding: 12px 14px;
   color: var(--ink);
