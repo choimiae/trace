@@ -1,0 +1,67 @@
+/* 색·간격·타이포의 단일 출처. 컴포넌트는 의미값 층만 참조한다.
+   값의 근거는 docs/superpowers/specs/2026-08-26-admin-ui-refresh-design.md 참고.
+   기존 청록 #117a7a 는 채도 0.086 으로 기준 미달이라 회색으로 읽혀 교체했다. */
+
+:root {
+  /* --- 원시값: 중성 (slate) --- */
+  --slate-50: #f5f7fa;
+  --slate-100: #eef2f7;
+  --slate-200: #dde4ec;
+  --slate-500: #64748b;
+  --slate-400: #94a3b8;
+  --slate-900: #16202b;
+  --white: #ffffff;
+
+  /* --- 원시값: 액센트 (감청) --- */
+  --navy-600: #1e6091;
+  --navy-50: #f0f5fa;
+
+  /* --- 원시값: 상태 (고정, 테마를 타지 않는다) --- */
+  --green-500: #0ca30c;
+  --amber-500: #fab219;
+  --orange-500: #ec835a;
+  --red-500: #d03b3b;
+
+  /* --- 의미값 --- */
+  --ground: var(--slate-50);
+  --surface: var(--white);
+  --surface-sunk: var(--slate-100);
+  --border: var(--slate-200);
+  --ink: var(--slate-900);
+  --ink-muted: var(--slate-500);
+  --ink-faint: var(--slate-400);
+  --accent: var(--navy-600);
+  --accent-soft: var(--navy-50);
+  --status-good: var(--green-500);
+  --status-warn: var(--amber-500);
+  --status-serious: var(--orange-500);
+  --status-crit: var(--red-500);
+
+  /* --- 간격 --- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 24px;
+
+  /* --- 타이포 --- */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 19px;
+  --text-2xl: 22px;
+  --text-3xl: 26px;
+
+  /* --- 반경 --- */
+  --radius-sm: 4px;
+  --radius: 7px;
+  --radius-pill: 999px;
+
+  /* --- 밀도: 이 셋만 갈아끼우면 밀도가 바뀐다 --- */
+  --pad: 12px;
+  --row-y: 8px;
+  --body: 13px;
+}

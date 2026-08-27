@@ -7,6 +7,8 @@ import { CreateProjectPage } from "./pages/CreateProjectPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
+import "./styles/tokens.css";
+import "./styles/base.css";
 import "./styles.css";
 
 type AppState =
