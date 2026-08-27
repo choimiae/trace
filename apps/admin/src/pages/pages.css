@@ -219,6 +219,15 @@
   font-weight: 700;
 }
 
+.settings-error-notice {
+  margin-bottom: var(--space-5);
+  border-left: 3px solid var(--status-crit);
+  background: var(--surface-sunk);
+  padding: 12px 14px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
 .settings-panel {
   display: grid;
   gap: var(--space-5);

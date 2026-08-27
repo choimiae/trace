@@ -22,6 +22,7 @@ export function DashboardPage({
   summary,
   issues,
   userEmail,
+  settingsError,
   onLogout,
   onSelectIssue,
   onShowInstall,
@@ -30,6 +31,7 @@ export function DashboardPage({
   summary: DashboardSummary;
   issues: Issue[];
   userEmail: string;
+  settingsError?: string | undefined;
   onLogout: () => void;
   onSelectIssue?: ((issue: Issue) => void) | undefined;
   onShowInstall: () => void;
@@ -49,6 +51,11 @@ export function DashboardPage({
           <Button onClick={onLogout}>로그아웃</Button>
         </div>
       </header>
+      {settingsError ? (
+        <p className="settings-error-notice" role="alert">
+          {settingsError}
+        </p>
+      ) : null}
       <MetricStrip summary={summary} />
       <section className="insight">
         <Chip status="crit" label="심각" />

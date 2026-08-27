@@ -425,4 +425,40 @@ describe("App 프로젝트 설정", () => {
     expect(screen.getByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
   });
+
+  it("설정 조회가 403이면 대시보드에 남아 인라인 안내를 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectSettings.mockRejectedValueOnce(new api.ApiError(403, "project_access_denied"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+
+    expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("접근 권한이 없습니다.");
+    expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
+  });
+
+  it("재시도하면 이전 안내가 사라진다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectSettings.mockRejectedValueOnce(new api.ApiError(403, "project_access_denied"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("접근 권한이 없습니다.");
+
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 설정" }));
+
+    expect(await screen.findByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

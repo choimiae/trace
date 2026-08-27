@@ -35,6 +35,7 @@ type AppState =
       projectId: string;
       userEmail: string;
       csrfToken: string;
+      settingsError?: string | undefined;
     }
   | {
       type: "settings-not-found";
@@ -262,6 +263,9 @@ export function App() {
   const handleShowSettings = async () => {
     if (state.type !== "ready") return;
     const projectId = state.projectId;
+    setState((current) =>
+      current.type === "ready" ? { ...current, settingsError: undefined } : current,
+    );
     try {
       const project = await getProjectSettings(projectId);
       // 조회가 끝나기 전에 로그아웃 등으로 화면이 바뀌었다면 지연 응답으로
@@ -282,7 +286,9 @@ export function App() {
       setState((current) => {
         if (current.type !== "ready") return current;
         if (error instanceof ApiError && error.status === 401) return { type: "login" };
-        if (error instanceof ApiError && error.status === 403) return { type: "forbidden" };
+        if (error instanceof ApiError && error.status === 403) {
+          return { ...current, settingsError: "접근 권한이 없습니다." };
+        }
         if (error instanceof ApiError && error.status === 404) {
           return {
             type: "settings-not-found",
@@ -367,6 +373,7 @@ export function App() {
         summary={state.data.summary}
         issues={state.data.issues}
         userEmail={state.userEmail}
+        settingsError={state.settingsError}
         onLogout={() => { void handleLogout(); }}
         onSelectIssue={setSelectedIssue}
         onShowInstall={() =>
