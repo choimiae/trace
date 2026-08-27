@@ -1,7 +1,7 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
-import { FrictionTrendChart } from "../components/FrictionTrendChart.js";
+import { FrictionTrendChart } from "../components/charts/FrictionTrendChart.js";
 import { IssueTable } from "../components/IssueTable.js";
-import { IssueTypeChart } from "../components/IssueTypeChart.js";
+import { IssueTypeChart } from "../components/charts/IssueTypeChart.js";
 import { MetricStrip } from "../components/MetricStrip.js";
 import { Button } from "../ui/Button.js";
 
