@@ -15,6 +15,7 @@ import type {
   ProjectMembershipRecord,
   ProjectRecord,
   TraceStore,
+  UpdateProjectInput,
   UpsertAdminUserFromGoogleInput,
 } from "./types.js";
 
@@ -73,6 +74,21 @@ export class SqliteStore implements TraceStore {
       allowedDomains: JSON.parse(row.allowed_domains as string) as string[],
       privacyConfig: JSON.parse(row.privacy_config as string) as ProjectRecord["privacyConfig"],
       createdAt: row.created_at as string,
+    };
+  }
+
+  async updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectRecord | undefined> {
+    const existing = await this.getProject(projectId);
+    if (!existing) return undefined;
+
+    this.db
+      .prepare(`UPDATE projects SET name = ?, allowed_domains = ? WHERE project_id = ?`)
+      .run(input.name, JSON.stringify(input.allowedDomains), projectId);
+
+    return {
+      ...existing,
+      name: input.name,
+      allowedDomains: input.allowedDomains,
     };
   }
 

@@ -225,6 +225,39 @@ function describeTraceStoreContract(
 
       expect((await store.getDashboardSummary(project.projectId)).totalEventsCount).toBe(1);
     });
+
+    it("프로젝트 이름과 허용 도메인을 수정한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Old",
+        allowedDomains: ["https://old.example.com"],
+      });
+
+      const updated = await store.updateProject(project.projectId, {
+        name: "New",
+        allowedDomains: ["https://new.example.com", "https://app.example.com"],
+      });
+
+      expect(updated).toMatchObject({
+        projectId: project.projectId,
+        name: "New",
+        allowedDomains: ["https://new.example.com", "https://app.example.com"],
+        privacyConfig: project.privacyConfig,
+        createdAt: project.createdAt,
+      });
+      expect(await store.getProject(project.projectId)).toEqual(updated);
+    });
+
+    it("없는 프로젝트 수정은 undefined를 반환한다", async () => {
+      const store = open();
+
+      await expect(
+        store.updateProject("proj_missing", {
+          name: "Missing",
+          allowedDomains: ["https://missing.example.com"],
+        }),
+      ).resolves.toBeUndefined();
+    });
   });
 }
 

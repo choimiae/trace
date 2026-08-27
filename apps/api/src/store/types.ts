@@ -13,6 +13,11 @@ export interface CreateProjectInput {
   allowedDomains: string[];
 }
 
+export interface UpdateProjectInput {
+  name: string;
+  allowedDomains: string[];
+}
+
 export type AdminRole = "owner" | "admin" | "viewer";
 
 export interface AdminUserRecord {
@@ -91,6 +96,7 @@ export interface TraceStore {
   readonly isDurable?: boolean;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
+  updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectRecord | undefined>;
   upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord>;
   getAdminUser(adminUserId: string): Promise<AdminUserRecord | undefined>;
   createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord>;

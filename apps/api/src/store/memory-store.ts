@@ -12,6 +12,7 @@ import type {
   ProjectMembershipRecord,
   ProjectRecord,
   TraceStore,
+  UpdateProjectInput,
   UpsertAdminUserFromGoogleInput,
 } from "./types.js";
 
@@ -41,6 +42,19 @@ export class MemoryStore implements TraceStore {
 
   async getProject(projectId: string): Promise<ProjectRecord | undefined> {
     return this.projects.get(projectId);
+  }
+
+  async updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectRecord | undefined> {
+    const existing = this.projects.get(projectId);
+    if (!existing) return undefined;
+
+    const updated: ProjectRecord = {
+      ...existing,
+      name: input.name,
+      allowedDomains: input.allowedDomains,
+    };
+    this.projects.set(projectId, updated);
+    return updated;
   }
 
   async upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord> {
