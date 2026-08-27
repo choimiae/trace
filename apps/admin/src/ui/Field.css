@@ -1,0 +1,31 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-6) 0;
+  max-width: 420px;
+  text-align: left;
+}
+
+.field input {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.field input:focus-visible {
+  border-color: var(--accent);
+}
+
+.field-hint {
+  color: var(--ink-muted);
+  font-size: var(--text-md);
+}
+
+.field-error {
+  color: var(--status-crit);
+  font-size: var(--text-md);
+}
