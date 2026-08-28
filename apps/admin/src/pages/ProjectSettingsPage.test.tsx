@@ -30,6 +30,16 @@ const members = [
   },
 ];
 
+const missingMemberProps = (
+  // @ts-expect-error ProjectSettingsPage requires member data and an add handler.
+  <ProjectSettingsPage
+    project={ownerProject}
+    onBack={() => undefined}
+    onSave={() => undefined}
+  />
+);
+void missingMemberProps;
+
 describe("ProjectSettingsPage", () => {
   it("renders editable project settings for owners", () => {
     render(

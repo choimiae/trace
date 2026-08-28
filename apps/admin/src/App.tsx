@@ -344,10 +344,12 @@ export function App() {
     return (
       <ProjectSettingsPage
         project={state.project}
+        members={[]}
         saving={state.saving ?? false}
         error={state.error}
         savedMessage={state.savedMessage}
         onSave={(input) => { void handleSaveSettings(input); }}
+        onAddMember={() => undefined}
         onBack={() =>
           setState({
             type: "ready",

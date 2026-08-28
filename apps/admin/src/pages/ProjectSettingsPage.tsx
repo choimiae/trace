@@ -13,10 +13,10 @@ export interface ProjectSettingsViewModel {
 
 interface ProjectSettingsPageProps {
   project: ProjectSettingsViewModel;
-  members?: ProjectMemberResponse[];
+  members: ProjectMemberResponse[];
   onBack: () => void;
   onSave: (input: { name: string; allowedDomains: string[] }) => void;
-  onAddMember?: (input: AddProjectMemberInput) => void;
+  onAddMember: (input: AddProjectMemberInput) => void;
   saving?: boolean;
   addingMember?: boolean;
   error?: string | undefined;
@@ -27,10 +27,10 @@ interface ProjectSettingsPageProps {
 
 export function ProjectSettingsPage({
   project,
-  members = [],
+  members,
   onBack,
   onSave,
-  onAddMember = () => undefined,
+  onAddMember,
   saving = false,
   addingMember = false,
   error,
