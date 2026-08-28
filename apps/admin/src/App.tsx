@@ -13,7 +13,7 @@ import {
 import { API_BASE_URL } from "./config.js";
 import { readSelectedProjectId, writeSelectedProjectId } from "./storage.js";
 import { CreateProjectPage } from "./pages/CreateProjectPage.js";
-import { DashboardPage } from "./pages/DashboardPage.js";
+import { DashboardPage, type ProjectOption } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
 import { ProjectSettingsPage } from "./pages/ProjectSettingsPage.js";
@@ -32,6 +32,7 @@ type AppState =
   | {
       type: "ready";
       data: { summary: DashboardSummary; issues: Issue[] };
+      projects: ProjectOption[];
       projectId: string;
       userEmail: string;
       csrfToken: string;
@@ -40,6 +41,7 @@ type AppState =
   | {
       type: "settings-not-found";
       dashboardData: { summary: DashboardSummary; issues: Issue[] };
+      projects: ProjectOption[];
       projectId: string;
       userEmail: string;
       csrfToken: string;
@@ -48,6 +50,7 @@ type AppState =
       type: "settings";
       project: ProjectSettingsResponse;
       dashboardData: { summary: DashboardSummary; issues: Issue[] };
+      projects: ProjectOption[];
       projectId: string;
       userEmail: string;
       csrfToken: string;
@@ -128,6 +131,7 @@ export function App() {
           setState({
             type: "ready",
             data,
+            projects: auth.projects,
             projectId,
             userEmail: auth.user.email,
             csrfToken: auth.csrfToken,
@@ -251,6 +255,7 @@ export function App() {
             setState({
               type: "ready",
               data: state.dashboardData,
+              projects: state.projects,
               projectId: state.projectId,
               userEmail: state.userEmail,
               csrfToken: state.csrfToken,
@@ -278,6 +283,7 @@ export function App() {
               type: "settings",
               project,
               dashboardData: current.data,
+              projects: current.projects,
               projectId: current.projectId,
               userEmail: current.userEmail,
               csrfToken: current.csrfToken,
@@ -295,6 +301,7 @@ export function App() {
           return {
             type: "settings-not-found",
             dashboardData: current.data,
+            projects: current.projects,
             projectId: current.projectId,
             userEmail: current.userEmail,
             csrfToken: current.csrfToken,
@@ -343,6 +350,7 @@ export function App() {
           setState({
             type: "ready",
             data: state.dashboardData,
+            projects: state.projects,
             projectId: state.projectId,
             userEmail: state.userEmail,
             csrfToken: state.csrfToken,
@@ -375,6 +383,9 @@ export function App() {
         summary={state.data.summary}
         issues={state.data.issues}
         userEmail={state.userEmail}
+        projects={state.projects}
+        projectId={state.projectId}
+        onSelectProject={() => {}}
         settingsError={state.settingsError}
         onLogout={() => { void handleLogout(); }}
         onSelectIssue={setSelectedIssue}

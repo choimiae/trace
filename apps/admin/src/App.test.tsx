@@ -46,6 +46,34 @@ const baseSummary = {
   topTargets: [{ label: "/settings", count: 42 }],
 };
 
+function dashboardDataFor(projectId: string) {
+  return {
+    summary: Object.assign({}, baseSummary, {
+      insight: `${projectId} 인사이트`,
+    }),
+    issues: [{
+      issueId: `${projectId}_issue`,
+      projectId,
+      issueType: "rage_click" as const,
+      title: `${projectId} 설정 화면에서 반복 클릭`,
+      summary: "같은 버튼을 반복 클릭했습니다.",
+      affectedSessionsCount: 42,
+      affectedUsersCount: 42,
+      severityScore: 82,
+      firstSeenAt: "2026-08-24T00:00:00.000Z",
+      lastSeenAt: "2026-08-24T00:00:00.000Z",
+      trend: "up" as const,
+      relatedUrlPath: "/settings",
+      exampleSessionIds: ["sess_1"],
+      status: "new" as const,
+    }],
+  };
+}
+
+function mockDashboardDataByProject() {
+  api.getDashboardData.mockImplementation((projectId: string) => Promise.resolve(dashboardDataFor(projectId)));
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   api.getDashboardData.mockResolvedValue({
@@ -252,6 +280,61 @@ describe("App 온보딩", () => {
     fireEvent.click(await screen.findByRole("button", { name: "설치 안내" }));
 
     expect(await screen.findByRole("heading", { name: "스크립트를 붙여주세요." })).toBeInTheDocument();
+  });
+});
+
+describe("App 프로젝트 전환 초기 상태", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    mockDashboardDataByProject();
+  });
+
+  it("단일 프로젝트 계정에서도 프로젝트 select를 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("프로젝트")).toHaveValue("proj_demo");
+  });
+
+  it("저장된 프로젝트가 현재 계정 프로젝트면 그 프로젝트로 대시보드를 조회한다", async () => {
+    window.localStorage.setItem("trace.selectedProjectId", "proj_second");
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "viewer" },
+      ],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("프로젝트")).toHaveValue("proj_second");
+    expect(api.getDashboardData).toHaveBeenCalledWith("proj_second");
+    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+  });
+
+  it("저장된 프로젝트가 현재 계정 프로젝트가 아니면 첫 번째 프로젝트로 fallback한다", async () => {
+    window.localStorage.setItem("trace.selectedProjectId", "proj_removed");
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "viewer" },
+      ],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("프로젝트")).toHaveValue("proj_demo");
+    expect(api.getDashboardData).toHaveBeenCalledWith("proj_demo");
+    expect(window.localStorage.getItem("trace.selectedProjectId")).toBe("proj_demo");
   });
 });
 
