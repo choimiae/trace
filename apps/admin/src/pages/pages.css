@@ -28,7 +28,7 @@
 .project-switcher select {
   min-width: 150px;
   max-width: 220px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
   padding: 7px 28px 7px 10px;

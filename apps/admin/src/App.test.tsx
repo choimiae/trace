@@ -632,6 +632,46 @@ describe("App 프로젝트 설정", () => {
     expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
   });
 
+  it("이전 프로젝트의 지연된 설정 조회가 전환한 프로젝트의 대시보드를 덮어쓰지 않는다", async () => {
+    const staleSettings = {
+      projectId: "proj_demo",
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+      role: "owner" as const,
+    };
+    let resolveSettings!: (value: typeof staleSettings) => void;
+
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "admin" },
+      ],
+      csrfToken: "csrf_1",
+    });
+    api.getDashboardData.mockImplementation((projectId: string) => Promise.resolve(dashboardDataFor(projectId)));
+    api.getProjectSettings.mockImplementationOnce(
+      () => new Promise<typeof staleSettings>((resolve) => {
+        resolveSettings = resolve;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    expect(api.getProjectSettings).toHaveBeenCalledWith("proj_demo");
+
+    fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "proj_second" } });
+    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveSettings(staleSettings);
+    });
+
+    expect(screen.getByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
+  });
+
   it("로그아웃 뒤 지연된 설정 조회 응답이 화면을 덮어쓰지 않는다", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },

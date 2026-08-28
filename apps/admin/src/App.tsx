@@ -275,10 +275,10 @@ export function App() {
     );
     try {
       const project = await getProjectSettings(projectId);
-      // 조회가 끝나기 전에 로그아웃 등으로 화면이 바뀌었다면 지연 응답으로
-      // 덮어쓰지 않는다.
+      // 조회가 끝나기 전에 로그아웃하거나 다른 프로젝트로 전환했다면 지연
+      // 응답으로 현재 화면을 덮어쓰지 않는다.
       setState((current) =>
-        current.type === "ready"
+        current.type === "ready" && current.projectId === projectId
           ? {
               type: "settings",
               project,
@@ -292,7 +292,7 @@ export function App() {
       );
     } catch (error) {
       setState((current) => {
-        if (current.type !== "ready") return current;
+        if (current.type !== "ready" || current.projectId !== projectId) return current;
         if (error instanceof ApiError && error.status === 401) return { type: "login" };
         if (error instanceof ApiError && error.status === 403) {
           return { ...current, settingsError: "접근 권한이 없습니다." };
@@ -314,21 +314,23 @@ export function App() {
 
   if (state.type === "settings") {
     const handleSaveSettings = async (input: { name: string; allowedDomains: string[] }) => {
+      const projectId = state.projectId;
+      const csrfToken = state.csrfToken;
       setState((current) =>
-        current.type === "settings"
+        current.type === "settings" && current.projectId === projectId
           ? { ...current, saving: true, error: undefined, savedMessage: undefined }
           : current,
       );
       try {
-        const project = await updateProjectSettings(state.projectId, input, state.csrfToken);
+        const project = await updateProjectSettings(projectId, input, csrfToken);
         setState((current) =>
-          current.type === "settings"
+          current.type === "settings" && current.projectId === projectId
             ? { ...current, project, saving: false, savedMessage: "저장했습니다." }
             : current,
         );
       } catch (error) {
         setState((current) => {
-          if (current.type !== "settings") return current;
+          if (current.type !== "settings" || current.projectId !== projectId) return current;
           if (error instanceof ApiError && error.status === 401) return { type: "login" };
           return {
             ...current,
