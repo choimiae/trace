@@ -5,7 +5,7 @@ import { parseCookieHeader } from "../auth/cookies.js";
 import { verifyCsrfRequest } from "../auth/csrf.js";
 import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js";
 import type { AdminRole, AdminUserRecord, ProjectMembershipRecord, ProjectRecord, TraceStore } from "../store/types.js";
-import { createProjectSchema, updateProjectSchema } from "./admin.js";
+import { addProjectMemberSchema, createProjectSchema, updateProjectSchema } from "./admin.js";
 
 const projectParamsSchema = z.object({ projectId: z.string() });
 const issueParamsSchema = z.object({ issueId: z.string() });
@@ -86,6 +86,61 @@ export async function registerAdminProxyRoutes(
     );
 
     return members.filter((member): member is ProjectMemberResponse => member !== undefined);
+  });
+
+  app.post("/admin/api/projects/:projectId/members", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const csrf = verifyCsrfRequest({
+      method: request.method,
+      origin: request.headers.origin,
+      referer: request.headers.referer,
+      adminAppOrigin: options.config.adminAppOrigin,
+      csrfCookie: parseCookieHeader(request.headers.cookie).get(options.config.csrfCookieName),
+      csrfHeader: firstHeaderValue(request.headers["x-trace-csrf"]),
+    });
+    if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
+
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const access = await getProjectAccess(options.store, projectId, authenticated, "project_members");
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+    if (access.membership.role !== "owner") {
+      return reply.code(403).send({ error: "project_role_forbidden" });
+    }
+
+    const parsed = addProjectMemberSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_project_member" });
+
+    const user = await options.store.getAdminUserByEmail(parsed.data.email);
+    if (!user) return reply.code(404).send({ error: "admin_user_not_found" });
+
+    const existing = await options.store.getProjectMembership(projectId, user.adminUserId);
+    if (existing) return reply.code(409).send({ error: "project_member_exists" });
+
+    const createdAt = new Date().toISOString();
+    const membership = await options.store.addProjectMembership({
+      projectId,
+      adminUserId: user.adminUserId,
+      role: parsed.data.role,
+      createdAt,
+    });
+
+    await options.store.createAuditLog({
+      adminUserId: authenticated.adminUserId,
+      action: "project.member_added",
+      projectId,
+      createdAt,
+      metadata: {
+        addedAdminUserId: user.adminUserId,
+        email: user.email,
+        role: parsed.data.role,
+      },
+    });
+
+    return reply.code(201).send(toProjectMemberResponse(membership, user));
   });
 
   app.patch("/admin/api/projects/:projectId", async (request, reply) => {

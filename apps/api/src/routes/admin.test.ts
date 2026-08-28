@@ -191,6 +191,162 @@ describe("admin bff routes", () => {
     ]);
   });
 
+  it("lets an owner add an existing admin user as a project member", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const added = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_added",
+      email: "added@example.com",
+      emailVerified: true,
+      name: "Added User",
+      now: "2026-08-25T00:01:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: { email: "ADDED@example.com", role: "viewer" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      adminUserId: added.adminUserId,
+      email: "added@example.com",
+      name: "Added User",
+      role: "viewer",
+    });
+    expect(await store.getProjectMembership(project.projectId, added.adminUserId)).toMatchObject({
+      role: "viewer",
+    });
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.member_added",
+        projectId: project.projectId,
+        metadata: {
+          addedAdminUserId: added.adminUserId,
+          email: "added@example.com",
+          role: "viewer",
+        },
+      }),
+    ]));
+  });
+
+  it("lets an owner add an existing admin user as admin", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const added = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_added_admin",
+      email: "added-admin@example.com",
+      emailVerified: true,
+      now: "2026-08-25T00:01:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: { email: "added-admin@example.com", role: "admin" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      adminUserId: added.adminUserId,
+      email: "added-admin@example.com",
+      role: "admin",
+    });
+  });
+
+  it("rejects project member creation from admin and viewer members", async () => {
+    for (const role of ["admin", "viewer"] as const) {
+      const { store, user, cookie, csrfToken } = await signedInStore();
+      const project = await store.createProject({
+        name: `Demo ${role}`,
+        allowedDomains: [`https://${role}.example.com`],
+      });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: user.adminUserId,
+        role,
+        createdAt: "2026-08-27T00:00:00.000Z",
+      });
+      const app = createApp({ store, authConfig });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/admin/api/projects/${project.projectId}/members`,
+        headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+        payload: { email: "new@example.com", role: "viewer" },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "project_role_forbidden" });
+    }
+  });
+
+  it("rejects missing users, duplicate members, and invalid member roles", async () => {
+    const { store, user, cookie, csrfToken } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const missing = await app.inject({
+      method: "POST",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: { email: "missing@example.com", role: "viewer" },
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: "admin_user_not_found" });
+
+    const duplicate = await app.inject({
+      method: "POST",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: { email: "admin@example.com", role: "viewer" },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toEqual({ error: "project_member_exists" });
+
+    const invalidRole = await app.inject({
+      method: "POST",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: { email: "admin@example.com", role: "owner" },
+    });
+    expect(invalidRole.statusCode).toBe(400);
+    expect(invalidRole.json()).toEqual({ error: "invalid_project_member" });
+  });
+
   it("returns 403 and audits when members are requested by a non-member", async () => {
     const { store, user, cookie } = await signedInStore();
     const project = await store.createProject({

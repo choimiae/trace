@@ -9,3 +9,8 @@ export const projectSettingsSchema = z.object({
 
 export const createProjectSchema = projectSettingsSchema;
 export const updateProjectSchema = projectSettingsSchema;
+
+export const addProjectMemberSchema = z.object({
+  email: z.string().trim().email().transform((email) => email.toLowerCase()),
+  role: z.enum(["admin", "viewer"]),
+});
