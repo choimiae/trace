@@ -16,6 +16,26 @@
   font-size: 0.85rem;
 }
 
+.project-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.project-switcher select {
+  min-width: 150px;
+  max-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 7px 28px 7px 10px;
+  color: var(--ink);
+  font: inherit;
+}
+
 .auth-state {
   display: grid;
   align-content: center;

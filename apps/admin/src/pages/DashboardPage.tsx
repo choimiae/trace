@@ -18,10 +18,18 @@ const IssueTypeChart = lazy(() =>
   })),
 );
 
+export type ProjectOption = {
+  projectId: string;
+  role: "owner" | "admin" | "viewer";
+};
+
 export function DashboardPage({
   summary,
   issues,
   userEmail,
+  projects = [],
+  projectId = "",
+  onSelectProject = () => {},
   settingsError,
   onLogout,
   onSelectIssue,
@@ -31,6 +39,9 @@ export function DashboardPage({
   summary: DashboardSummary;
   issues: Issue[];
   userEmail: string;
+  projects: ProjectOption[];
+  projectId: string;
+  onSelectProject: (projectId: string) => void;
   settingsError?: string | undefined;
   onLogout: () => void;
   onSelectIssue?: ((issue: Issue) => void) | undefined;
@@ -45,6 +56,16 @@ export function DashboardPage({
           <h1>문제 인박스</h1>
         </div>
         <div className="header-actions">
+          <label className="project-switcher">
+            <span>프로젝트</span>
+            <select value={projectId} onChange={(event) => onSelectProject(event.currentTarget.value)}>
+              {projects.map((project) => (
+                <option key={project.projectId} value={project.projectId}>
+                  {project.projectId}
+                </option>
+              ))}
+            </select>
+          </label>
           <span className="user-email">{userEmail}</span>
           <Button onClick={onShowSettings}>프로젝트 설정</Button>
           <Button onClick={onShowInstall}>설치 안내</Button>
