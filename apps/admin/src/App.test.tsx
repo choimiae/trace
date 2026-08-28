@@ -338,6 +338,55 @@ describe("App 프로젝트 전환 초기 상태", () => {
   });
 });
 
+describe("App 프로젝트 전환 동작", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    mockDashboardDataByProject();
+    api.getSessionTimeline.mockResolvedValue([]);
+  });
+
+  it("프로젝트를 바꾸면 새 프로젝트 대시보드를 조회하고 선택값을 저장한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "viewer" },
+      ],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
+
+    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    expect(screen.getByLabelText("프로젝트")).toHaveValue("proj_second");
+    expect(api.getDashboardData).toHaveBeenLastCalledWith("proj_second");
+    expect(window.localStorage.getItem("trace.selectedProjectId")).toBe("proj_second");
+  });
+
+  it("프로젝트를 바꾸면 열려 있던 issue 상세를 닫는다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "viewer" },
+      ],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "proj_demo 설정 화면에서 반복 클릭 보기" }));
+    expect(await screen.findByRole("complementary", { name: "문제 상세" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "proj_second" } });
+
+    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "닫기" })).not.toBeInTheDocument();
+  });
+});
+
 describe("App 프로젝트 설정", () => {
   it("대시보드에서 프로젝트 설정 화면으로 이동한다", async () => {
     api.getAuthMe.mockResolvedValue({

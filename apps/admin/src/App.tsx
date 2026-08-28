@@ -377,6 +377,38 @@ export function App() {
     }
   };
 
+  const handleSelectProject = async (nextProjectId: string) => {
+    if (state.type !== "ready" || nextProjectId === state.projectId) return;
+
+    const projects = state.projects;
+    const userEmail = state.userEmail;
+    const csrfToken = state.csrfToken;
+
+    writeSelectedProjectId(nextProjectId);
+    setSelectedIssue(undefined);
+    setState({ type: "loading" });
+
+    try {
+      const data = await getDashboardData(nextProjectId);
+      setState({
+        type: "ready",
+        data,
+        projects,
+        projectId: nextProjectId,
+        userEmail,
+        csrfToken,
+      });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setState({ type: "login" });
+      } else if (error instanceof ApiError && error.status === 403) {
+        setState({ type: "forbidden" });
+      } else {
+        setState({ type: "network" });
+      }
+    }
+  };
+
   return (
     <>
       <DashboardPage
@@ -385,7 +417,7 @@ export function App() {
         userEmail={state.userEmail}
         projects={state.projects}
         projectId={state.projectId}
-        onSelectProject={() => {}}
+        onSelectProject={(projectId) => { void handleSelectProject(projectId); }}
         settingsError={state.settingsError}
         onLogout={() => { void handleLogout(); }}
         onSelectIssue={setSelectedIssue}
