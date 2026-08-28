@@ -99,6 +99,11 @@ export class MemoryStore implements TraceStore {
     return [...this.adminUsers.values()].find((user) => user.adminUserId === adminUserId);
   }
 
+  async getAdminUserByEmail(email: string): Promise<AdminUserRecord | undefined> {
+    const googleSub = this.adminUsersByEmail.get(email.toLowerCase());
+    return googleSub ? this.adminUsers.get(googleSub) : undefined;
+  }
+
   async createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord> {
     this.adminSessions.set(input.sessionIdHash, input);
     return input;
@@ -132,6 +137,10 @@ export class MemoryStore implements TraceStore {
 
   async listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]> {
     return [...this.projectMemberships.values()].filter((membership) => membership.adminUserId === adminUserId);
+  }
+
+  async listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]> {
+    return Array.from(this.projectMemberships.values()).filter((membership) => membership.projectId === projectId);
   }
 
   async createAuditLog(input: CreateAuditLogInput): Promise<void> {

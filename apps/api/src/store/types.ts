@@ -103,6 +103,7 @@ export interface TraceStore {
   updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectRecord | undefined>;
   upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord>;
   getAdminUser(adminUserId: string): Promise<AdminUserRecord | undefined>;
+  getAdminUserByEmail(email: string): Promise<AdminUserRecord | undefined>;
   createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord>;
   getAdminSession(sessionIdHash: string): Promise<AdminSessionRecord | undefined>;
   revokeAdminSession(sessionIdHash: string, revokedAt: string): Promise<void>;
@@ -110,6 +111,7 @@ export interface TraceStore {
   addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord>;
   getProjectMembership(projectId: string, adminUserId: string): Promise<ProjectMembershipRecord | undefined>;
   listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]>;
+  listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]>;
   createAuditLog(input: CreateAuditLogInput): Promise<void>;
   listAuditLogs(): Promise<AuditLogRecord[]>;
   saveBatch(batch: EventBatch): Promise<void>;

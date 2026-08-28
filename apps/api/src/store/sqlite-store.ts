@@ -164,6 +164,24 @@ export class SqliteStore implements TraceStore {
     }) as AdminUserRecord;
   }
 
+  async getAdminUserByEmail(email: string): Promise<AdminUserRecord | undefined> {
+    const row = this.db.prepare(`SELECT * FROM admin_users WHERE email = ?`).get(email.toLowerCase()) as
+      | Row
+      | undefined;
+    if (!row) return undefined;
+
+    return compact({
+      adminUserId: row.admin_user_id as string,
+      googleSub: row.google_sub as string,
+      email: row.email as string,
+      emailVerified: row.email_verified === 1,
+      name: row.name as string | null,
+      pictureUrl: row.picture_url as string | null,
+      createdAt: row.created_at as string,
+      lastLoginAt: row.last_login_at as string,
+    }) as AdminUserRecord;
+  }
+
   async createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord> {
     this.db
       .prepare(
@@ -239,6 +257,14 @@ export class SqliteStore implements TraceStore {
     const rows = this.db
       .prepare(`SELECT * FROM project_memberships WHERE admin_user_id = ?`)
       .all(adminUserId) as Row[];
+
+    return rows.map((row) => this.toMembership(row));
+  }
+
+  async listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]> {
+    const rows = this.db
+      .prepare(`SELECT * FROM project_memberships WHERE project_id = ? ORDER BY created_at ASC`)
+      .all(projectId) as Row[];
 
     return rows.map((row) => this.toMembership(row));
   }

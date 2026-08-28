@@ -69,6 +69,92 @@ function describeTraceStoreContract(
       ).rejects.toThrow("admin_email_conflict");
     });
 
+    it("정규화한 이메일로 관리자 사용자를 조회한다", async () => {
+      const store = open();
+      const user = await store.upsertAdminUserFromGoogle({
+        googleSub: "google_sub_email_lookup",
+        email: "Member@Example.com",
+        emailVerified: true,
+        name: "Member",
+        now: "2026-08-25T00:00:00.000Z",
+      });
+
+      await expect(store.getAdminUserByEmail("member@example.com")).resolves.toMatchObject({
+        adminUserId: user.adminUserId,
+        email: "member@example.com",
+        name: "Member",
+      });
+      await expect(store.getAdminUserByEmail("MEMBER@example.com")).resolves.toMatchObject({
+        adminUserId: user.adminUserId,
+        email: "member@example.com",
+      });
+      await expect(store.getAdminUserByEmail("missing@example.com")).resolves.toBeUndefined();
+    });
+
+    it("프로젝트별 멤버십 목록만 조회한다", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        googleSub: "google_sub_owner",
+        email: "owner@example.com",
+        emailVerified: true,
+        now: "2026-08-25T00:00:00.000Z",
+      });
+      const viewer = await store.upsertAdminUserFromGoogle({
+        googleSub: "google_sub_viewer",
+        email: "viewer@example.com",
+        emailVerified: true,
+        now: "2026-08-25T00:01:00.000Z",
+      });
+      const other = await store.upsertAdminUserFromGoogle({
+        googleSub: "google_sub_other",
+        email: "other@example.com",
+        emailVerified: true,
+        now: "2026-08-25T00:02:00.000Z",
+      });
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const otherProject = await store.createProject({
+        name: "Other",
+        allowedDomains: ["https://other.example.com"],
+      });
+
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: viewer.adminUserId,
+        role: "viewer",
+        createdAt: "2026-08-25T00:01:00.000Z",
+      });
+      await store.addProjectMembership({
+        projectId: otherProject.projectId,
+        adminUserId: other.adminUserId,
+        role: "admin",
+        createdAt: "2026-08-25T00:02:00.000Z",
+      });
+
+      await expect(store.listProjectMemberships(project.projectId)).resolves.toEqual([
+        {
+          projectId: project.projectId,
+          adminUserId: owner.adminUserId,
+          role: "owner",
+          createdAt: "2026-08-25T00:00:00.000Z",
+        },
+        {
+          projectId: project.projectId,
+          adminUserId: viewer.adminUserId,
+          role: "viewer",
+          createdAt: "2026-08-25T00:01:00.000Z",
+        },
+      ]);
+    });
+
     it("배포 가능 여부를 isDurable로 판정한다", () => {
       const store = open();
 
