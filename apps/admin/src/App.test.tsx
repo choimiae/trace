@@ -16,6 +16,8 @@ const api = vi.hoisted(() => ({
   createProject: vi.fn(),
   getDashboardData: vi.fn(),
   getProjectSettings: vi.fn(),
+  getProjectMembers: vi.fn(),
+  addProjectMember: vi.fn(),
   logout: vi.fn(),
   updateProjectSettings: vi.fn(),
   getIssueDetail: vi.fn(),
@@ -28,6 +30,8 @@ vi.mock("./api", () => ({
   createProject: api.createProject,
   getDashboardData: api.getDashboardData,
   getProjectSettings: api.getProjectSettings,
+  getProjectMembers: api.getProjectMembers,
+  addProjectMember: api.addProjectMember,
   logout: api.logout,
   updateProjectSettings: api.updateProjectSettings,
   getIssueDetail: api.getIssueDetail,
@@ -100,6 +104,20 @@ beforeEach(() => {
     name: "Demo",
     allowedDomains: ["https://demo.example.com"],
     role: "owner",
+  });
+  api.getProjectMembers.mockResolvedValue([
+    {
+      adminUserId: "admin_1",
+      email: "admin@example.com",
+      role: "owner",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    },
+  ]);
+  api.addProjectMember.mockResolvedValue({
+    adminUserId: "admin_added",
+    email: "added@example.com",
+    role: "viewer",
+    createdAt: "2026-08-28T00:00:00.000Z",
   });
   api.updateProjectSettings.mockResolvedValue({
     projectId: "proj_demo",
@@ -499,6 +517,111 @@ describe("App 프로젝트 전환 동작", () => {
 });
 
 describe("App 프로젝트 설정", () => {
+  it("loads project settings and members together before opening settings", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+
+    expect(await screen.findByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "멤버" })).toBeInTheDocument();
+    expect(api.getProjectSettings).toHaveBeenCalledWith("proj_demo");
+    expect(api.getProjectMembers).toHaveBeenCalledWith("proj_demo");
+    expect(screen.getByText("admin@example.com")).toBeInTheDocument();
+  });
+
+  it("adds a project member and appends the returned member", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("멤버 이메일"), {
+      target: { value: "added@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "멤버 추가" }));
+
+    expect(await screen.findByText("멤버를 추가했습니다.")).toBeInTheDocument();
+    expect(api.addProjectMember).toHaveBeenCalledWith(
+      "proj_demo",
+      { email: "added@example.com", role: "viewer" },
+      "csrf_1",
+    );
+    expect(screen.getByText("added@example.com")).toBeInTheDocument();
+  });
+
+  it("maps project member add errors to Korean messages", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.addProjectMember.mockRejectedValue(new api.ApiError(409, "project_member_exists"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("멤버 이메일"), {
+      target: { value: "admin@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "멤버 추가" }));
+
+    expect(await screen.findByText("이미 이 프로젝트의 멤버입니다.")).toBeInTheDocument();
+  });
+
+  it("ignores delayed settings member responses after project switch", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_a", role: "owner" },
+        { projectId: "proj_b", role: "owner" },
+      ],
+      csrfToken: "csrf_1",
+    });
+    mockDashboardDataByProject();
+    let resolveMembers: (members: unknown[]) => void = () => undefined;
+    api.getProjectSettings.mockResolvedValue({
+      projectId: "proj_a",
+      name: "Project A",
+      allowedDomains: ["https://a.example.com"],
+      role: "owner",
+    });
+    api.getProjectMembers.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveMembers = resolve;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_b" } });
+    await screen.findByText("proj_b 인사이트");
+
+    await act(async () => {
+      resolveMembers([
+        {
+          adminUserId: "admin_late",
+          email: "late@example.com",
+          role: "viewer",
+          createdAt: "2026-08-28T00:00:00.000Z",
+        },
+      ]);
+    });
+
+    expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
+    expect(screen.queryByText("late@example.com")).not.toBeInTheDocument();
+  });
+
   it("대시보드에서 프로젝트 설정 화면으로 이동한다", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },

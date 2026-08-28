@@ -2,12 +2,16 @@ import type { DashboardSummary, Issue } from "@trace/shared";
 import { useEffect, useState } from "react";
 import {
   ApiError,
+  addProjectMember,
   createProject,
   getAuthMe,
   getDashboardData,
+  getProjectMembers,
   getProjectSettings,
   logout,
   updateProjectSettings,
+  type AddProjectMemberInput,
+  type ProjectMemberResponse,
   type ProjectSettingsResponse,
 } from "./api.js";
 import { API_BASE_URL } from "./config.js";
@@ -54,9 +58,13 @@ type AppState =
       projectId: string;
       userEmail: string;
       csrfToken: string;
+      members: ProjectMemberResponse[];
       saving?: boolean;
       error?: string | undefined;
       savedMessage?: string | undefined;
+      addingMember?: boolean;
+      memberError?: string | undefined;
+      memberSavedMessage?: string | undefined;
     };
 
 function describeApiError(
@@ -85,6 +93,19 @@ const PROJECT_SETTINGS_ERROR_MESSAGES: Record<string, string> = {
 
 function describeProjectSettingsError(error: unknown): string {
   return describeApiError(PROJECT_SETTINGS_ERROR_MESSAGES, error, "프로젝트 설정을 저장하지 못했습니다.");
+}
+
+const PROJECT_MEMBER_ERROR_MESSAGES: Record<string, string> = {
+  admin_user_not_found: "해당 이메일의 관리자를 찾을 수 없습니다.",
+  project_member_exists: "이미 이 프로젝트의 멤버입니다.",
+  project_role_forbidden: "멤버를 추가할 권한이 없습니다.",
+  invalid_project_member: "멤버 이메일 또는 역할이 올바르지 않습니다.",
+  csrf_origin_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
+  csrf_token_invalid: "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.",
+};
+
+function describeProjectMemberError(error: unknown): string {
+  return describeApiError(PROJECT_MEMBER_ERROR_MESSAGES, error, "멤버를 추가하지 못했습니다.");
 }
 
 // 프로젝트 생성 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
@@ -274,7 +295,10 @@ export function App() {
         : current,
     );
     try {
-      const project = await getProjectSettings(projectId);
+      const [project, members] = await Promise.all([
+        getProjectSettings(projectId),
+        getProjectMembers(projectId),
+      ]);
       // 조회가 끝나기 전에 로그아웃하거나 다른 프로젝트로 전환했다면 지연
       // 응답으로 현재 화면을 덮어쓰지 않는다.
       setState((current) =>
@@ -282,6 +306,7 @@ export function App() {
           ? {
               type: "settings",
               project,
+              members,
               dashboardData: current.data,
               projects: current.projects,
               projectId: current.projectId,
@@ -341,15 +366,53 @@ export function App() {
       }
     };
 
+    const handleAddMember = async (input: AddProjectMemberInput) => {
+      const projectId = state.projectId;
+      const csrfToken = state.csrfToken;
+      setState((current) =>
+        current.type === "settings" && current.projectId === projectId
+          ? Object.assign({}, current, {
+              addingMember: true,
+              memberError: undefined,
+              memberSavedMessage: undefined,
+            })
+          : current,
+      );
+      try {
+        const member = await addProjectMember(projectId, input, csrfToken);
+        setState((current) =>
+          current.type === "settings" && current.projectId === projectId
+            ? Object.assign({}, current, {
+                members: current.members.concat(member),
+                addingMember: false,
+                memberSavedMessage: "멤버를 추가했습니다.",
+              })
+            : current,
+        );
+      } catch (error) {
+        setState((current) => {
+          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          if (error instanceof ApiError && error.status === 401) return { type: "login" };
+          return Object.assign({}, current, {
+            addingMember: false,
+            memberError: describeProjectMemberError(error),
+          });
+        });
+      }
+    };
+
     return (
       <ProjectSettingsPage
         project={state.project}
-        members={[]}
-        saving={state.saving ?? false}
+        members={state.members}
+        saving={state.saving === true}
+        addingMember={state.addingMember === true}
         error={state.error}
         savedMessage={state.savedMessage}
+        memberError={state.memberError}
+        memberSavedMessage={state.memberSavedMessage}
         onSave={(input) => { void handleSaveSettings(input); }}
-        onAddMember={() => undefined}
+        onAddMember={(input) => { void handleAddMember(input); }}
         onBack={() =>
           setState({
             type: "ready",
