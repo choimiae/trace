@@ -266,6 +266,73 @@
   font-weight: 700;
 }
 
+.members-panel {
+  margin-top: var(--space-5);
+}
+
+.members-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.member-row strong,
+.member-row span {
+  display: block;
+}
+
+.member-row span,
+.member-meta {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.member-meta {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 96px;
+  text-align: right;
+}
+
+.member-add-form {
+  display: grid;
+  gap: var(--space-4);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-5);
+}
+
+.member-add-form .field {
+  margin: 0;
+}
+
+.member-add-form .field select {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.member-add-form .field select:disabled {
+  background: var(--surface-sunk);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.member-add-form .field select:focus-visible {
+  border-color: var(--accent);
+}
+
 @media (max-width: 820px) {
   .app-shell {
     width: min(100vw - 24px, 640px);

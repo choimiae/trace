@@ -10,6 +10,19 @@ export interface ProjectSettingsResponse {
   role: ProjectRole;
 }
 
+export interface ProjectMemberResponse {
+  adminUserId: string;
+  email: string;
+  name?: string;
+  role: ProjectRole;
+  createdAt: string;
+}
+
+export interface AddProjectMemberInput {
+  email: string;
+  role: Extract<ProjectRole, "admin" | "viewer">;
+}
+
 export interface AuthMeResponse {
   user: { adminUserId: string; email: string; name?: string; pictureUrl?: string };
   projects: Array<{ projectId: string; role: ProjectRole }>;
@@ -51,6 +64,24 @@ export async function createProject(
 
 export async function getProjectSettings(projectId: string): Promise<ProjectSettingsResponse> {
   return getJson<ProjectSettingsResponse>(`/admin/api/projects/${projectId}`);
+}
+
+export async function getProjectMembers(projectId: string): Promise<ProjectMemberResponse[]> {
+  return getJson<ProjectMemberResponse[]>(`/admin/api/projects/${projectId}/members`);
+}
+
+export async function addProjectMember(
+  projectId: string,
+  input: AddProjectMemberInput,
+  csrfToken: string,
+): Promise<ProjectMemberResponse> {
+  const response = await ensureSuccess(`/admin/api/projects/${projectId}/members`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-trace-csrf": csrfToken },
+    body: JSON.stringify(input),
+  });
+
+  return response.json() as Promise<ProjectMemberResponse>;
 }
 
 export async function updateProjectSettings(

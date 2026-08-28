@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import type { AddProjectMemberInput, ProjectMemberResponse } from "../api.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 import { Field } from "../ui/Field.js";
@@ -10,24 +11,38 @@ export interface ProjectSettingsViewModel {
   role: "owner" | "admin" | "viewer";
 }
 
-export function ProjectSettingsPage({
-  project,
-  onBack,
-  onSave,
-  saving = false,
-  error,
-  savedMessage,
-}: {
+interface ProjectSettingsPageProps {
   project: ProjectSettingsViewModel;
+  members?: ProjectMemberResponse[];
   onBack: () => void;
   onSave: (input: { name: string; allowedDomains: string[] }) => void;
+  onAddMember?: (input: AddProjectMemberInput) => void;
   saving?: boolean;
+  addingMember?: boolean;
   error?: string | undefined;
   savedMessage?: string | undefined;
-}) {
+  memberError?: string | undefined;
+  memberSavedMessage?: string | undefined;
+}
+
+export function ProjectSettingsPage({
+  project,
+  members = [],
+  onBack,
+  onSave,
+  onAddMember = () => undefined,
+  saving = false,
+  addingMember = false,
+  error,
+  savedMessage,
+  memberError,
+  memberSavedMessage,
+}: ProjectSettingsPageProps) {
   const [name, setName] = useState(project.name);
   const [domains, setDomains] = useState(project.allowedDomains.join("\n"));
   const [successDismissed, setSuccessDismissed] = useState(false);
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberRole, setMemberRole] = useState<AddProjectMemberInput["role"]>("viewer");
   const readOnly = project.role === "viewer";
 
   useEffect(() => {
@@ -48,6 +63,13 @@ export function ProjectSettingsPage({
   const handleDomainsChange = (value: string) => {
     setDomains(value);
     setSuccessDismissed(true);
+  };
+
+  const handleAddMemberSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedEmail = memberEmail.trim();
+    if (!trimmedEmail) return;
+    onAddMember({ email: trimmedEmail, role: memberRole });
   };
 
   const allowedDomains = domains
@@ -103,6 +125,58 @@ export function ProjectSettingsPage({
             <span className="settings-success">{savedMessage}</span>
           ) : null}
         </div>
+      </Card>
+
+      <Card className="settings-panel members-panel">
+        <div className="panel-heading">
+          <h2>멤버</h2>
+        </div>
+        <div className="members-list">
+          {members.map((member) => (
+            <div className="member-row" key={member.adminUserId}>
+              <div>
+                <strong>{member.name !== undefined ? member.name : member.email}</strong>
+                {member.name ? <span>{member.email}</span> : null}
+              </div>
+              <div className="member-meta">
+                <span>{roleLabel(member.role)}</span>
+                <span>{member.createdAt.slice(0, 10)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {project.role === "owner" ? (
+          <form className="member-add-form" onSubmit={handleAddMemberSubmit}>
+            <Field
+              id="settings-member-email"
+              label="멤버 이메일"
+              value={memberEmail}
+              onChange={setMemberEmail}
+              disabled={addingMember}
+            />
+            <div className="field">
+              <label htmlFor="settings-member-role">멤버 역할</label>
+              <select
+                id="settings-member-role"
+                value={memberRole}
+                onChange={(event) => setMemberRole(event.target.value as AddProjectMemberInput["role"])}
+                disabled={addingMember}
+              >
+                <option value="viewer">조회자</option>
+                <option value="admin">관리자</option>
+              </select>
+            </div>
+            <div className="settings-actions">
+              <Button variant="primary" type="submit" disabled={addingMember || memberEmail.trim() === ""}>
+                {addingMember ? "추가 중" : "멤버 추가"}
+              </Button>
+              {memberSavedMessage ? <span className="settings-success">{memberSavedMessage}</span> : null}
+            </div>
+            {memberError ? <p className="field-error">{memberError}</p> : null}
+          </form>
+        ) : (
+          <p className="settings-subtitle">멤버 추가 권한이 없습니다.</p>
+        )}
       </Card>
     </main>
   );
