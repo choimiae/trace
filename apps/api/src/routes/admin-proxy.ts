@@ -4,7 +4,7 @@ import type { AdminAuthConfig } from "../auth/config.js";
 import { parseCookieHeader } from "../auth/cookies.js";
 import { verifyCsrfRequest } from "../auth/csrf.js";
 import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js";
-import type { ProjectMembershipRecord, ProjectRecord, TraceStore } from "../store/types.js";
+import type { AdminRole, AdminUserRecord, ProjectMembershipRecord, ProjectRecord, TraceStore } from "../store/types.js";
 import { createProjectSchema, updateProjectSchema } from "./admin.js";
 
 const projectParamsSchema = z.object({ projectId: z.string() });
@@ -65,6 +65,27 @@ export async function registerAdminProxyRoutes(
     }
 
     return toProjectSettingsResponse(access.project, access.membership.role);
+  });
+
+  app.get("/admin/api/projects/:projectId/members", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const access = await getProjectAccess(options.store, projectId, authenticated, "project_members");
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+
+    const memberships = await options.store.listProjectMemberships(projectId);
+    const members = await Promise.all(
+      memberships.map(async (membership) => {
+        const user = await options.store.getAdminUser(membership.adminUserId);
+        return toProjectMemberResponse(membership, user);
+      }),
+    );
+
+    return members.filter((member): member is ProjectMemberResponse => member !== undefined);
   });
 
   app.patch("/admin/api/projects/:projectId", async (request, reply) => {
@@ -218,6 +239,7 @@ type ProjectAccessError =
 
 type ProjectResourceType =
   | "project_settings"
+  | "project_members"
   | "project_summary"
   | "project_issues"
   | "issue_detail"
@@ -252,4 +274,27 @@ function toProjectSettingsResponse(
     allowedDomains: project.allowedDomains,
     role,
   };
+}
+
+type ProjectMemberResponse = {
+  adminUserId: string;
+  email: string;
+  name?: string;
+  role: AdminRole;
+  createdAt: string;
+};
+
+function toProjectMemberResponse(
+  membership: ProjectMembershipRecord,
+  user: AdminUserRecord | undefined,
+): ProjectMemberResponse | undefined {
+  if (!user) return undefined;
+  const response: ProjectMemberResponse = {
+    adminUserId: membership.adminUserId,
+    email: user.email,
+    role: membership.role,
+    createdAt: membership.createdAt,
+  };
+  if (user.name !== undefined) response.name = user.name;
+  return response;
 }

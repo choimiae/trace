@@ -140,6 +140,83 @@ describe("admin bff routes", () => {
     ]));
   });
 
+  it("returns project members for a project member", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const viewer = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_viewer",
+      email: "viewer@example.com",
+      emailVerified: true,
+      name: "Viewer",
+      now: "2026-08-25T00:01:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "admin",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: viewer.adminUserId,
+      role: "viewer",
+      createdAt: "2026-08-27T00:01:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      {
+        adminUserId: user.adminUserId,
+        email: "admin@example.com",
+        role: "admin",
+        createdAt: "2026-08-27T00:00:00.000Z",
+      },
+      {
+        adminUserId: viewer.adminUserId,
+        email: "viewer@example.com",
+        name: "Viewer",
+        role: "viewer",
+        createdAt: "2026-08-27T00:01:00.000Z",
+      },
+    ]);
+  });
+
+  it("returns 403 and audits when members are requested by a non-member", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Private",
+      allowedDomains: ["https://private.example.com"],
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_access_denied" });
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "project_members" },
+      }),
+    ]));
+  });
+
   it("lets an owner update project settings and audits the change", async () => {
     const { store, user, cookie, csrfToken } = await signedInStore();
     const project = await store.createProject({
