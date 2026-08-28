@@ -385,6 +385,117 @@ describe("App 프로젝트 전환 동작", () => {
     expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "닫기" })).not.toBeInTheDocument();
   });
+
+  it("전환 후 설치 안내 스니펫은 새 프로젝트 ID를 사용한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "viewer" },
+      ],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
+    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "설치 안내" }));
+
+    expect(await screen.findByRole("heading", { name: "스크립트를 붙여주세요." })).toBeInTheDocument();
+    expect(screen.getByText(/data-project-id="proj_second"/)).toBeInTheDocument();
+  });
+
+  it("전환 후 프로젝트 설정 조회는 새 프로젝트 ID를 사용한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "admin" },
+      ],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectSettings.mockResolvedValue({
+      projectId: "proj_second",
+      name: "Second",
+      allowedDomains: ["https://second.example.com"],
+      role: "admin",
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
+    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 설정" }));
+
+    expect(api.getProjectSettings).toHaveBeenCalledWith("proj_second");
+    expect(await screen.findByDisplayValue("Second")).toBeInTheDocument();
+  });
+
+  it("프로젝트 전환이 401을 받으면 로그인 화면으로 전환한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "viewer" },
+      ],
+      csrfToken: "csrf_1",
+    });
+    api.getDashboardData.mockImplementation((projectId: string) => {
+      if (projectId === "proj_second") return Promise.reject(new api.ApiError(401, "admin_auth_required"));
+      return Promise.resolve(dashboardDataFor(projectId));
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
+
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+  });
+
+  it("프로젝트 전환이 403을 받으면 접근 권한 없음 화면으로 전환한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "viewer" },
+      ],
+      csrfToken: "csrf_1",
+    });
+    api.getDashboardData.mockImplementation((projectId: string) => {
+      if (projectId === "proj_second") return Promise.reject(new api.ApiError(403, "project_access_denied"));
+      return Promise.resolve(dashboardDataFor(projectId));
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
+
+    expect(await screen.findByRole("heading", { name: "접근 권한이 없습니다." })).toBeInTheDocument();
+  });
+
+  it("프로젝트 전환이 네트워크 오류를 받으면 연결 실패 화면으로 전환한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [
+        { projectId: "proj_demo", role: "owner" },
+        { projectId: "proj_second", role: "viewer" },
+      ],
+      csrfToken: "csrf_1",
+    });
+    api.getDashboardData.mockImplementation((projectId: string) => {
+      if (projectId === "proj_second") return Promise.reject(new Error("network unavailable"));
+      return Promise.resolve(dashboardDataFor(projectId));
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
+
+    expect(await screen.findByRole("heading", { name: "연결할 수 없습니다." })).toBeInTheDocument();
+  });
 });
 
 describe("App 프로젝트 설정", () => {
