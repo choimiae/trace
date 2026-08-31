@@ -941,7 +941,7 @@ export async function getProjectAuditLogs(
 문장 조립부터 쓴다. `metadata`는 `Record<string, unknown>`이므로 좁히는 helper를 둔다.
 
 ```tsx
-import type { ProjectAuditLogEntryResponse, ProjectRole } from "../api.js";
+import type { ProjectAuditLogEntryResponse } from "../api.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 
@@ -1128,8 +1128,6 @@ export function ProjectAuditLogPage({
   );
 }
 ```
-
-`ProjectRole` import는 실제로 쓰지 않으면 넣지 않는다. `roleLabel`이 `string`을 받으므로 이 파일에서는 필요하지 않다.
 
 `loading`과 `loadingMore`가 동시에 `불러오는 중` 텍스트를 만들 수 있다. 첫 로드에서는 `hasMore`가 거짓이므로 버튼이 없고, `더 보기` 중에는 `loading`이 거짓이므로 문단이 없다. 두 문구가 같이 나오지 않는다.
 
