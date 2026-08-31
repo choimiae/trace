@@ -44,6 +44,7 @@ type AppState =
       userEmail: string;
       adminUserId: string;
       csrfToken: string;
+      settingsSessionId: number;
       settingsError?: string | undefined;
     }
   | {
@@ -54,6 +55,7 @@ type AppState =
       userEmail: string;
       adminUserId: string;
       csrfToken: string;
+      settingsSessionId: number;
     }
   | {
       type: "settings";
@@ -65,6 +67,8 @@ type AppState =
       adminUserId: string;
       currentAdminUserId: string;
       csrfToken: string;
+      settingsSessionId: number;
+      memberActionRequestId: number;
       members: ProjectMemberResponse[];
       saving?: boolean;
       error?: string | undefined;
@@ -194,6 +198,7 @@ export function App() {
             userEmail: auth.user.email,
             adminUserId: auth.user.adminUserId,
             csrfToken: auth.csrfToken,
+            settingsSessionId: 0,
           });
         }
       } catch (error) {
@@ -319,6 +324,7 @@ export function App() {
               userEmail: state.userEmail,
               adminUserId: state.adminUserId,
               csrfToken: state.csrfToken,
+              settingsSessionId: state.settingsSessionId,
             }),
         }}
       />
@@ -352,6 +358,8 @@ export function App() {
               userEmail: current.userEmail,
               adminUserId: current.adminUserId,
               csrfToken: current.csrfToken,
+              settingsSessionId: current.settingsSessionId + 1,
+              memberActionRequestId: 0,
               currentAdminUserId: current.adminUserId,
               memberActionInFlight: undefined,
               memberActionError: undefined,
@@ -375,6 +383,7 @@ export function App() {
             userEmail: current.userEmail,
             adminUserId: current.adminUserId,
             csrfToken: current.csrfToken,
+            settingsSessionId: current.settingsSessionId,
           };
         }
         return { type: "network" };
@@ -450,7 +459,10 @@ export function App() {
       if (state.type !== "settings") return;
       const projectId = state.projectId;
       const csrfToken = state.csrfToken;
+      const settingsSessionId = state.settingsSessionId;
+      const memberActionRequestId = state.memberActionRequestId + 1;
       setState(Object.assign({}, state, {
+        memberActionRequestId,
         memberActionInFlight: adminUserId,
         memberActionError: undefined,
         memberActionSavedMessage: undefined,
@@ -459,7 +471,12 @@ export function App() {
       try {
         const updated = await updateProjectMemberRole(projectId, adminUserId, { role }, csrfToken);
         setState((current) => {
-          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          if (
+            current.type !== "settings"
+            || current.projectId !== projectId
+            || current.settingsSessionId !== settingsSessionId
+            || current.memberActionRequestId !== memberActionRequestId
+          ) return current;
           return Object.assign({}, current, {
             members: current.members.map((member) => member.adminUserId === updated.adminUserId ? updated : member),
             memberActionInFlight: undefined,
@@ -469,7 +486,12 @@ export function App() {
         });
       } catch (error) {
         setState((current) => {
-          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          if (
+            current.type !== "settings"
+            || current.projectId !== projectId
+            || current.settingsSessionId !== settingsSessionId
+            || current.memberActionRequestId !== memberActionRequestId
+          ) return current;
           return Object.assign({}, current, {
             memberActionInFlight: undefined,
             memberActionError: memberRoleUpdateErrorMessage(error),
@@ -483,7 +505,10 @@ export function App() {
       if (state.type !== "settings") return;
       const projectId = state.projectId;
       const csrfToken = state.csrfToken;
+      const settingsSessionId = state.settingsSessionId;
+      const memberActionRequestId = state.memberActionRequestId + 1;
       setState(Object.assign({}, state, {
+        memberActionRequestId,
         memberActionInFlight: adminUserId,
         memberActionError: undefined,
         memberActionSavedMessage: undefined,
@@ -492,7 +517,12 @@ export function App() {
       try {
         await removeProjectMember(projectId, adminUserId, csrfToken);
         setState((current) => {
-          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          if (
+            current.type !== "settings"
+            || current.projectId !== projectId
+            || current.settingsSessionId !== settingsSessionId
+            || current.memberActionRequestId !== memberActionRequestId
+          ) return current;
           return Object.assign({}, current, {
             members: current.members.filter((member) => member.adminUserId !== adminUserId),
             memberActionInFlight: undefined,
@@ -502,7 +532,12 @@ export function App() {
         });
       } catch (error) {
         setState((current) => {
-          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          if (
+            current.type !== "settings"
+            || current.projectId !== projectId
+            || current.settingsSessionId !== settingsSessionId
+            || current.memberActionRequestId !== memberActionRequestId
+          ) return current;
           return Object.assign({}, current, {
             memberActionInFlight: undefined,
             memberActionError: memberRemoveErrorMessage(error),
@@ -539,6 +574,7 @@ export function App() {
             userEmail: state.userEmail,
             adminUserId: state.adminUserId,
             csrfToken: state.csrfToken,
+            settingsSessionId: state.settingsSessionId,
           })
         }
       />
@@ -569,6 +605,7 @@ export function App() {
     const userEmail = state.userEmail;
     const adminUserId = state.adminUserId;
     const csrfToken = state.csrfToken;
+    const settingsSessionId = state.settingsSessionId;
 
     writeSelectedProjectId(nextProjectId);
     setSelectedIssue(undefined);
@@ -584,6 +621,7 @@ export function App() {
         userEmail,
         adminUserId,
         csrfToken,
+        settingsSessionId,
       });
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {

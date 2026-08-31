@@ -762,6 +762,124 @@ describe("App 프로젝트 설정", () => {
     expect(screen.queryByText("멤버 역할을 변경했습니다.")).not.toBeInTheDocument();
   });
 
+  it("ignores a delayed member role response after re-entering the same project settings", async () => {
+    let resolveUpdate!: (member: {
+      adminUserId: string;
+      email: string;
+      role: "admin";
+      createdAt: string;
+    }) => void;
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectMembers.mockResolvedValue([
+      {
+        adminUserId: "admin_1",
+        email: "admin@example.com",
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_member",
+        email: "member@example.com",
+        role: "viewer",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      },
+    ]);
+    api.updateProjectMemberRole.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("member@example.com 역할"), { target: { value: "admin" } });
+    fireEvent.click(screen.getByRole("button", { name: "대시보드로 돌아가기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    expect(await screen.findByLabelText("member@example.com 역할")).toHaveValue("viewer");
+
+    await act(async () => {
+      resolveUpdate({
+        adminUserId: "admin_member",
+        email: "member@example.com",
+        role: "admin",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      });
+    });
+
+    expect(screen.getByLabelText("member@example.com 역할")).toHaveValue("viewer");
+    expect(screen.queryByText("멤버 역할을 변경했습니다.")).not.toBeInTheDocument();
+  });
+
+  it("ignores an earlier member role response after a newer action starts", async () => {
+    const resolveUpdates: Array<(member: {
+      adminUserId: string;
+      email: string;
+      role: "admin";
+      createdAt: string;
+    }) => void> = [];
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectMembers.mockResolvedValue([
+      {
+        adminUserId: "admin_1",
+        email: "admin@example.com",
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_first",
+        email: "first@example.com",
+        role: "viewer",
+        createdAt: "2026-08-26T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_second",
+        email: "second@example.com",
+        role: "viewer",
+        createdAt: "2026-08-27T00:00:00.000Z",
+      },
+    ]);
+    api.updateProjectMemberRole.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveUpdates.push(resolve);
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("first@example.com 역할"), { target: { value: "admin" } });
+    fireEvent.change(await screen.findByLabelText("second@example.com 역할"), { target: { value: "admin" } });
+
+    await act(async () => {
+      resolveUpdates[1]!({
+        adminUserId: "admin_second",
+        email: "second@example.com",
+        role: "admin",
+        createdAt: "2026-08-27T00:00:00.000Z",
+      });
+    });
+    await act(async () => {
+      resolveUpdates[0]!({
+        adminUserId: "admin_first",
+        email: "first@example.com",
+        role: "admin",
+        createdAt: "2026-08-26T00:00:00.000Z",
+      });
+    });
+
+    expect(screen.getByLabelText("first@example.com 역할")).toHaveValue("viewer");
+    expect(screen.getByLabelText("second@example.com 역할")).toHaveValue("admin");
+  });
+
   it("ignores delayed member removal responses after logout", async () => {
     let resolveRemoval!: () => void;
     vi.spyOn(window, "confirm").mockReturnValue(true);
