@@ -253,8 +253,8 @@ MemoryStore는 `auditLogs`를 `Map`으로 갖고 `listAuditLogs()`가 삽입 순
 `audit_logs`에는 현재 인덱스가 없다. 프로젝트 필터와 정렬이 full scan이 되므로 인덱스를 추가한다.
 
 ```sql
-CREATE INDEX IF NOT EXISTS audit_logs_project_created_idx
-  ON audit_logs(project_id, created_at DESC, audit_log_id DESC);
+CREATE INDEX IF NOT EXISTS audit_logs_project_created
+  ON audit_logs (project_id, created_at DESC, audit_log_id DESC);
 ```
 
 `apps/api/src/db/schema.sqlite.ts`의 스키마 문자열에 넣는다. `IF NOT EXISTS`이고 시작할 때 멱등하게 적용되므로 마이그레이션 버전 관리는 이번에도 도입하지 않는다.
