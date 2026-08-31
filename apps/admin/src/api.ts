@@ -88,6 +88,35 @@ export async function searchProjectMemberCandidates(
   );
 }
 
+export interface ProjectAuditLogActorResponse {
+  adminUserId: string;
+  email?: string;
+  name?: string;
+}
+
+export interface ProjectAuditLogEntryResponse {
+  auditLogId: string;
+  action: string;
+  createdAt: string;
+  actor?: ProjectAuditLogActorResponse;
+  metadata: Record<string, unknown>;
+}
+
+export interface ProjectAuditLogPageResponse {
+  entries: ProjectAuditLogEntryResponse[];
+  nextCursor?: string;
+}
+
+export async function getProjectAuditLogs(
+  projectId: string,
+  cursor?: string,
+): Promise<ProjectAuditLogPageResponse> {
+  const query = cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`;
+  return getJson<ProjectAuditLogPageResponse>(
+    `/admin/api/projects/${projectId}/audit-logs${query}`,
+  );
+}
+
 export async function addProjectMember(
   projectId: string,
   input: AddProjectMemberInput,
