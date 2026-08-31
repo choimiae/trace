@@ -14,6 +14,7 @@ import type {
   CreateAuditLogInput,
   CreateProjectInput,
   ProjectMembershipRecord,
+  ProjectMembershipAuditLogFactory,
   ProjectRecord,
   TraceStore,
   UpdateProjectInput,
@@ -270,9 +271,12 @@ export class SqliteStore implements TraceStore {
     targetAdminUserId: string;
     requestedByAdminUserId: string;
     role: AdminRole;
-    auditLog?: CreateAuditLogInput;
+    auditLog?: ProjectMembershipAuditLogFactory;
   }): Promise<ProjectMembershipRecord | undefined> {
     const updateMembershipAndAudit = this.db.transaction(() => {
+      const requester = this.getProjectMembershipSync(input.projectId, input.requestedByAdminUserId);
+      if (!requester || requester.role !== "owner") throw new Error("project_role_forbidden");
+
       const current = this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
       if (!current) return undefined;
       if (current.role === input.role) return current;
@@ -290,7 +294,7 @@ export class SqliteStore implements TraceStore {
            WHERE project_id = @projectId AND admin_user_id = @adminUserId`,
         )
         .run({ role: input.role, projectId: input.projectId, adminUserId: input.targetAdminUserId });
-      if (input.auditLog) this.insertAuditLog(input.auditLog);
+      if (input.auditLog) this.insertAuditLog(input.auditLog(current));
       return this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
     });
 
@@ -301,9 +305,12 @@ export class SqliteStore implements TraceStore {
     projectId: string;
     targetAdminUserId: string;
     requestedByAdminUserId: string;
-    auditLog: CreateAuditLogInput;
+    auditLog: ProjectMembershipAuditLogFactory;
   }): Promise<boolean> {
     const removeMembershipAndAudit = this.db.transaction(() => {
+      const requester = this.getProjectMembershipSync(input.projectId, input.requestedByAdminUserId);
+      if (!requester || requester.role !== "owner") throw new Error("project_role_forbidden");
+
       const current = this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
       if (!current) return false;
       if (input.targetAdminUserId === input.requestedByAdminUserId) {
@@ -319,7 +326,7 @@ export class SqliteStore implements TraceStore {
            WHERE project_id = @projectId AND admin_user_id = @adminUserId`,
         )
         .run({ projectId: input.projectId, adminUserId: input.targetAdminUserId });
-      this.insertAuditLog(input.auditLog);
+      this.insertAuditLog(input.auditLog(current));
       return true;
     });
 

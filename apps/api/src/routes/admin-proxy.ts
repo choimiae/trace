@@ -176,8 +176,6 @@ export async function registerAdminProxyRoutes(
     if ("error" in access) return reply.code(access.statusCode).send({ error: access.error });
     if (access.membership.role !== "owner") return reply.code(403).send({ error: "project_role_forbidden" });
 
-    const before = await options.store.getProjectMembership(params.data.projectId, params.data.adminUserId);
-    if (!before) return reply.code(404).send({ error: "project_member_not_found" });
     const targetUser = await options.store.getAdminUser(params.data.adminUserId);
     if (!targetUser) return reply.code(404).send({ error: "project_member_not_found" });
 
@@ -187,18 +185,16 @@ export async function registerAdminProxyRoutes(
         targetAdminUserId: params.data.adminUserId,
         requestedByAdminUserId: authenticated.adminUserId,
         role: body.data.role,
-        ...(before.role === body.data.role ? {} : {
-          auditLog: {
-            adminUserId: authenticated.adminUserId,
-            projectId: params.data.projectId,
-            createdAt: new Date().toISOString(),
-            action: "project.member_role_updated",
-            metadata: {
-              targetAdminUserId: targetUser.adminUserId,
-              email: targetUser.email,
-              beforeRole: before.role,
-              afterRole: body.data.role,
-            },
+        auditLog: (current) => ({
+          adminUserId: authenticated.adminUserId,
+          projectId: params.data.projectId,
+          createdAt: new Date().toISOString(),
+          action: "project.member_role_updated",
+          metadata: {
+            targetAdminUserId: targetUser.adminUserId,
+            email: targetUser.email,
+            beforeRole: current.role,
+            afterRole: body.data.role,
           },
         }),
       });
@@ -230,8 +226,6 @@ export async function registerAdminProxyRoutes(
     if ("error" in access) return reply.code(access.statusCode).send({ error: access.error });
     if (access.membership.role !== "owner") return reply.code(403).send({ error: "project_role_forbidden" });
 
-    const before = await options.store.getProjectMembership(params.data.projectId, params.data.adminUserId);
-    if (!before) return reply.code(404).send({ error: "project_member_not_found" });
     const targetUser = await options.store.getAdminUser(params.data.adminUserId);
     if (!targetUser) return reply.code(404).send({ error: "project_member_not_found" });
 
@@ -240,7 +234,7 @@ export async function registerAdminProxyRoutes(
         projectId: params.data.projectId,
         targetAdminUserId: params.data.adminUserId,
         requestedByAdminUserId: authenticated.adminUserId,
-        auditLog: {
+        auditLog: (current) => ({
           adminUserId: authenticated.adminUserId,
           projectId: params.data.projectId,
           createdAt: new Date().toISOString(),
@@ -248,9 +242,9 @@ export async function registerAdminProxyRoutes(
           metadata: {
             targetAdminUserId: targetUser.adminUserId,
             email: targetUser.email,
-            role: before.role,
+            role: current.role,
           },
-        },
+        }),
       });
       if (!removed) return reply.code(404).send({ error: "project_member_not_found" });
       return reply.code(204).send();
@@ -438,6 +432,9 @@ function sendProjectMemberMutationError(reply: FastifyReply, error: unknown, fal
   }
   if (message === "last_owner_forbidden") {
     return reply.code(403).send({ error: "last_owner_forbidden" });
+  }
+  if (message === "project_role_forbidden") {
+    return reply.code(403).send({ error: "project_role_forbidden" });
   }
   throw error;
 }

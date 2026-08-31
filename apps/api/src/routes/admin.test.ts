@@ -49,16 +49,80 @@ class SaveTimeDuplicateStore extends MemoryStore {
 }
 
 class LastOwnerStore extends MemoryStore {
-  requesterMembership: { projectId: string; adminUserId: string } | undefined;
+  throwLastOwnerBeforeNextUpdate = false;
+  throwLastOwnerBeforeNextRemoval = false;
 
-  override async getProjectMembership(projectId: string, adminUserId: string) {
-    if (
-      this.requesterMembership?.projectId === projectId
-      && this.requesterMembership.adminUserId === adminUserId
-    ) {
-      return { ...this.requesterMembership, role: "owner" as const, createdAt: "2026-08-31T00:00:00.000Z" };
+  override async updateProjectMembershipRoleWithAudit(input: Parameters<MemoryStore["updateProjectMembershipRoleWithAudit"]>[0]) {
+    if (this.throwLastOwnerBeforeNextUpdate) throw new Error("last_owner_forbidden");
+    return super.updateProjectMembershipRoleWithAudit(input);
+  }
+
+  override async removeProjectMembershipWithAudit(input: Parameters<MemoryStore["removeProjectMembershipWithAudit"]>[0]) {
+    if (this.throwLastOwnerBeforeNextRemoval) throw new Error("last_owner_forbidden");
+    return super.removeProjectMembershipWithAudit(input);
+  }
+}
+
+class RequesterRoleRaceStore extends MemoryStore {
+  otherOwnerAdminUserId: string | undefined;
+  demoteRequesterBeforeNextUpdate = false;
+  demoteRequesterBeforeNextRemoval = false;
+
+  override async updateProjectMembershipRoleWithAudit(input: Parameters<MemoryStore["updateProjectMembershipRoleWithAudit"]>[0]) {
+    if (this.demoteRequesterBeforeNextUpdate) {
+      this.demoteRequesterBeforeNextUpdate = false;
+      await super.updateProjectMembershipRoleWithAudit({
+        projectId: input.projectId,
+        targetAdminUserId: input.requestedByAdminUserId,
+        requestedByAdminUserId: this.otherOwnerAdminUserId!,
+        role: "viewer",
+      });
     }
-    return super.getProjectMembership(projectId, adminUserId);
+    return super.updateProjectMembershipRoleWithAudit(input);
+  }
+
+  override async removeProjectMembershipWithAudit(input: Parameters<MemoryStore["removeProjectMembershipWithAudit"]>[0]) {
+    if (this.demoteRequesterBeforeNextRemoval) {
+      this.demoteRequesterBeforeNextRemoval = false;
+      await super.updateProjectMembershipRoleWithAudit({
+        projectId: input.projectId,
+        targetAdminUserId: input.requestedByAdminUserId,
+        requestedByAdminUserId: this.otherOwnerAdminUserId!,
+        role: "viewer",
+      });
+    }
+    return super.removeProjectMembershipWithAudit(input);
+  }
+}
+
+class TargetRoleRaceStore extends MemoryStore {
+  promoteTargetBeforeNextUpdate = false;
+  promoteTargetBeforeNextRemoval = false;
+
+  override async updateProjectMembershipRoleWithAudit(input: Parameters<MemoryStore["updateProjectMembershipRoleWithAudit"]>[0]) {
+    if (this.promoteTargetBeforeNextUpdate) {
+      this.promoteTargetBeforeNextUpdate = false;
+      await super.updateProjectMembershipRoleWithAudit({
+        projectId: input.projectId,
+        targetAdminUserId: input.targetAdminUserId,
+        requestedByAdminUserId: input.requestedByAdminUserId,
+        role: "admin",
+      });
+    }
+    return super.updateProjectMembershipRoleWithAudit(input);
+  }
+
+  override async removeProjectMembershipWithAudit(input: Parameters<MemoryStore["removeProjectMembershipWithAudit"]>[0]) {
+    if (this.promoteTargetBeforeNextRemoval) {
+      this.promoteTargetBeforeNextRemoval = false;
+      await super.updateProjectMembershipRoleWithAudit({
+        projectId: input.projectId,
+        targetAdminUserId: input.targetAdminUserId,
+        requestedByAdminUserId: input.requestedByAdminUserId,
+        role: "admin",
+      });
+    }
+    return super.removeProjectMembershipWithAudit(input);
   }
 }
 
@@ -577,6 +641,108 @@ describe("admin bff routes", () => {
     ]));
   });
 
+  it("rejects a requester demoted after the PATCH access check", async () => {
+    const store = new RequesterRoleRaceStore();
+    const user = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_update", email: "admin@example.com", emailVerified: true, now: "2026-08-31T00:00:00.000Z" });
+    const otherOwner = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_update_owner", email: "other-owner@example.com", emailVerified: true, now: "2026-08-31T00:01:00.000Z" });
+    const member = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_update_member", email: "race-update@example.com", emailVerified: true, now: "2026-08-31T00:02:00.000Z" });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user });
+    const project = await store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: user.adminUserId, role: "owner", createdAt: "2026-08-31T00:00:00.000Z" });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: otherOwner.adminUserId, role: "owner", createdAt: "2026-08-31T00:01:00.000Z" });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: member.adminUserId, role: "viewer", createdAt: "2026-08-31T00:02:00.000Z" });
+    store.otherOwnerAdminUserId = otherOwner.adminUserId;
+    store.demoteRequesterBeforeNextUpdate = true;
+    const app = createApp({ store, authConfig });
+    const cookie = `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`;
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}/members/${member.adminUserId}`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": session.csrfToken },
+      payload: { role: "admin" },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_role_forbidden" });
+    expect(await store.getProjectMembership(project.projectId, member.adminUserId)).toMatchObject({ role: "viewer" });
+  });
+
+  it("rejects a requester demoted after the DELETE access check", async () => {
+    const store = new RequesterRoleRaceStore();
+    const user = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_remove", email: "admin@example.com", emailVerified: true, now: "2026-08-31T00:00:00.000Z" });
+    const otherOwner = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_remove_owner", email: "other-owner@example.com", emailVerified: true, now: "2026-08-31T00:01:00.000Z" });
+    const member = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_remove_member", email: "race-remove@example.com", emailVerified: true, now: "2026-08-31T00:02:00.000Z" });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user });
+    const project = await store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: user.adminUserId, role: "owner", createdAt: "2026-08-31T00:00:00.000Z" });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: otherOwner.adminUserId, role: "owner", createdAt: "2026-08-31T00:01:00.000Z" });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: member.adminUserId, role: "viewer", createdAt: "2026-08-31T00:02:00.000Z" });
+    store.otherOwnerAdminUserId = otherOwner.adminUserId;
+    store.demoteRequesterBeforeNextRemoval = true;
+    const app = createApp({ store, authConfig });
+    const cookie = `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`;
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/admin/api/projects/${project.projectId}/members/${member.adminUserId}`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": session.csrfToken },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_role_forbidden" });
+    expect(await store.getProjectMembership(project.projectId, member.adminUserId)).toMatchObject({ role: "viewer" });
+  });
+
+  it("uses the mutation-time member role in PATCH audit metadata", async () => {
+    const store = new TargetRoleRaceStore();
+    const user = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_audit_update", email: "admin@example.com", emailVerified: true, now: "2026-08-31T00:00:00.000Z" });
+    const member = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_audit_update_member", email: "race-audit-update@example.com", emailVerified: true, now: "2026-08-31T00:01:00.000Z" });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user });
+    const project = await store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: user.adminUserId, role: "owner", createdAt: "2026-08-31T00:00:00.000Z" });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: member.adminUserId, role: "viewer", createdAt: "2026-08-31T00:01:00.000Z" });
+    store.promoteTargetBeforeNextUpdate = true;
+    const app = createApp({ store, authConfig });
+    const cookie = `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`;
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}/members/${member.adminUserId}`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": session.csrfToken },
+      payload: { role: "owner" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ metadata: expect.objectContaining({ beforeRole: "admin", afterRole: "owner" }) }),
+    ]));
+  });
+
+  it("uses the mutation-time member role in DELETE audit metadata", async () => {
+    const store = new TargetRoleRaceStore();
+    const user = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_audit_remove", email: "admin@example.com", emailVerified: true, now: "2026-08-31T00:00:00.000Z" });
+    const member = await store.upsertAdminUserFromGoogle({ googleSub: "google_sub_race_audit_remove_member", email: "race-audit-remove@example.com", emailVerified: true, now: "2026-08-31T00:01:00.000Z" });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user });
+    const project = await store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: user.adminUserId, role: "owner", createdAt: "2026-08-31T00:00:00.000Z" });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: member.adminUserId, role: "viewer", createdAt: "2026-08-31T00:01:00.000Z" });
+    store.promoteTargetBeforeNextRemoval = true;
+    const app = createApp({ store, authConfig });
+    const cookie = `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`;
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/admin/api/projects/${project.projectId}/members/${member.adminUserId}`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": session.csrfToken },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ metadata: expect.objectContaining({ role: "admin" }) }),
+    ]));
+  });
+
   it.each(["admin", "viewer"] as const)("rejects %s members from changing or removing project members", async (role) => {
     const { store, user, cookie, csrfToken } = await signedInStore();
     const project = await store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
@@ -681,17 +847,19 @@ describe("admin bff routes", () => {
     });
     const session = await createAdminSessionForUser({ store, config: authConfig, user });
     const project = await store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
-    const owner = await store.upsertAdminUserFromGoogle({
+    const member = await store.upsertAdminUserFromGoogle({
       googleSub: "google_sub_last_owner", email: "last-owner@example.com", emailVerified: true, now: "2026-08-31T00:01:00.000Z",
     });
-    await store.addProjectMembership({ projectId: project.projectId, adminUserId: owner.adminUserId, role: "owner", createdAt: "2026-08-31T00:01:00.000Z" });
-    store.requesterMembership = { projectId: project.projectId, adminUserId: user.adminUserId };
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: user.adminUserId, role: "owner", createdAt: "2026-08-31T00:00:00.000Z" });
+    await store.addProjectMembership({ projectId: project.projectId, adminUserId: member.adminUserId, role: "viewer", createdAt: "2026-08-31T00:01:00.000Z" });
     const app = createApp({ store, authConfig });
     const cookie = `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`;
     const headers = { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": session.csrfToken };
 
-    const demotion = await app.inject({ method: "PATCH", url: `/admin/api/projects/${project.projectId}/members/${owner.adminUserId}`, headers, payload: { role: "admin" } });
-    const removal = await app.inject({ method: "DELETE", url: `/admin/api/projects/${project.projectId}/members/${owner.adminUserId}`, headers });
+    store.throwLastOwnerBeforeNextUpdate = true;
+    const demotion = await app.inject({ method: "PATCH", url: `/admin/api/projects/${project.projectId}/members/${member.adminUserId}`, headers, payload: { role: "admin" } });
+    store.throwLastOwnerBeforeNextRemoval = true;
+    const removal = await app.inject({ method: "DELETE", url: `/admin/api/projects/${project.projectId}/members/${member.adminUserId}`, headers });
 
     expect(demotion.statusCode).toBe(403);
     expect(demotion.json()).toEqual({ error: "last_owner_forbidden" });

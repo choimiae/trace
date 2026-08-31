@@ -12,6 +12,7 @@ import type {
   CreateAuditLogInput,
   CreateProjectInput,
   ProjectMembershipRecord,
+  ProjectMembershipAuditLogFactory,
   ProjectRecord,
   TraceStore,
   UpdateProjectInput,
@@ -148,8 +149,11 @@ export class MemoryStore implements TraceStore {
     targetAdminUserId: string;
     requestedByAdminUserId: string;
     role: AdminRole;
-    auditLog?: CreateAuditLogInput;
+    auditLog?: ProjectMembershipAuditLogFactory;
   }): Promise<ProjectMembershipRecord | undefined> {
+    const requester = this.projectMemberships.get(`${input.projectId}:${input.requestedByAdminUserId}`);
+    if (!requester || requester.role !== "owner") throw new Error("project_role_forbidden");
+
     const key = `${input.projectId}:${input.targetAdminUserId}`;
     const current = this.projectMemberships.get(key);
     if (!current) return undefined;
@@ -163,7 +167,7 @@ export class MemoryStore implements TraceStore {
 
     const updated: ProjectMembershipRecord = { ...current, role: input.role };
     this.projectMemberships.set(key, updated);
-    if (input.auditLog) this.appendAuditLog(input.auditLog);
+    if (input.auditLog) this.appendAuditLog(input.auditLog(current));
     return updated;
   }
 
@@ -171,8 +175,11 @@ export class MemoryStore implements TraceStore {
     projectId: string;
     targetAdminUserId: string;
     requestedByAdminUserId: string;
-    auditLog: CreateAuditLogInput;
+    auditLog: ProjectMembershipAuditLogFactory;
   }): Promise<boolean> {
+    const requester = this.projectMemberships.get(`${input.projectId}:${input.requestedByAdminUserId}`);
+    if (!requester || requester.role !== "owner") throw new Error("project_role_forbidden");
+
     const key = `${input.projectId}:${input.targetAdminUserId}`;
     const current = this.projectMemberships.get(key);
     if (!current) return false;
@@ -184,7 +191,7 @@ export class MemoryStore implements TraceStore {
     }
 
     this.projectMemberships.delete(key);
-    this.appendAuditLog(input.auditLog);
+    this.appendAuditLog(input.auditLog(current));
     return true;
   }
 

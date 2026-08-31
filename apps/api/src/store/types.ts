@@ -88,6 +88,8 @@ export interface CreateAuditLogInput {
   metadata: Record<string, unknown>;
 }
 
+export type ProjectMembershipAuditLogFactory = (current: ProjectMembershipRecord) => CreateAuditLogInput;
+
 export interface StoredSession {
   sessionId: string;
   projectId: string;
@@ -118,13 +120,13 @@ export interface TraceStore {
     targetAdminUserId: string;
     requestedByAdminUserId: string;
     role: AdminRole;
-    auditLog?: CreateAuditLogInput;
+    auditLog?: ProjectMembershipAuditLogFactory;
   }): Promise<ProjectMembershipRecord | undefined>;
   removeProjectMembershipWithAudit(input: {
     projectId: string;
     targetAdminUserId: string;
     requestedByAdminUserId: string;
-    auditLog: CreateAuditLogInput;
+    auditLog: ProjectMembershipAuditLogFactory;
   }): Promise<boolean>;
   getProjectMembership(projectId: string, adminUserId: string): Promise<ProjectMembershipRecord | undefined>;
   listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]>;
