@@ -23,3 +23,8 @@ export const memberCandidateSearchSchema = z.object({
   query: z.string().trim().default(""),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
+
+export const auditLogQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).optional(),
+});

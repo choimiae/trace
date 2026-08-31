@@ -7,6 +7,7 @@ import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js
 import type { AdminRole, AdminUserRecord, ProjectMembershipRecord, ProjectRecord, TraceStore } from "../store/types.js";
 import {
   addProjectMemberSchema,
+  auditLogQuerySchema,
   createProjectSchema,
   memberCandidateSearchSchema,
   updateProjectMemberRoleSchema,
@@ -131,6 +132,60 @@ export async function registerAdminProxyRoutes(
       if (role !== undefined) candidate.membership = { role };
       return candidate;
     });
+  });
+
+  app.get("/admin/api/projects/:projectId/audit-logs", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const access = await getProjectAccess(options.store, projectId, authenticated, "project_audit_logs");
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+    // 권한 검사를 schema 검증보다 먼저 둔다. owner 가 아닌 요청자에게
+    // limit·cursor 검증 결과를 흘리지 않는다.
+    if (access.membership.role !== "owner") {
+      return reply.code(403).send({ error: "project_role_forbidden" });
+    }
+
+    const parsed = auditLogQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_audit_log_query" });
+
+    const cursor = parsed.data.cursor === undefined
+      ? undefined
+      : parseAuditLogCursor(parsed.data.cursor);
+    if (parsed.data.cursor !== undefined && cursor === undefined) {
+      return reply.code(400).send({ error: "invalid_audit_log_query" });
+    }
+
+    // limit + 1 을 읽어 다음 페이지 존재를 별도 count 없이 판정한다.
+    const rows = await options.store.listProjectAuditLogs({
+      projectId,
+      limit: parsed.data.limit + 1,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    const page = rows.slice(0, parsed.data.limit);
+    const hasMore = rows.length > parsed.data.limit;
+
+    const actors = await resolveAuditLogActors(options.store, page);
+    const entries = page.map((row) => {
+      const entry: ProjectAuditLogEntryResponse = {
+        auditLogId: row.auditLogId,
+        action: row.action,
+        createdAt: row.createdAt,
+        metadata: row.metadata,
+      };
+      if (row.adminUserId !== undefined) {
+        entry.actor = actors.get(row.adminUserId) ?? { adminUserId: row.adminUserId };
+      }
+      return entry;
+    });
+
+    const lastEntry = page[page.length - 1];
+    return hasMore && lastEntry !== undefined
+      ? { entries, nextCursor: encodeAuditLogCursor(lastEntry) }
+      : { entries };
   });
 
   app.post("/admin/api/projects/:projectId/members", async (request, reply) => {
@@ -450,6 +505,7 @@ type ProjectResourceType =
   | "project_settings"
   | "project_members"
   | "project_member_candidates"
+  | "project_audit_logs"
   | "project_summary"
   | "project_issues"
   | "issue_detail"
@@ -515,6 +571,20 @@ type ProjectMemberCandidateResponse = {
   membership?: { role: AdminRole };
 };
 
+type ProjectAuditLogActorResponse = {
+  adminUserId: string;
+  email?: string;
+  name?: string;
+};
+
+type ProjectAuditLogEntryResponse = {
+  auditLogId: string;
+  action: string;
+  createdAt: string;
+  actor?: ProjectAuditLogActorResponse;
+  metadata: Record<string, unknown>;
+};
+
 function toProjectMemberResponse(
   membership: ProjectMembershipRecord,
   user: AdminUserRecord | undefined,
@@ -528,4 +598,46 @@ function toProjectMemberResponse(
   };
   if (user.name !== undefined) response.name = user.name;
   return response;
+}
+
+function encodeAuditLogCursor(entry: { createdAt: string; auditLogId: string }): string {
+  return `${entry.createdAt}|${entry.auditLogId}`;
+}
+
+function parseAuditLogCursor(
+  cursor: string,
+): { createdAt: string; auditLogId: string } | undefined {
+  const separator = cursor.indexOf("|");
+  if (separator <= 0 || separator === cursor.length - 1) return undefined;
+
+  const createdAt = cursor.slice(0, separator);
+  const auditLogId = cursor.slice(separator + 1);
+  if (Number.isNaN(Date.parse(createdAt))) return undefined;
+
+  return { createdAt, auditLogId };
+}
+
+async function resolveAuditLogActors(
+  store: TraceStore,
+  rows: Array<{ adminUserId?: string }>,
+): Promise<Map<string, ProjectAuditLogActorResponse>> {
+  const distinct = [...new Set(
+    rows
+      .map((row) => row.adminUserId)
+      .filter((adminUserId): adminUserId is string => adminUserId !== undefined),
+  )];
+
+  const resolved = await Promise.all(
+    distinct.map(async (adminUserId) => {
+      const user = await store.getAdminUser(adminUserId);
+      const actor: ProjectAuditLogActorResponse = { adminUserId };
+      if (user !== undefined) {
+        actor.email = user.email;
+        if (user.name !== undefined) actor.name = user.name;
+      }
+      return [adminUserId, actor] as const;
+    }),
+  );
+
+  return new Map(resolved);
 }

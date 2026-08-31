@@ -126,6 +126,15 @@ class TargetRoleRaceStore extends MemoryStore {
   }
 }
 
+class CountingAdminUserStore extends MemoryStore {
+  getAdminUserCalls = 0;
+
+  override async getAdminUser(adminUserId: string) {
+    this.getAdminUserCalls += 1;
+    return super.getAdminUser(adminUserId);
+  }
+}
+
 describe("admin bff routes", () => {
   it("rejects Admin BFF requests without a session cookie", async () => {
     const app = createApp({ store: new MemoryStore(), authConfig });
@@ -813,6 +822,477 @@ describe("admin bff routes", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ error: "invalid_member_candidate_search" });
+  });
+
+  it("lets an owner read project audit logs newest first", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    await store.createAuditLog({
+      adminUserId: user.adminUserId,
+      action: "project.updated",
+      projectId: project.projectId,
+      createdAt: "2026-08-31T00:00:00.000Z",
+      metadata: { i: 1 },
+    });
+    await store.createAuditLog({
+      adminUserId: user.adminUserId,
+      action: "project.updated",
+      projectId: project.projectId,
+      createdAt: "2026-08-31T01:00:00.000Z",
+      metadata: { i: 2 },
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.entries).toHaveLength(2);
+    expect(body.entries.map((entry: { createdAt: string }) => entry.createdAt)).toEqual([
+      "2026-08-31T01:00:00.000Z",
+      "2026-08-31T00:00:00.000Z",
+    ]);
+    for (const entry of body.entries) {
+      expect(entry.actor).toEqual({ adminUserId: user.adminUserId, email: "admin@example.com" });
+    }
+    expect(body).not.toHaveProperty("nextCursor");
+  });
+
+  it("resolves the actor name when the admin user has one", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    const namedActor = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_named_actor",
+      email: "named-actor@example.com",
+      emailVerified: true,
+      name: "Named Actor",
+      now: "2026-08-31T00:00:00.000Z",
+    });
+    await store.createAuditLog({
+      adminUserId: namedActor.adminUserId,
+      action: "project.updated",
+      projectId: project.projectId,
+      createdAt: "2026-08-31T00:00:00.000Z",
+      metadata: {},
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().entries).toEqual([
+      expect.objectContaining({
+        actor: { adminUserId: namedActor.adminUserId, email: "named-actor@example.com", name: "Named Actor" },
+      }),
+    ]);
+  });
+
+  it("omits the actor when the audit log has no admin user", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    await store.createAuditLog({
+      action: "project.updated",
+      projectId: project.projectId,
+      createdAt: "2026-08-31T00:00:00.000Z",
+      metadata: {},
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0]).not.toHaveProperty("actor");
+  });
+
+  it("returns only the adminUserId when the actor no longer exists", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    await store.createAuditLog({
+      adminUserId: "admin_missing",
+      action: "project.updated",
+      projectId: project.projectId,
+      createdAt: "2026-08-31T00:00:00.000Z",
+      metadata: {},
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0].actor).toEqual({ adminUserId: "admin_missing" });
+    expect(body.entries[0].actor).not.toHaveProperty("email");
+  });
+
+  it("paginates project audit logs with a cursor", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    for (let i = 0; i < 3; i += 1) {
+      await store.createAuditLog({
+        adminUserId: user.adminUserId,
+        action: "project.updated",
+        projectId: project.projectId,
+        createdAt: `2026-08-31T0${i}:00:00.000Z`,
+        metadata: { i },
+      });
+    }
+    const app = createApp({ store, authConfig });
+
+    const firstResponse = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs?limit=2`,
+      headers: { cookie },
+    });
+
+    expect(firstResponse.statusCode).toBe(200);
+    const firstBody = firstResponse.json();
+    expect(firstBody.entries).toHaveLength(2);
+    expect(firstBody.nextCursor).toEqual(expect.any(String));
+
+    const secondResponse = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs?limit=2&cursor=${encodeURIComponent(firstBody.nextCursor)}`,
+      headers: { cookie },
+    });
+
+    expect(secondResponse.statusCode).toBe(200);
+    const secondBody = secondResponse.json();
+    expect(secondBody.entries).toHaveLength(1);
+    expect(secondBody).not.toHaveProperty("nextCursor");
+
+    const firstIds = firstBody.entries.map((entry: { auditLogId: string }) => entry.auditLogId);
+    const secondIds = secondBody.entries.map((entry: { auditLogId: string }) => entry.auditLogId);
+    expect(firstIds.some((id: string) => secondIds.includes(id))).toBe(false);
+  });
+
+  it("excludes audit logs without a project and from other projects", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const otherProject = await store.createProject({
+      name: "Other",
+      allowedDomains: ["https://other.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    await store.createAuditLog({
+      adminUserId: user.adminUserId,
+      action: "project.updated",
+      projectId: project.projectId,
+      createdAt: "2026-08-31T00:00:00.000Z",
+      metadata: { target: true },
+    });
+    await store.createAuditLog({
+      adminUserId: user.adminUserId,
+      action: "project.updated",
+      projectId: otherProject.projectId,
+      createdAt: "2026-08-31T00:01:00.000Z",
+      metadata: { target: false },
+    });
+    await store.createAuditLog({
+      adminUserId: user.adminUserId,
+      action: "auth.login_success",
+      createdAt: "2026-08-31T00:02:00.000Z",
+      metadata: {},
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0].metadata).toEqual({ target: true });
+  });
+
+  it("looks up each distinct actor only once per page", async () => {
+    const store = new CountingAdminUserStore();
+    const user = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_1",
+      email: "admin@example.com",
+      emailVerified: true,
+      now: "2026-08-25T00:00:00.000Z",
+    });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user });
+    const cookie = `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`;
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    for (let i = 0; i < 3; i += 1) {
+      await store.createAuditLog({
+        adminUserId: user.adminUserId,
+        action: "project.updated",
+        projectId: project.projectId,
+        createdAt: `2026-08-31T0${i}:00:00.000Z`,
+        metadata: { i },
+      });
+    }
+    const app = createApp({ store, authConfig });
+
+    store.getAdminUserCalls = 0;
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(store.getAdminUserCalls).toBe(1);
+  });
+
+  it.each(["admin", "viewer"] as const)(
+    "rejects project audit log reads from a %s member",
+    async (role) => {
+      const { store, user, cookie } = await signedInStore();
+      const project = await store.createProject({
+        name: `Demo ${role}`,
+        allowedDomains: [`https://${role}.example.com`],
+      });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: user.adminUserId,
+        role,
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      const app = createApp({ store, authConfig });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/admin/api/projects/${project.projectId}/audit-logs`,
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "project_role_forbidden" });
+    },
+  );
+
+  it("returns 403 and audits when project audit logs are requested by a non-member", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Private",
+      allowedDomains: ["https://private.example.com"],
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_access_denied" });
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "project_audit_logs" },
+      }),
+    ]));
+  });
+
+  it("returns 404 when reading audit logs for a missing project", async () => {
+    const { store, cookie } = await signedInStore();
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/api/projects/proj_missing/audit-logs",
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "project_not_found" });
+  });
+
+  it("rejects project audit log reads without a session cookie", async () => {
+    const { store } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs`,
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "admin_auth_required" });
+  });
+
+  it.each(["0", "101", "abc"])("rejects an out-of-range audit log limit %s", async (limit) => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs?limit=${limit}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_audit_log_query" });
+  });
+
+  it.each(["nope", "|audit_1", "2026-08-31T00:00:00.000Z|"])(
+    "rejects an invalid audit log cursor %s",
+    async (cursor) => {
+      const { store, user, cookie } = await signedInStore();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: user.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      const app = createApp({ store, authConfig });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/admin/api/projects/${project.projectId}/audit-logs?cursor=${encodeURIComponent(cursor)}`,
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "invalid_audit_log_query" });
+    },
+  );
+
+  it("returns exactly one entry when limit=1 is requested", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    await store.createAuditLog({
+      adminUserId: user.adminUserId,
+      action: "project.updated",
+      projectId: project.projectId,
+      createdAt: "2026-08-31T00:00:00.000Z",
+      metadata: {},
+    });
+    await store.createAuditLog({
+      adminUserId: user.adminUserId,
+      action: "project.updated",
+      projectId: project.projectId,
+      createdAt: "2026-08-31T01:00:00.000Z",
+      metadata: {},
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/audit-logs?limit=1`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.entries).toHaveLength(1);
   });
 
   it("lets an owner update another project member role and audits the change", async () => {
