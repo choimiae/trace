@@ -10,9 +10,11 @@ import {
   getProjectSettings,
   logout,
   removeProjectMember,
+  searchProjectMemberCandidates,
   updateProjectMemberRole,
   updateProjectSettings,
   type AddProjectMemberInput,
+  type ProjectMemberCandidateResponse,
   type ProjectMemberResponse,
   type ProjectRole,
   type ProjectSettingsResponse,
@@ -70,6 +72,11 @@ type AppState =
       settingsSessionId: number;
       memberActionRequestIds: Record<string, number>;
       members: ProjectMemberResponse[];
+      memberCandidates: ProjectMemberCandidateResponse[];
+      memberCandidateSearchRequestId: number;
+      memberCandidateSearchLoading: boolean;
+      memberCandidateSearchError?: string | undefined;
+      selectedMemberCandidate?: ProjectMemberCandidateResponse | undefined;
       saving?: boolean;
       error?: string | undefined;
       savedMessage?: string | undefined;
@@ -120,6 +127,25 @@ const PROJECT_MEMBER_ERROR_MESSAGES: Record<string, string> = {
 
 function describeProjectMemberError(error: unknown): string {
   return describeApiError(PROJECT_MEMBER_ERROR_MESSAGES, error, "멤버를 추가하지 못했습니다.");
+}
+
+// 후보 검색 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
+// apps/api/src/routes/admin-proxy.ts 의 GET member-candidates 핸들러 기준.
+// UI 는 owner 일 때만 검색하고 limit 을 보내지 않으므로 권한/조건 오류는 정상
+// 흐름에서는 나오지 않는다. 권한이 도중에 바뀐 경우를 위해 지도에 남긴다.
+// 401 admin_auth_required 는 login 화면으로 전이하므로 이 지도에 담지 않는다.
+const MEMBER_CANDIDATE_SEARCH_ERROR_MESSAGES: Record<string, string> = {
+  project_role_forbidden: "멤버를 검색할 권한이 없습니다.",
+  project_access_denied: "더 이상 이 프로젝트의 멤버가 아닙니다.",
+  invalid_member_candidate_search: "검색 조건이 올바르지 않습니다.",
+};
+
+function describeMemberCandidateSearchError(error: unknown): string {
+  return describeApiError(
+    MEMBER_CANDIDATE_SEARCH_ERROR_MESSAGES,
+    error,
+    "사용자를 검색하지 못했습니다.",
+  );
 }
 
 function memberRoleUpdateErrorMessage(error: unknown): string {
@@ -219,6 +245,60 @@ export function App() {
     };
   }, [reloadKey]);
 
+  // 진입 시 검색과 검색어 변경이 같은 guard 를 쓰게 한다. requestId 는 호출자가
+  // 자기 render 의 state 에서 계산해서 넘긴다. setState updater 는 호출 시점에
+  // 동기 실행되지 않으므로 updater 안에서 읽어 낼 수 없다. 기존
+  // handleUpdateMemberRole 이 memberActionRequestId 를 다루는 방식과 같다.
+  const runMemberCandidateSearch = (
+    projectId: string,
+    settingsSessionId: number,
+    requestId: number,
+    query: string,
+  ) => {
+    setState((current) =>
+      current.type === "settings"
+      && current.projectId === projectId
+      && current.settingsSessionId === settingsSessionId
+        ? Object.assign({}, current, {
+            memberCandidateSearchRequestId: requestId,
+            memberCandidateSearchLoading: true,
+            memberCandidateSearchError: undefined,
+          })
+        : current,
+    );
+
+    void searchProjectMemberCandidates(projectId, query)
+      .then((candidates) => {
+        setState((current) =>
+          current.type === "settings"
+          && current.projectId === projectId
+          && current.settingsSessionId === settingsSessionId
+          && current.memberCandidateSearchRequestId === requestId
+            ? Object.assign({}, current, {
+                memberCandidates: candidates,
+                memberCandidateSearchLoading: false,
+                memberCandidateSearchError: undefined,
+              })
+            : current,
+        );
+      })
+      .catch((error: unknown) => {
+        setState((current) => {
+          if (error instanceof ApiError && error.status === 401) return { type: "login" };
+          if (
+            current.type !== "settings"
+            || current.projectId !== projectId
+            || current.settingsSessionId !== settingsSessionId
+            || current.memberCandidateSearchRequestId !== requestId
+          ) return current;
+          return Object.assign({}, current, {
+            memberCandidateSearchLoading: false,
+            memberCandidateSearchError: describeMemberCandidateSearchError(error),
+          });
+        });
+      });
+  };
+
   useEffect(() => {
     if (state.type !== "install" || state.eventsSeen > 0) return;
 
@@ -245,6 +325,25 @@ export function App() {
       clearInterval(timer);
     };
   }, [state]);
+
+  // 진입 시 후보 검색은 handleShowSettings 안에서 이어 호출하지 않는다. 그 함수의
+  // settings 전이는 settingsSessionId 를 updater 안에서 계산하므로, 이어 호출하면
+  // guard 에 쓸 session id 를 미리 추측해야 한다. key 가 바뀔 때만 발동하는 effect
+  // 로 두고 실제 state 에서 session id 를 읽는다. key 는 발동 조건일 뿐이고
+  // 인자는 state 에서 직접 읽으므로 key 형식에 기대지 않는다.
+  const memberCandidateBootstrapKey = state.type === "settings" && state.project.role === "owner"
+    ? `${state.projectId}:${state.settingsSessionId}`
+    : undefined;
+
+  useEffect(() => {
+    if (memberCandidateBootstrapKey === undefined || state.type !== "settings") return;
+    runMemberCandidateSearch(
+      state.projectId,
+      state.settingsSessionId,
+      state.memberCandidateSearchRequestId + 1,
+      "",
+    );
+  }, [memberCandidateBootstrapKey]);
 
   if (state.type === "loading") return <StatusPage title="불러오는 중" />;
 
@@ -364,6 +463,11 @@ export function App() {
               memberActionsInFlight: new Set(),
               memberActionError: undefined,
               memberActionSavedMessage: undefined,
+              memberCandidates: [],
+              memberCandidateSearchRequestId: 0,
+              memberCandidateSearchLoading: false,
+              memberCandidateSearchError: undefined,
+              selectedMemberCandidate: undefined,
             }
           : current,
       );
@@ -438,6 +542,12 @@ export function App() {
           current.type === "settings" && current.projectId === projectId
             ? Object.assign({}, current, {
                 members: current.members.concat(member),
+                memberCandidates: current.memberCandidates.map((candidate) =>
+                  candidate.adminUserId === member.adminUserId
+                    ? Object.assign({}, candidate, { membership: { role: member.role } })
+                    : candidate,
+                ),
+                selectedMemberCandidate: undefined,
                 addingMember: false,
                 memberSavedMessage: "멤버를 추가했습니다.",
               })
@@ -453,6 +563,24 @@ export function App() {
           });
         });
       }
+    };
+
+    const handleSearchMemberCandidates = (query: string) => {
+      runMemberCandidateSearch(
+        state.projectId,
+        state.settingsSessionId,
+        state.memberCandidateSearchRequestId + 1,
+        query,
+      );
+    };
+
+    const handleSelectMemberCandidate = (candidate: ProjectMemberCandidateResponse) => {
+      if (candidate.membership !== undefined) return;
+      setState((current) =>
+        current.type === "settings" && current.projectId === state.projectId
+          ? Object.assign({}, current, { selectedMemberCandidate: candidate })
+          : current,
+      );
     };
 
     const handleUpdateMemberRole = async (adminUserId: string, role: ProjectRole) => {
@@ -578,6 +706,12 @@ export function App() {
         project={state.project}
         members={state.members}
         currentAdminUserId={state.currentAdminUserId}
+        memberCandidates={state.memberCandidates}
+        memberCandidateSearchLoading={state.memberCandidateSearchLoading}
+        memberCandidateSearchError={state.memberCandidateSearchError}
+        selectedMemberCandidate={state.selectedMemberCandidate}
+        onSearchMemberCandidates={handleSearchMemberCandidates}
+        onSelectMemberCandidate={handleSelectMemberCandidate}
         memberActionsInFlight={state.memberActionsInFlight}
         memberActionError={state.memberActionError}
         memberActionSavedMessage={state.memberActionSavedMessage}
