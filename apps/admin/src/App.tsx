@@ -68,7 +68,7 @@ type AppState =
       currentAdminUserId: string;
       csrfToken: string;
       settingsSessionId: number;
-      memberActionRequestId: number;
+      memberActionRequestIds: Record<string, number>;
       members: ProjectMemberResponse[];
       saving?: boolean;
       error?: string | undefined;
@@ -76,7 +76,7 @@ type AppState =
       addingMember?: boolean;
       memberError?: string | undefined;
       memberSavedMessage?: string | undefined;
-      memberActionInFlight?: string | undefined;
+      memberActionsInFlight: Set<string>;
       memberActionError?: string | undefined;
       memberActionSavedMessage?: string | undefined;
     };
@@ -359,9 +359,9 @@ export function App() {
               adminUserId: current.adminUserId,
               csrfToken: current.csrfToken,
               settingsSessionId: current.settingsSessionId + 1,
-              memberActionRequestId: 0,
+              memberActionRequestIds: {},
               currentAdminUserId: current.adminUserId,
-              memberActionInFlight: undefined,
+              memberActionsInFlight: new Set(),
               memberActionError: undefined,
               memberActionSavedMessage: undefined,
             }
@@ -460,13 +460,22 @@ export function App() {
       const projectId = state.projectId;
       const csrfToken = state.csrfToken;
       const settingsSessionId = state.settingsSessionId;
-      const memberActionRequestId = state.memberActionRequestId + 1;
-      setState(Object.assign({}, state, {
-        memberActionRequestId,
-        memberActionInFlight: adminUserId,
-        memberActionError: undefined,
-        memberActionSavedMessage: undefined,
-      }));
+      const memberActionRequestId = (state.memberActionRequestIds[adminUserId] ?? 0) + 1;
+      setState((current) => {
+        if (
+          current.type !== "settings"
+          || current.projectId !== projectId
+          || current.settingsSessionId !== settingsSessionId
+        ) return current;
+        const memberActionsInFlight = new Set(current.memberActionsInFlight);
+        memberActionsInFlight.add(adminUserId);
+        return Object.assign({}, current, {
+          memberActionRequestIds: { ...current.memberActionRequestIds, [adminUserId]: memberActionRequestId },
+          memberActionsInFlight,
+          memberActionError: undefined,
+          memberActionSavedMessage: undefined,
+        });
+      });
 
       try {
         const updated = await updateProjectMemberRole(projectId, adminUserId, { role }, csrfToken);
@@ -475,11 +484,13 @@ export function App() {
             current.type !== "settings"
             || current.projectId !== projectId
             || current.settingsSessionId !== settingsSessionId
-            || current.memberActionRequestId !== memberActionRequestId
+            || current.memberActionRequestIds[adminUserId] !== memberActionRequestId
           ) return current;
+          const memberActionsInFlight = new Set(current.memberActionsInFlight);
+          memberActionsInFlight.delete(adminUserId);
           return Object.assign({}, current, {
             members: current.members.map((member) => member.adminUserId === updated.adminUserId ? updated : member),
-            memberActionInFlight: undefined,
+            memberActionsInFlight,
             memberActionError: undefined,
             memberActionSavedMessage: "멤버 역할을 변경했습니다.",
           });
@@ -490,10 +501,12 @@ export function App() {
             current.type !== "settings"
             || current.projectId !== projectId
             || current.settingsSessionId !== settingsSessionId
-            || current.memberActionRequestId !== memberActionRequestId
+            || current.memberActionRequestIds[adminUserId] !== memberActionRequestId
           ) return current;
+          const memberActionsInFlight = new Set(current.memberActionsInFlight);
+          memberActionsInFlight.delete(adminUserId);
           return Object.assign({}, current, {
-            memberActionInFlight: undefined,
+            memberActionsInFlight,
             memberActionError: memberRoleUpdateErrorMessage(error),
             memberActionSavedMessage: undefined,
           });
@@ -506,13 +519,22 @@ export function App() {
       const projectId = state.projectId;
       const csrfToken = state.csrfToken;
       const settingsSessionId = state.settingsSessionId;
-      const memberActionRequestId = state.memberActionRequestId + 1;
-      setState(Object.assign({}, state, {
-        memberActionRequestId,
-        memberActionInFlight: adminUserId,
-        memberActionError: undefined,
-        memberActionSavedMessage: undefined,
-      }));
+      const memberActionRequestId = (state.memberActionRequestIds[adminUserId] ?? 0) + 1;
+      setState((current) => {
+        if (
+          current.type !== "settings"
+          || current.projectId !== projectId
+          || current.settingsSessionId !== settingsSessionId
+        ) return current;
+        const memberActionsInFlight = new Set(current.memberActionsInFlight);
+        memberActionsInFlight.add(adminUserId);
+        return Object.assign({}, current, {
+          memberActionRequestIds: { ...current.memberActionRequestIds, [adminUserId]: memberActionRequestId },
+          memberActionsInFlight,
+          memberActionError: undefined,
+          memberActionSavedMessage: undefined,
+        });
+      });
 
       try {
         await removeProjectMember(projectId, adminUserId, csrfToken);
@@ -521,11 +543,13 @@ export function App() {
             current.type !== "settings"
             || current.projectId !== projectId
             || current.settingsSessionId !== settingsSessionId
-            || current.memberActionRequestId !== memberActionRequestId
+            || current.memberActionRequestIds[adminUserId] !== memberActionRequestId
           ) return current;
+          const memberActionsInFlight = new Set(current.memberActionsInFlight);
+          memberActionsInFlight.delete(adminUserId);
           return Object.assign({}, current, {
             members: current.members.filter((member) => member.adminUserId !== adminUserId),
-            memberActionInFlight: undefined,
+            memberActionsInFlight,
             memberActionError: undefined,
             memberActionSavedMessage: "멤버를 제거했습니다.",
           });
@@ -536,10 +560,12 @@ export function App() {
             current.type !== "settings"
             || current.projectId !== projectId
             || current.settingsSessionId !== settingsSessionId
-            || current.memberActionRequestId !== memberActionRequestId
+            || current.memberActionRequestIds[adminUserId] !== memberActionRequestId
           ) return current;
+          const memberActionsInFlight = new Set(current.memberActionsInFlight);
+          memberActionsInFlight.delete(adminUserId);
           return Object.assign({}, current, {
-            memberActionInFlight: undefined,
+            memberActionsInFlight,
             memberActionError: memberRemoveErrorMessage(error),
             memberActionSavedMessage: undefined,
           });
@@ -552,7 +578,7 @@ export function App() {
         project={state.project}
         members={state.members}
         currentAdminUserId={state.currentAdminUserId}
-        memberActionInFlight={state.memberActionInFlight}
+        memberActionsInFlight={state.memberActionsInFlight}
         memberActionError={state.memberActionError}
         memberActionSavedMessage={state.memberActionSavedMessage}
         saving={state.saving === true}

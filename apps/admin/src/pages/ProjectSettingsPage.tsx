@@ -18,7 +18,7 @@ interface ProjectSettingsPageProps {
   onSave: (input: { name: string; allowedDomains: string[] }) => void;
   onAddMember: (input: AddProjectMemberInput) => void;
   currentAdminUserId: string;
-  memberActionInFlight?: string | undefined;
+  memberActionsInFlight?: ReadonlySet<string> | undefined;
   memberActionError?: string | undefined;
   memberActionSavedMessage?: string | undefined;
   onUpdateMemberRole: (adminUserId: string, role: ProjectRole) => void;
@@ -38,7 +38,7 @@ export function ProjectSettingsPage({
   onSave,
   onAddMember,
   currentAdminUserId,
-  memberActionInFlight,
+  memberActionsInFlight,
   memberActionError,
   memberActionSavedMessage,
   onUpdateMemberRole,
@@ -146,7 +146,7 @@ export function ProjectSettingsPage({
         </div>
         <div className="members-list">
           {members.map((member) => {
-            const actionBusy = memberActionInFlight === member.adminUserId;
+            const actionBusy = memberActionsInFlight?.has(member.adminUserId) ?? false;
             const isSelf = member.adminUserId === currentAdminUserId;
             const isLastOwner = member.role === "owner" && ownerCount === 1;
             const ownerLossDisabled = member.role === "owner" && (isSelf || isLastOwner);
@@ -184,6 +184,7 @@ export function ProjectSettingsPage({
                     </select>
                     <Button
                       variant="secondary"
+                      aria-label={`${member.email} 제거`}
                       disabled={removeDisabled}
                       onClick={() => {
                         if (window.confirm("이 멤버를 프로젝트에서 제거할까요?")) {

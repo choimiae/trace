@@ -351,6 +351,48 @@ function describeTraceStoreContract(
       await expect(store.listAuditLogs()).resolves.toEqual([]);
     });
 
+    it("역할 변경 audit factory가 예외를 던지면 멤버십과 audit를 변경하지 않는다", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-update-audit-failure@example.com",
+        googleSub: "owner-update-audit-failure",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const member = await store.upsertAdminUserFromGoogle({
+        email: "member-update-audit-failure@example.com",
+        googleSub: "member-update-audit-failure",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      const project = await store.createProject({ name: "Update Audit Failure", allowedDomains: [] });
+      const membership = {
+        projectId: project.projectId,
+        adminUserId: member.adminUserId,
+        role: "viewer" as const,
+        createdAt: "2026-08-31T00:00:01.000Z",
+      };
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      await store.addProjectMembership(membership);
+
+      await expect(
+        store.updateProjectMembershipRoleWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: member.adminUserId,
+          requestedByAdminUserId: owner.adminUserId,
+          role: "admin",
+          auditLog: () => { throw new Error("audit_factory_failed"); },
+        }),
+      ).rejects.toThrow("audit_factory_failed");
+      await expect(store.getProjectMembership(project.projectId, member.adminUserId)).resolves.toEqual(membership);
+      await expect(store.listAuditLogs()).resolves.toEqual([]);
+    });
+
     it("returns undefined when updating a missing project member", async () => {
       const store = open();
       const owner = await store.upsertAdminUserFromGoogle({
@@ -458,6 +500,47 @@ function describeTraceStoreContract(
           }),
         }),
       ).resolves.toBe(false);
+      await expect(store.listAuditLogs()).resolves.toEqual([]);
+    });
+
+    it("멤버 제거 audit factory가 예외를 던지면 멤버십과 audit를 변경하지 않는다", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-remove-audit-failure@example.com",
+        googleSub: "owner-remove-audit-failure",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const member = await store.upsertAdminUserFromGoogle({
+        email: "member-remove-audit-failure@example.com",
+        googleSub: "member-remove-audit-failure",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      const project = await store.createProject({ name: "Remove Audit Failure", allowedDomains: [] });
+      const membership = {
+        projectId: project.projectId,
+        adminUserId: member.adminUserId,
+        role: "viewer" as const,
+        createdAt: "2026-08-31T00:00:01.000Z",
+      };
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      await store.addProjectMembership(membership);
+
+      await expect(
+        store.removeProjectMembershipWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: member.adminUserId,
+          requestedByAdminUserId: owner.adminUserId,
+          auditLog: () => { throw new Error("audit_factory_failed"); },
+        }),
+      ).rejects.toThrow("audit_factory_failed");
+      await expect(store.getProjectMembership(project.projectId, member.adminUserId)).resolves.toEqual(membership);
       await expect(store.listAuditLogs()).resolves.toEqual([]);
     });
 

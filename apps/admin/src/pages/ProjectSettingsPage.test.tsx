@@ -183,14 +183,15 @@ describe("ProjectSettingsPage", () => {
 
     expect(screen.getByLabelText("owner@example.com 역할")).toHaveValue("owner");
     expect(screen.getByLabelText("viewer@example.com 역할")).toHaveValue("viewer");
-    expect(screen.getAllByRole("button", { name: "제거" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "owner@example.com 제거" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "viewer@example.com 제거" })).toBeInTheDocument();
   });
 
   it("hides member row actions from admins and viewers", () => {
     const { rerender } = renderRequiredProps({ project: { ...ownerProject, role: "admin" } });
 
     expect(screen.queryByLabelText("owner@example.com 역할")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "제거" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: / 제거$/ })).not.toBeInTheDocument();
 
     rerender(
       <ProjectSettingsPage
@@ -206,7 +207,7 @@ describe("ProjectSettingsPage", () => {
     );
 
     expect(screen.queryByLabelText("owner@example.com 역할")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "제거" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: / 제거$/ })).not.toBeInTheDocument();
   });
 
   it("calls onUpdateMemberRole when owner changes a role select", () => {
@@ -223,7 +224,7 @@ describe("ProjectSettingsPage", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     renderRequiredProps({ onRemoveMember });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "제거" })[1]!);
+    fireEvent.click(screen.getByRole("button", { name: "viewer@example.com 제거" }));
 
     expect(onRemoveMember).not.toHaveBeenCalled();
   });
@@ -233,16 +234,16 @@ describe("ProjectSettingsPage", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     renderRequiredProps({ onRemoveMember });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "제거" })[1]!);
+    fireEvent.click(screen.getByRole("button", { name: "viewer@example.com 제거" }));
 
     expect(onRemoveMember).toHaveBeenCalledWith("admin_viewer");
   });
 
   it("disables controls for the member action in flight", () => {
-    renderRequiredProps({ memberActionInFlight: "admin_viewer" });
+    renderRequiredProps({ memberActionsInFlight: new Set(["admin_viewer"]) });
 
     expect(screen.getByLabelText("viewer@example.com 역할")).toBeDisabled();
-    expect(screen.getAllByRole("button", { name: "제거" })[1]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "viewer@example.com 제거" })).toBeDisabled();
   });
 
   it("disables self owner loss controls", () => {
@@ -259,7 +260,7 @@ describe("ProjectSettingsPage", () => {
     });
 
     const ownerRole = screen.getByLabelText("owner@example.com 역할");
-    expect(screen.getAllByRole("button", { name: "제거" })[0]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "owner@example.com 제거" })).toBeDisabled();
     expect(ownerRole.querySelector('option[value="admin"]')).toBeDisabled();
     expect(ownerRole.querySelector('option[value="viewer"]')).toBeDisabled();
     expect(ownerRole).toHaveValue("owner");
@@ -268,8 +269,8 @@ describe("ProjectSettingsPage", () => {
   it("disables last owner loss controls", () => {
     renderRequiredProps();
 
-    expect(screen.getAllByRole("button", { name: "제거" })[0]).toBeDisabled();
-    expect(screen.getAllByRole("button", { name: "제거" })[1]).toBeEnabled();
+    expect(screen.getByRole("button", { name: "owner@example.com 제거" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "viewer@example.com 제거" })).toBeEnabled();
     const ownerRole = screen.getByLabelText("owner@example.com 역할");
     expect(ownerRole.querySelector('option[value="admin"]')).toBeDisabled();
     expect(ownerRole.querySelector('option[value="viewer"]')).toBeDisabled();

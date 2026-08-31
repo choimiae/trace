@@ -165,9 +165,10 @@ export class MemoryStore implements TraceStore {
       throw new Error("last_owner_forbidden");
     }
 
+    const auditLog = input.auditLog?.(current);
     const updated: ProjectMembershipRecord = { ...current, role: input.role };
     this.projectMemberships.set(key, updated);
-    if (input.auditLog) this.appendAuditLog(input.auditLog(current));
+    if (auditLog) this.appendAuditLog(auditLog);
     return updated;
   }
 
@@ -190,8 +191,9 @@ export class MemoryStore implements TraceStore {
       throw new Error("last_owner_forbidden");
     }
 
+    const auditLog = input.auditLog(current);
     this.projectMemberships.delete(key);
-    this.appendAuditLog(input.auditLog(current));
+    this.appendAuditLog(auditLog);
     return true;
   }
 

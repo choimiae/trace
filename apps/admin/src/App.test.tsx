@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 
@@ -83,9 +83,7 @@ function mockDashboardDataByProject() {
 }
 
 async function removeMemberButton(email: string) {
-  const row = (await screen.findByLabelText(`${email} 역할`)).closest(".member-row");
-  if (!(row instanceof HTMLElement)) throw new Error(`${email} 멤버 행을 찾을 수 없습니다.`);
-  return within(row).getByRole("button", { name: "제거" });
+  return screen.findByRole("button", { name: `${email} 제거` });
 }
 
 beforeEach(() => {
@@ -815,7 +813,10 @@ describe("App 프로젝트 설정", () => {
     expect(screen.queryByText("멤버 역할을 변경했습니다.")).not.toBeInTheDocument();
   });
 
-  it("ignores an earlier member role response after a newer action starts", async () => {
+  it.each([
+    ["시작 순서", [0, 1]],
+    ["역순", [1, 0]],
+  ])("서로 다른 멤버 역할 변경 응답 순서가 %s여도 모두 반영한다", async (_orderName, completionOrder) => {
     const resolveUpdates: Array<(member: {
       adminUserId: string;
       email: string;
@@ -859,24 +860,31 @@ describe("App 프로젝트 설정", () => {
     fireEvent.change(await screen.findByLabelText("first@example.com 역할"), { target: { value: "admin" } });
     fireEvent.change(await screen.findByLabelText("second@example.com 역할"), { target: { value: "admin" } });
 
-    await act(async () => {
-      resolveUpdates[1]!({
-        adminUserId: "admin_second",
-        email: "second@example.com",
-        role: "admin",
-        createdAt: "2026-08-27T00:00:00.000Z",
-      });
-    });
-    await act(async () => {
-      resolveUpdates[0]!({
+    expect(screen.getByLabelText("first@example.com 역할")).toBeDisabled();
+    expect(screen.getByLabelText("second@example.com 역할")).toBeDisabled();
+
+    const updates = [
+      {
         adminUserId: "admin_first",
         email: "first@example.com",
-        role: "admin",
+        role: "admin" as const,
         createdAt: "2026-08-26T00:00:00.000Z",
-      });
-    });
+      },
+      {
+        adminUserId: "admin_second",
+        email: "second@example.com",
+        role: "admin" as const,
+        createdAt: "2026-08-27T00:00:00.000Z",
+      },
+    ];
 
-    expect(screen.getByLabelText("first@example.com 역할")).toHaveValue("viewer");
+    for (const index of completionOrder) {
+      await act(async () => {
+        resolveUpdates[index]!(updates[index]!);
+      });
+    }
+
+    expect(screen.getByLabelText("first@example.com 역할")).toHaveValue("admin");
     expect(screen.getByLabelText("second@example.com 역할")).toHaveValue("admin");
   });
 

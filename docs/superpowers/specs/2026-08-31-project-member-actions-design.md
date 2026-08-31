@@ -197,7 +197,15 @@
 
 ## Store 설계
 
-기존 `TraceStore`는 멤버 추가를 위해 `addProjectMembershipWithAudit`을 갖고 있다. 변경/제거도 audit와 멤버십 변경을 함께 다뤄야 하므로 다음 계약을 추가한다.
+기존 `TraceStore`는 멤버 추가를 위해 `addProjectMembershipWithAudit`을 갖고 있다. 변경/제거도 audit와 멤버십 변경을 함께 다뤄야 하므로 다음 계약을 추가한다. `ProjectMembershipAuditLogFactory`는 transaction 안에서 현재 `ProjectMembershipRecord`를 받아 `CreateAuditLogInput`을 만든다.
+
+```ts
+type ProjectMembershipAuditLogFactory = (
+  current: ProjectMembershipRecord,
+) => CreateAuditLogInput;
+```
+
+Factory는 mutation 직전 transaction이 읽은 현재 멤버십을 기준으로 audit metadata를 생성한다. 따라서 역할 변경의 `beforeRole`과 제거의 `role`은 route가 미리 읽은 오래된 값이 아니라 실제로 변경 또는 제거되는 값이 된다.
 
 ```ts
 updateProjectMembershipRoleWithAudit(
@@ -206,7 +214,7 @@ updateProjectMembershipRoleWithAudit(
     targetAdminUserId: string;
     requestedByAdminUserId: string;
     role: AdminRole;
-    auditLog?: CreateAuditLogInput;
+    auditLog?: ProjectMembershipAuditLogFactory;
   },
 ): Promise<ProjectMembershipRecord | undefined>;
 
@@ -215,7 +223,7 @@ removeProjectMembershipWithAudit(
     projectId: string;
     targetAdminUserId: string;
     requestedByAdminUserId: string;
-    auditLog: CreateAuditLogInput;
+    auditLog: ProjectMembershipAuditLogFactory;
   },
 ): Promise<boolean>;
 ```
