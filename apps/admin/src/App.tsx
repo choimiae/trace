@@ -9,9 +9,12 @@ import {
   getProjectMembers,
   getProjectSettings,
   logout,
+  removeProjectMember,
+  updateProjectMemberRole,
   updateProjectSettings,
   type AddProjectMemberInput,
   type ProjectMemberResponse,
+  type ProjectRole,
   type ProjectSettingsResponse,
 } from "./api.js";
 import { API_BASE_URL } from "./config.js";
@@ -39,6 +42,7 @@ type AppState =
       projects: ProjectOption[];
       projectId: string;
       userEmail: string;
+      adminUserId: string;
       csrfToken: string;
       settingsError?: string | undefined;
     }
@@ -48,6 +52,7 @@ type AppState =
       projects: ProjectOption[];
       projectId: string;
       userEmail: string;
+      adminUserId: string;
       csrfToken: string;
     }
   | {
@@ -57,6 +62,8 @@ type AppState =
       projects: ProjectOption[];
       projectId: string;
       userEmail: string;
+      adminUserId: string;
+      currentAdminUserId: string;
       csrfToken: string;
       members: ProjectMemberResponse[];
       saving?: boolean;
@@ -65,6 +72,9 @@ type AppState =
       addingMember?: boolean;
       memberError?: string | undefined;
       memberSavedMessage?: string | undefined;
+      memberActionInFlight?: string | undefined;
+      memberActionError?: string | undefined;
+      memberActionSavedMessage?: string | undefined;
     };
 
 function describeApiError(
@@ -106,6 +116,33 @@ const PROJECT_MEMBER_ERROR_MESSAGES: Record<string, string> = {
 
 function describeProjectMemberError(error: unknown): string {
   return describeApiError(PROJECT_MEMBER_ERROR_MESSAGES, error, "멤버를 추가하지 못했습니다.");
+}
+
+function memberRoleUpdateErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.message === "project_role_forbidden") return "멤버를 관리할 권한이 없습니다.";
+    if (error.message === "project_member_not_found") return "멤버를 찾을 수 없습니다.";
+    if (error.message === "last_owner_forbidden") return "마지막 소유자는 변경하거나 제거할 수 없습니다.";
+    if (error.message === "self_owner_change_forbidden") return "내 소유자 권한은 직접 변경할 수 없습니다.";
+    if (error.message === "invalid_project_member") return "멤버 역할이 올바르지 않습니다.";
+    if (error.message === "csrf_origin_invalid" || error.message === "csrf_token_invalid") {
+      return "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.";
+    }
+  }
+  return "멤버를 변경하지 못했습니다.";
+}
+
+function memberRemoveErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.message === "project_role_forbidden") return "멤버를 관리할 권한이 없습니다.";
+    if (error.message === "project_member_not_found") return "멤버를 찾을 수 없습니다.";
+    if (error.message === "last_owner_forbidden") return "마지막 소유자는 변경하거나 제거할 수 없습니다.";
+    if (error.message === "self_owner_change_forbidden") return "내 소유자 권한은 직접 변경할 수 없습니다.";
+    if (error.message === "csrf_origin_invalid" || error.message === "csrf_token_invalid") {
+      return "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요.";
+    }
+  }
+  return "멤버를 제거하지 못했습니다.";
 }
 
 // 프로젝트 생성 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
@@ -155,6 +192,7 @@ export function App() {
             projects: auth.projects,
             projectId,
             userEmail: auth.user.email,
+            adminUserId: auth.user.adminUserId,
             csrfToken: auth.csrfToken,
           });
         }
@@ -279,6 +317,7 @@ export function App() {
               projects: state.projects,
               projectId: state.projectId,
               userEmail: state.userEmail,
+              adminUserId: state.adminUserId,
               csrfToken: state.csrfToken,
             }),
         }}
@@ -311,7 +350,12 @@ export function App() {
               projects: current.projects,
               projectId: current.projectId,
               userEmail: current.userEmail,
+              adminUserId: current.adminUserId,
               csrfToken: current.csrfToken,
+              currentAdminUserId: current.adminUserId,
+              memberActionInFlight: undefined,
+              memberActionError: undefined,
+              memberActionSavedMessage: undefined,
             }
           : current,
       );
@@ -329,6 +373,7 @@ export function App() {
             projects: current.projects,
             projectId: current.projectId,
             userEmail: current.userEmail,
+            adminUserId: current.adminUserId,
             csrfToken: current.csrfToken,
           };
         }
@@ -401,10 +446,80 @@ export function App() {
       }
     };
 
+    const handleUpdateMemberRole = async (adminUserId: string, role: ProjectRole) => {
+      if (state.type !== "settings") return;
+      const projectId = state.projectId;
+      const csrfToken = state.csrfToken;
+      setState(Object.assign({}, state, {
+        memberActionInFlight: adminUserId,
+        memberActionError: undefined,
+        memberActionSavedMessage: undefined,
+      }));
+
+      try {
+        const updated = await updateProjectMemberRole(projectId, adminUserId, { role }, csrfToken);
+        setState((current) => {
+          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          return Object.assign({}, current, {
+            members: current.members.map((member) => member.adminUserId === updated.adminUserId ? updated : member),
+            memberActionInFlight: undefined,
+            memberActionError: undefined,
+            memberActionSavedMessage: "멤버 역할을 변경했습니다.",
+          });
+        });
+      } catch (error) {
+        setState((current) => {
+          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          return Object.assign({}, current, {
+            memberActionInFlight: undefined,
+            memberActionError: memberRoleUpdateErrorMessage(error),
+            memberActionSavedMessage: undefined,
+          });
+        });
+      }
+    };
+
+    const handleRemoveMember = async (adminUserId: string) => {
+      if (state.type !== "settings") return;
+      const projectId = state.projectId;
+      const csrfToken = state.csrfToken;
+      setState(Object.assign({}, state, {
+        memberActionInFlight: adminUserId,
+        memberActionError: undefined,
+        memberActionSavedMessage: undefined,
+      }));
+
+      try {
+        await removeProjectMember(projectId, adminUserId, csrfToken);
+        setState((current) => {
+          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          return Object.assign({}, current, {
+            members: current.members.filter((member) => member.adminUserId !== adminUserId),
+            memberActionInFlight: undefined,
+            memberActionError: undefined,
+            memberActionSavedMessage: "멤버를 제거했습니다.",
+          });
+        });
+      } catch (error) {
+        setState((current) => {
+          if (current.type !== "settings" || current.projectId !== projectId) return current;
+          return Object.assign({}, current, {
+            memberActionInFlight: undefined,
+            memberActionError: memberRemoveErrorMessage(error),
+            memberActionSavedMessage: undefined,
+          });
+        });
+      }
+    };
+
     return (
       <ProjectSettingsPage
         project={state.project}
         members={state.members}
+        currentAdminUserId={state.currentAdminUserId}
+        memberActionInFlight={state.memberActionInFlight}
+        memberActionError={state.memberActionError}
+        memberActionSavedMessage={state.memberActionSavedMessage}
         saving={state.saving === true}
         addingMember={state.addingMember === true}
         error={state.error}
@@ -413,6 +528,8 @@ export function App() {
         memberSavedMessage={state.memberSavedMessage}
         onSave={(input) => { void handleSaveSettings(input); }}
         onAddMember={(input) => { void handleAddMember(input); }}
+        onUpdateMemberRole={(adminUserId, role) => { void handleUpdateMemberRole(adminUserId, role); }}
+        onRemoveMember={(adminUserId) => { void handleRemoveMember(adminUserId); }}
         onBack={() =>
           setState({
             type: "ready",
@@ -420,6 +537,7 @@ export function App() {
             projects: state.projects,
             projectId: state.projectId,
             userEmail: state.userEmail,
+            adminUserId: state.adminUserId,
             csrfToken: state.csrfToken,
           })
         }
@@ -449,6 +567,7 @@ export function App() {
 
     const projects = state.projects;
     const userEmail = state.userEmail;
+    const adminUserId = state.adminUserId;
     const csrfToken = state.csrfToken;
 
     writeSelectedProjectId(nextProjectId);
@@ -463,6 +582,7 @@ export function App() {
         projects,
         projectId: nextProjectId,
         userEmail,
+        adminUserId,
         csrfToken,
       });
     } catch (error) {

@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 
@@ -18,6 +18,8 @@ const api = vi.hoisted(() => ({
   getProjectSettings: vi.fn(),
   getProjectMembers: vi.fn(),
   addProjectMember: vi.fn(),
+  updateProjectMemberRole: vi.fn(),
+  removeProjectMember: vi.fn(),
   logout: vi.fn(),
   updateProjectSettings: vi.fn(),
   getIssueDetail: vi.fn(),
@@ -32,6 +34,8 @@ vi.mock("./api", () => ({
   getProjectSettings: api.getProjectSettings,
   getProjectMembers: api.getProjectMembers,
   addProjectMember: api.addProjectMember,
+  updateProjectMemberRole: api.updateProjectMemberRole,
+  removeProjectMember: api.removeProjectMember,
   logout: api.logout,
   updateProjectSettings: api.updateProjectSettings,
   getIssueDetail: api.getIssueDetail,
@@ -78,6 +82,12 @@ function mockDashboardDataByProject() {
   api.getDashboardData.mockImplementation((projectId: string) => Promise.resolve(dashboardDataFor(projectId)));
 }
 
+async function removeMemberButton(email: string) {
+  const row = (await screen.findByLabelText(`${email} 역할`)).closest(".member-row");
+  if (!(row instanceof HTMLElement)) throw new Error(`${email} 멤버 행을 찾을 수 없습니다.`);
+  return within(row).getByRole("button", { name: "제거" });
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   api.getDashboardData.mockResolvedValue({
@@ -119,6 +129,14 @@ beforeEach(() => {
     role: "viewer",
     createdAt: "2026-08-28T00:00:00.000Z",
   });
+  api.updateProjectMemberRole.mockResolvedValue({
+    adminUserId: "admin_member",
+    email: "member@example.com",
+    name: "Member",
+    role: "admin",
+    createdAt: "2026-08-28T00:00:00.000Z",
+  });
+  api.removeProjectMember.mockResolvedValue(undefined);
   api.updateProjectSettings.mockResolvedValue({
     projectId: "proj_demo",
     name: "New Demo",
@@ -557,6 +575,235 @@ describe("App 프로젝트 설정", () => {
       "csrf_1",
     );
     expect(screen.getByText("added@example.com")).toBeInTheDocument();
+  });
+
+  it("updates a project member role from settings", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectMembers.mockResolvedValue([
+      {
+        adminUserId: "admin_1",
+        email: "admin@example.com",
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_member",
+        email: "member@example.com",
+        role: "viewer",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      },
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("member@example.com 역할"), { target: { value: "admin" } });
+
+    expect(await screen.findByText("멤버 역할을 변경했습니다.")).toBeInTheDocument();
+    expect(api.updateProjectMemberRole).toHaveBeenCalledWith(
+      "proj_demo",
+      "admin_member",
+      { role: "admin" },
+      "csrf_1",
+    );
+    expect(screen.getByLabelText("member@example.com 역할")).toHaveValue("admin");
+    expect(screen.getByText("관리자", { selector: ".member-meta span" })).toBeInTheDocument();
+  });
+
+  it("keeps member list and shows an error when role update fails", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectMembers.mockResolvedValue([
+      {
+        adminUserId: "admin_1",
+        email: "admin@example.com",
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_owner",
+        email: "owner@example.com",
+        role: "owner",
+        createdAt: "2026-08-26T00:00:00.000Z",
+      },
+    ]);
+    api.updateProjectMemberRole.mockRejectedValue(new api.ApiError(403, "last_owner_forbidden"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("owner@example.com 역할"), { target: { value: "admin" } });
+
+    expect(await screen.findByText("마지막 소유자는 변경하거나 제거할 수 없습니다.")).toBeInTheDocument();
+    expect(screen.getByLabelText("owner@example.com 역할")).toHaveValue("owner");
+    expect(screen.getByText("owner@example.com")).toBeInTheDocument();
+  });
+
+  it("removes a project member from settings", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectMembers.mockResolvedValue([
+      {
+        adminUserId: "admin_1",
+        email: "admin@example.com",
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_member",
+        email: "member@example.com",
+        role: "viewer",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      },
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await removeMemberButton("member@example.com"));
+
+    expect(await screen.findByText("멤버를 제거했습니다.")).toBeInTheDocument();
+    expect(api.removeProjectMember).toHaveBeenCalledWith("proj_demo", "admin_member", "csrf_1");
+    expect(screen.queryByText("member@example.com")).not.toBeInTheDocument();
+  });
+
+  it("keeps member list and shows an error when removal fails", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectMembers.mockResolvedValue([
+      {
+        adminUserId: "admin_1",
+        email: "admin@example.com",
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_member",
+        email: "member@example.com",
+        role: "viewer",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      },
+    ]);
+    api.removeProjectMember.mockRejectedValue(new api.ApiError(403, "self_owner_change_forbidden"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await removeMemberButton("member@example.com"));
+
+    expect(await screen.findByText("내 소유자 권한은 직접 변경할 수 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("member@example.com")).toBeInTheDocument();
+  });
+
+  it("ignores delayed member role responses after leaving settings", async () => {
+    let resolveUpdate!: (member: {
+      adminUserId: string;
+      email: string;
+      role: "admin";
+      createdAt: string;
+    }) => void;
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectMembers.mockResolvedValue([
+      {
+        adminUserId: "admin_1",
+        email: "admin@example.com",
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_member",
+        email: "member@example.com",
+        role: "viewer",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      },
+    ]);
+    api.updateProjectMemberRole.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.change(await screen.findByLabelText("member@example.com 역할"), { target: { value: "admin" } });
+    fireEvent.click(screen.getByRole("button", { name: "대시보드로 돌아가기" }));
+    expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveUpdate({
+        adminUserId: "admin_member",
+        email: "member@example.com",
+        role: "admin",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      });
+    });
+
+    expect(screen.getByText("문제 인박스")).toBeInTheDocument();
+    expect(screen.queryByText("멤버 역할을 변경했습니다.")).not.toBeInTheDocument();
+  });
+
+  it("ignores delayed member removal responses after logout", async () => {
+    let resolveRemoval!: () => void;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectMembers.mockResolvedValue([
+      {
+        adminUserId: "admin_1",
+        email: "admin@example.com",
+        role: "owner",
+        createdAt: "2026-08-25T00:00:00.000Z",
+      },
+      {
+        adminUserId: "admin_member",
+        email: "member@example.com",
+        role: "viewer",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      },
+    ]);
+    api.removeProjectMember.mockImplementation(
+      () => new Promise<void>((resolve) => {
+        resolveRemoval = resolve;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await removeMemberButton("member@example.com"));
+    fireEvent.click(screen.getByRole("button", { name: "대시보드로 돌아가기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "로그아웃" }));
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveRemoval();
+    });
+
+    expect(screen.getByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
   });
 
   it.each([
