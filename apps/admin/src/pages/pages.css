@@ -490,6 +490,10 @@
     grid-template-columns: 1fr;
     gap: var(--space-1);
   }
+
+  .audit-log-time::after {
+    content: " (UTC)";
+  }
 }
 
 @media (max-width: 820px) {

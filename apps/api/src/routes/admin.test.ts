@@ -1148,6 +1148,33 @@ describe("admin bff routes", () => {
     },
   );
 
+  it.each(["admin", "viewer"] as const)(
+    "rejects an invalid audit log query from a %s member with a role error, not a validation error",
+    async (role) => {
+      const { store, user, cookie } = await signedInStore();
+      const project = await store.createProject({
+        name: `Demo ${role}`,
+        allowedDomains: [`https://${role}.example.com`],
+      });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: user.adminUserId,
+        role,
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      const app = createApp({ store, authConfig });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/admin/api/projects/${project.projectId}/audit-logs?limit=0`,
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "project_role_forbidden" });
+    },
+  );
+
   it("returns 403 and audits when project audit logs are requested by a non-member", async () => {
     const { store, user, cookie } = await signedInStore();
     const project = await store.createProject({

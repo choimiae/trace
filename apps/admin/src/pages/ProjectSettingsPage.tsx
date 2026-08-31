@@ -220,11 +220,6 @@ export function ProjectSettingsPage({
         </div>
         {memberActionSavedMessage ? <span className="settings-success">{memberActionSavedMessage}</span> : null}
         {memberActionError ? <p className="field-error">{memberActionError}</p> : null}
-        {project.role === "owner" && onShowAuditLog ? (
-          <div className="settings-actions">
-            <Button onClick={onShowAuditLog}>활동 이력</Button>
-          </div>
-        ) : null}
         {project.role === "owner" ? (
           <form className="member-add-form" onSubmit={handleAddMemberSubmit}>
             <Field
@@ -296,6 +291,11 @@ export function ProjectSettingsPage({
         ) : (
           <p className="settings-subtitle">멤버 추가 권한이 없습니다.</p>
         )}
+        {project.role === "owner" && onShowAuditLog ? (
+          <div className="settings-actions">
+            <Button onClick={onShowAuditLog}>활동 이력</Button>
+          </div>
+        ) : null}
       </Card>
     </main>
   );

@@ -211,6 +211,17 @@ describe("ProjectAuditLogPage", () => {
     expect(screen.getByText("활동 이력을 불러오지 못했습니다.")).toBeInTheDocument();
   });
 
+  it("첫 로드가 실패하면 오류만 보여주고 빈 목록 문구는 감춘다", () => {
+    renderPage({ entries: [], error: "활동 이력을 불러오지 못했습니다." });
+    expect(screen.getByText("활동 이력을 불러오지 못했습니다.")).toBeInTheDocument();
+    expect(screen.queryByText("활동 이력이 없습니다.")).not.toBeInTheDocument();
+  });
+
+  it("이력이 없으면 열 제목을 감춘다", () => {
+    renderPage({ entries: [] });
+    expect(screen.queryByText("시각 (UTC)")).not.toBeInTheDocument();
+  });
+
   it("뒤로가기 클릭이 onBack 을 호출한다", () => {
     const onBack = vi.fn();
     renderPage({ onBack });

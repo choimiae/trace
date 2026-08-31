@@ -1669,6 +1669,29 @@ describe("App 프로젝트 설정", () => {
     expect(api.searchProjectMemberCandidates).toHaveBeenCalledTimes(2);
   });
 
+  it("활동 이력에서 설정으로 돌아갔을 때 조회가 403이면 대시보드에 인라인 안내를 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+    expect(await screen.findByRole("heading", { name: "활동 이력" })).toBeInTheDocument();
+
+    api.getProjectSettings.mockRejectedValueOnce(new api.ApiError(403, "project_access_denied"));
+
+    fireEvent.click(screen.getByRole("button", { name: "설정으로 돌아가기" }));
+
+    expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("접근 권한이 없습니다.");
+    expect(screen.queryByRole("heading", { name: "활동 이력" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
+  });
+
   it("늦게 도착한 활동 이력 응답은 무시한다", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },

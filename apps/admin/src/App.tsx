@@ -92,7 +92,6 @@ type AppState =
     }
   | {
       type: "audit";
-      project: ProjectSettingsResponse;
       dashboardData: { summary: DashboardSummary; issues: Issue[] };
       projects: ProjectOption[];
       projectId: string;
@@ -691,7 +690,6 @@ export function App() {
     const handleShowAuditLog = () => {
       setState({
         type: "audit",
-        project: state.project,
         dashboardData: state.dashboardData,
         projects: state.projects,
         projectId: state.projectId,

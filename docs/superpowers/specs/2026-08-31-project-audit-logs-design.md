@@ -68,8 +68,10 @@
 | --- | --- |
 | `actor`에 이름과 이메일이 있다 | `Owner · owner@example.com` |
 | `actor`에 이메일만 있다 | `owner@example.com` |
-| `actor`에 `adminUserId`만 있다 | `admin_abc` (삭제된 사용자) |
+| `actor`에 `adminUserId`만 있다 | `admin_abc` |
 | `actor`가 없다 | `시스템` |
+
+조회에 실패한 행위자는 `adminUserId`를 그대로 보여준다. 원인을 추측해 덧붙이지 않는다. 이 레포에는 admin user 삭제 경로가 없어서, 조회 실패가 삭제 때문인지 확인할 방법이 없다.
 
 ### action 문장
 

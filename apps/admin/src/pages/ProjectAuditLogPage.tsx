@@ -142,11 +142,13 @@ export function ProjectAuditLogPage({
       </header>
 
       <Card as="section" className="settings-panel">
-        <div className="audit-log-head">
-          <span>시각 (UTC)</span>
-          <span>행위자</span>
-          <span>내용</span>
-        </div>
+        {entries.length > 0 ? (
+          <div className="audit-log-head">
+            <span>시각 (UTC)</span>
+            <span>행위자</span>
+            <span>내용</span>
+          </div>
+        ) : null}
         <div className="audit-log-list">
           {entries.map((entry) => (
             <div className="audit-log-row" key={entry.auditLogId}>
@@ -157,7 +159,7 @@ export function ProjectAuditLogPage({
           ))}
         </div>
         {loading ? <p className="settings-subtitle">불러오는 중</p> : null}
-        {!loading && entries.length === 0 ? (
+        {!loading && entries.length === 0 && error === undefined ? (
           <p className="settings-subtitle">활동 이력이 없습니다.</p>
         ) : null}
         {error ? <p className="field-error">{error}</p> : null}
