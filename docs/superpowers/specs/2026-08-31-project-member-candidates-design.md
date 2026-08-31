@@ -136,6 +136,10 @@ Query:
 
 프로젝트가 없으면 `404 project_not_found`를 반환한다. 세션이 없으면 `401 admin_auth_required`를 반환한다. 조회 API이므로 CSRF는 요구하지 않는다.
 
+권한 검사는 기존 `getProjectAccess`를 재사용한다. `admin-proxy.ts`의 `ProjectResourceType` union에 `"project_member_candidates"`를 추가해서, 멤버가 아닌 요청자의 접근 거부가 기존 `project.access_denied` audit log에 이 resourceType으로 남게 한다.
+
+`limit`은 서버 계약으로만 둔다. UI client는 `limit`을 보내지 않고 서버 기본값 20을 사용하므로, 범위 검증은 API 테스트에서 직접 query string으로 검증한다.
+
 응답:
 
 ```json
@@ -187,7 +191,9 @@ searchAdminUsers(input: {
 - 결과는 이메일 오름차순이다.
 - membership 여부 계산은 route에서 기존 `listProjectMemberships(projectId)`와 합쳐 만든다.
 
-SQLite는 `LOWER(email) LIKE ? OR LOWER(name) LIKE ?` 조건과 `ORDER BY email ASC LIMIT ?`를 사용한다. MemoryStore는 array filter/sort/slice로 같은 계약을 맞춘다.
+SQLite는 `LOWER(email) LIKE ? OR LOWER(COALESCE(name, '')) LIKE ?` 조건과 `ORDER BY email ASC LIMIT ?`를 사용한다. `name`은 nullable 컬럼이므로 `COALESCE`로 감싸서 이름 없는 사용자가 email 조건에서 탈락하지 않게 한다. MemoryStore는 array filter/sort/slice로 같은 계약을 맞춘다.
+
+`getAdminUser`와 `getAdminUserByEmail`이 이미 동일한 row → `AdminUserRecord` 변환을 각각 중복 구현하고 있다. 세 번째 조회가 추가되므로 이 변환을 `toAdminUserRecord(row)` private helper로 먼저 추출하고 기존 두 메서드도 그 helper를 쓰게 바꾼다.
 
 ## Admin API Client 설계
 
@@ -208,6 +214,8 @@ export async function searchProjectMemberCandidates(
 ```
 
 UI는 query 변경 시 이 함수를 호출한다. query는 client에서 trim하지 않아도 되고, 서버가 최종 정규화한다.
+
+query는 사용자가 자유롭게 입력하는 문자열이므로 URL에 붙일 때 `encodeURIComponent(query)`로 인코딩한다. 인코딩하지 않으면 `&`, `#`, `+`, 공백이 들어간 검색어가 서버에 잘못 전달된다.
 
 ## Admin UI 설계
 
@@ -247,22 +255,33 @@ const alreadyMember = candidate.membership !== undefined;
 
 ```ts
 memberCandidates: ProjectMemberCandidateResponse[];
-memberCandidateQuery: string;
 memberCandidateSearchRequestId: number;
 memberCandidateSearchLoading: boolean;
 memberCandidateSearchError?: string | undefined;
 selectedMemberCandidate?: ProjectMemberCandidateResponse | undefined;
 ```
 
+검색어 문자열 자체는 App state에 두지 않는다. 검색 입력의 값은 `ProjectSettingsPage`의 local state가 단일 소유자이고, App은 그 값을 다시 읽을 곳이 없다. 추가 성공 후에도 재검색 없이 로컬로 후보 상태를 갱신하므로 App이 검색어를 기억할 이유가 없다.
+
 설정 화면 진입 시:
 
-- 멤버 목록과 프로젝트 설정을 로드한 뒤, 프로젝트 role이 `owner`이면 후보 검색도 빈 query로 한 번 수행한다.
+- 멤버 목록과 프로젝트 설정을 로드하고 settings 상태로 전이한다.
+- 전이가 끝난 뒤 프로젝트 role이 `owner`이면 후보 검색을 빈 query로 한 번 수행한다.
 - 후보 검색이 실패해도 설정 화면 진입 자체는 유지한다.
 - 실패 시 `사용자를 검색하지 못했습니다.`를 멤버 추가 영역에 표시한다.
 
+진입 시 검색은 `handleShowSettings` 안에서 이어 호출하지 않고, App 최상위 `useEffect`에서 수행한다. `handleShowSettings`의 settings 전이는 `settingsSessionId`를 updater 안에서 `current.settingsSessionId + 1`로 계산하므로, 같은 함수에서 이어 호출하면 guard에 쓸 session id를 미리 추측해야 한다. 이미 install 폴링이 최상위 `useEffect`로 구현되어 있으므로, settings session이 시작될 때 한 번 발동하는 effect를 같은 방식으로 추가하고 실제 state에서 session id를 읽는다.
+
+```ts
+const memberCandidateBootstrapKey = state.type === "settings" && state.project.role === "owner"
+  ? `${state.projectId}:${state.settingsSessionId}`
+  : undefined;
+```
+
+이 key가 바뀔 때만 빈 query 검색을 발동한다. owner가 아닌 settings session에서는 key가 `undefined`이므로 검색 API를 호출하지 않는다.
+
 검색어 변경 시:
 
-- `memberCandidateQuery`를 갱신한다.
 - `memberCandidateSearchRequestId`를 증가시킨다.
 - `searchProjectMemberCandidates(projectId, query)`를 호출한다.
 - 응답이 돌아왔을 때 `state.type`, `projectId`, `settingsSessionId`, request id가 모두 일치할 때만 후보 목록을 갱신한다.
@@ -287,12 +306,16 @@ selectedMemberCandidate?: ProjectMemberCandidateResponse | undefined;
 
 ## 오류 메시지
 
-| 상황 | 문구 |
+후보 검색 실패는 기존 `describeApiError` 패턴을 따라 오류 코드 → 문구 지도 하나와 fallback 하나로 옮긴다.
+
+| 오류 코드 | 문구 |
 | --- | --- |
-| 후보 검색 실패 | `사용자를 검색하지 못했습니다.` |
-| owner 아님 | `멤버를 검색할 권한이 없습니다.` |
-| 검색 조건 오류 | `검색 조건이 올바르지 않습니다.` |
-| 일반 실패 | `사용자를 검색하지 못했습니다.` |
+| `project_role_forbidden` | `멤버를 검색할 권한이 없습니다.` |
+| `project_access_denied` | `더 이상 이 프로젝트의 멤버가 아닙니다.` |
+| `invalid_member_candidate_search` | `검색 조건이 올바르지 않습니다.` |
+| 그 외 전부 (fallback) | `사용자를 검색하지 못했습니다.` |
+
+UI는 owner일 때만 검색하고 `limit`을 보내지 않으므로 `project_role_forbidden`과 `invalid_member_candidate_search`는 정상 흐름에서는 나오지 않는다. 권한이 도중에 바뀐 경우를 대비해 지도에는 남겨 둔다. `401`은 기존 다른 handler처럼 login 화면으로 전이하므로 이 지도에 담지 않는다.
 
 기존 멤버 추가 오류 문구는 유지한다.
 
@@ -321,6 +344,17 @@ selectedMemberCandidate?: ProjectMemberCandidateResponse | undefined;
 - 없는 프로젝트는 `404 project_not_found`이다.
 - 잘못된 limit은 `400 invalid_member_candidate_search`이다.
 
+### 기존 테스트 이관
+
+이메일 직접 입력이 제거되므로 기존 추가 흐름 테스트를 후보 선택 기반으로 고쳐야 한다. 신규 테스트만 추가하면 다음이 깨진다.
+
+- `ProjectSettingsPage.test.tsx`의 `멤버 이메일` label 조회와 이메일 입력 후 `멤버 추가` 클릭 테스트.
+- `App.test.tsx`의 `멤버 이메일`에 값을 넣고 추가하는 성공 테스트와 오류 문구 table-driven 테스트.
+
+또한 `App.test.tsx`의 `vi.mock("./api", ...)` 목록은 필요한 export를 하나하나 나열하는 형태이므로 `searchProjectMemberCandidates`를 등록해야 한다. 등록하지 않으면 App이 호출하는 순간 `undefined`가 되어 관련 없는 테스트까지 실패한다.
+
+기존 settings 테스트는 role `owner`로 진입하므로 진입 시 후보 검색이 항상 발동한다. 공용 `beforeEach`에 `api.searchProjectMemberCandidates.mockResolvedValue([])`를 기본값으로 넣어서, 후보를 다루지 않는 기존 테스트가 영향을 받지 않게 한다.
+
 ### Admin UI
 
 `ProjectSettingsPage.test.tsx`에서 검증한다.
@@ -344,6 +378,12 @@ selectedMemberCandidate?: ProjectMemberCandidateResponse | undefined;
 - 후보 선택 후 멤버 추가 성공 시 멤버 목록과 후보 상태가 함께 갱신된다.
 - 멤버 추가 실패 시 선택 상태가 유지되고 기존 오류 문구가 표시된다.
 - owner가 아닌 설정 화면에서는 후보 검색 API를 호출하지 않는다.
+
+## 알려진 한계
+
+기본 후보는 이메일 오름차순 20명이고 페이지네이션은 이번 범위가 아니다. 따라서 이메일 순으로 앞선 admin user 20명이 모두 이미 프로젝트 멤버인 프로젝트에서는, owner가 설정 화면에 들어온 직후 `이미 멤버` 20행만 보고 선택 가능한 후보를 보지 못한다.
+
+이 경우에도 검색어를 입력하면 대상 사용자를 찾아 추가할 수 있으므로 기능이 막히지는 않는다. 검색 입력 안내 문구가 `이름 또는 이메일로 검색`이므로 다음 행동도 분명하다. 후보 페이지네이션과 `이미 멤버 숨기기` 필터는 후속 개선으로 남긴다.
 
 ## 마이그레이션과 호환성
 
