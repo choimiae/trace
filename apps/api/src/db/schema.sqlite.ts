@@ -91,4 +91,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TEXT NOT NULL,
   metadata TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE INDEX IF NOT EXISTS audit_logs_project_created ON audit_logs (project_id, created_at DESC, audit_log_id DESC);
 `;

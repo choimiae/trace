@@ -250,6 +250,31 @@ export class MemoryStore implements TraceStore {
     return [...this.auditLogs.values()];
   }
 
+  async listProjectAuditLogs(input: {
+    projectId: string;
+    limit: number;
+    cursor?: { createdAt: string; auditLogId: string };
+  }): Promise<AuditLogRecord[]> {
+    const { cursor } = input;
+    return [...this.auditLogs.values()]
+      .filter((entry) => entry.projectId === input.projectId)
+      .filter((entry) => {
+        if (cursor === undefined) return true;
+        if (entry.createdAt < cursor.createdAt) return true;
+        return entry.createdAt === cursor.createdAt && entry.auditLogId < cursor.auditLogId;
+      })
+      .sort((left, right) => {
+        if (left.createdAt !== right.createdAt) {
+          // SQLite ORDER BY 는 BINARY collation(코드 유닛 비교)을 쓴다. localeCompare 는
+          // nanoid 알파벳(대소문자·_·-)의 순서를 다르게 매겨 두 스토어가 어긋난다.
+          return left.createdAt < right.createdAt ? 1 : -1;
+        }
+        if (left.auditLogId === right.auditLogId) return 0;
+        return left.auditLogId < right.auditLogId ? 1 : -1;
+      })
+      .slice(0, input.limit);
+  }
+
   async saveBatch(batch: EventBatch): Promise<void> {
     const existing = this.events.get(batch.projectId) ?? [];
     const seen = new Set(existing.map((event) => event.eventId));

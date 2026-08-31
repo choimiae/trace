@@ -390,20 +390,55 @@ export class SqliteStore implements TraceStore {
       );
   }
 
+  private toAuditLogRecord(row: Row): AuditLogRecord {
+    return compact({
+      auditLogId: row.audit_log_id as string,
+      adminUserId: row.admin_user_id as string | null,
+      action: row.action as string,
+      projectId: row.project_id as string | null,
+      createdAt: row.created_at as string,
+      metadata: JSON.parse(row.metadata as string) as Record<string, unknown>,
+    }) as AuditLogRecord;
+  }
+
   async listAuditLogs(): Promise<AuditLogRecord[]> {
     const rows = this.db.prepare(`SELECT * FROM audit_logs ORDER BY created_at`).all() as Row[];
 
-    return rows.map(
-      (row) =>
-        compact({
-          auditLogId: row.audit_log_id as string,
-          adminUserId: row.admin_user_id as string | null,
-          action: row.action as string,
-          projectId: row.project_id as string | null,
-          createdAt: row.created_at as string,
-          metadata: JSON.parse(row.metadata as string) as Record<string, unknown>,
-        }) as AuditLogRecord,
-    );
+    return rows.map((row) => this.toAuditLogRecord(row));
+  }
+
+  async listProjectAuditLogs(input: {
+    projectId: string;
+    limit: number;
+    cursor?: { createdAt: string; auditLogId: string };
+  }): Promise<AuditLogRecord[]> {
+    const { cursor } = input;
+    const rows = cursor === undefined
+      ? (this.db
+          .prepare(
+            `SELECT * FROM audit_logs
+             WHERE project_id = ?
+             ORDER BY created_at DESC, audit_log_id DESC
+             LIMIT ?`,
+          )
+          .all(input.projectId, input.limit) as Row[])
+      : (this.db
+          .prepare(
+            `SELECT * FROM audit_logs
+             WHERE project_id = ?
+               AND (created_at < ? OR (created_at = ? AND audit_log_id < ?))
+             ORDER BY created_at DESC, audit_log_id DESC
+             LIMIT ?`,
+          )
+          .all(
+            input.projectId,
+            cursor.createdAt,
+            cursor.createdAt,
+            cursor.auditLogId,
+            input.limit,
+          ) as Row[]);
+
+    return rows.map((row) => this.toAuditLogRecord(row));
   }
 
   async saveBatch(batch: EventBatch): Promise<void> {

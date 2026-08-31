@@ -134,6 +134,11 @@ export interface TraceStore {
   listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]>;
   createAuditLog(input: CreateAuditLogInput): Promise<void>;
   listAuditLogs(): Promise<AuditLogRecord[]>;
+  listProjectAuditLogs(input: {
+    projectId: string;
+    limit: number;
+    cursor?: { createdAt: string; auditLogId: string };
+  }): Promise<AuditLogRecord[]>;
   saveBatch(batch: EventBatch): Promise<void>;
   listEvents(projectId: string): Promise<TraceEvent[]>;
   upsertIssues(projectId: string, issues: Issue[]): Promise<void>;

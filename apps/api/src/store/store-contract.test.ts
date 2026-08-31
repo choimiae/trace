@@ -903,6 +903,207 @@ function describeTraceStoreContract(
       expect(auditLogs[0]?.auditLogId).toMatch(/^audit_[A-Za-z0-9_-]{10}$/);
     });
 
+    it("프로젝트별 활동 이력만 최신순으로 반환한다", async () => {
+      const store = open();
+      const project = await store.createProject({ name: "Audit", allowedDomains: [] });
+      const other = await store.createProject({ name: "Other", allowedDomains: [] });
+
+      await store.createAuditLog({
+        adminUserId: "admin_1",
+        action: "project.created",
+        projectId: project.projectId,
+        createdAt: "2026-08-31T00:00:00.000Z",
+        metadata: { name: "Audit" },
+      });
+      await store.createAuditLog({
+        adminUserId: "admin_1",
+        action: "project.member_added",
+        projectId: project.projectId,
+        createdAt: "2026-08-31T02:00:00.000Z",
+        metadata: { email: "member@example.com", role: "viewer" },
+      });
+      await store.createAuditLog({
+        adminUserId: "admin_1",
+        action: "project.updated",
+        projectId: other.projectId,
+        createdAt: "2026-08-31T03:00:00.000Z",
+        metadata: {},
+      });
+      // projectId 가 없는 auth log 는 제외되어야 한다.
+      await store.createAuditLog({
+        action: "auth.login_success",
+        createdAt: "2026-08-31T04:00:00.000Z",
+        metadata: {},
+      });
+
+      const entries = await store.listProjectAuditLogs({
+        projectId: project.projectId,
+        limit: 20,
+      });
+
+      expect(entries.map((entry) => entry.action)).toEqual([
+        "project.member_added",
+        "project.created",
+      ]);
+    });
+
+    it("createdAt 이 같으면 auditLogId 내림차순으로 반환한다", async () => {
+      const store = open();
+      const project = await store.createProject({ name: "Audit", allowedDomains: [] });
+
+      for (let i = 0; i < 3; i += 1) {
+        await store.createAuditLog({
+          action: "project.updated",
+          projectId: project.projectId,
+          createdAt: "2026-08-31T00:00:00.000Z",
+          metadata: { i },
+        });
+      }
+
+      const entries = await store.listProjectAuditLogs({
+        projectId: project.projectId,
+        limit: 20,
+      });
+
+      expect(entries).toHaveLength(3);
+      const ids = entries.map((entry) => entry.auditLogId);
+      expect(ids).toEqual([...ids].sort().reverse());
+    });
+
+    it("limit 이 적용된다", async () => {
+      const store = open();
+      const project = await store.createProject({ name: "Audit", allowedDomains: [] });
+
+      await store.createAuditLog({
+        action: "project.created",
+        projectId: project.projectId,
+        createdAt: "2026-08-31T00:00:00.000Z",
+        metadata: {},
+      });
+      await store.createAuditLog({
+        action: "project.updated",
+        projectId: project.projectId,
+        createdAt: "2026-08-31T01:00:00.000Z",
+        metadata: {},
+      });
+      await store.createAuditLog({
+        action: "project.member_added",
+        projectId: project.projectId,
+        createdAt: "2026-08-31T02:00:00.000Z",
+        metadata: {},
+      });
+
+      const entries = await store.listProjectAuditLogs({
+        projectId: project.projectId,
+        limit: 2,
+      });
+
+      expect(entries.map((entry) => entry.action)).toEqual([
+        "project.member_added",
+        "project.updated",
+      ]);
+    });
+
+    it("커서로 다음 페이지가 중복 없이 이어진다", async () => {
+      const store = open();
+      const project = await store.createProject({ name: "Audit", allowedDomains: [] });
+
+      for (let i = 0; i < 5; i += 1) {
+        await store.createAuditLog({
+          action: "project.updated",
+          projectId: project.projectId,
+          createdAt: `2026-08-31T0${i}:00:00.000Z`,
+          metadata: { i },
+        });
+      }
+
+      const firstPage = await store.listProjectAuditLogs({
+        projectId: project.projectId,
+        limit: 2,
+      });
+      expect(firstPage).toHaveLength(2);
+
+      const lastOfFirstPage = firstPage[firstPage.length - 1]!;
+      const secondPage = await store.listProjectAuditLogs({
+        projectId: project.projectId,
+        limit: 2,
+        cursor: { createdAt: lastOfFirstPage.createdAt, auditLogId: lastOfFirstPage.auditLogId },
+      });
+      expect(secondPage).toHaveLength(2);
+
+      const merged = [...firstPage, ...secondPage];
+      const mergedIds = merged.map((entry) => entry.auditLogId);
+      expect(new Set(mergedIds).size).toBe(4);
+
+      const mergedCreatedAts = merged.map((entry) => entry.createdAt);
+      expect(mergedCreatedAts).toEqual([...mergedCreatedAts].sort().reverse());
+    });
+
+    it("createdAt 이 겹치는 경계에서도 커서가 중복과 누락을 만들지 않는다", async () => {
+      const store = open();
+      const project = await store.createProject({ name: "Audit", allowedDomains: [] });
+
+      for (let i = 0; i < 4; i += 1) {
+        await store.createAuditLog({
+          action: "project.updated",
+          projectId: project.projectId,
+          createdAt: "2026-08-31T00:00:00.000Z",
+          metadata: { i },
+        });
+      }
+
+      const collected: { auditLogId: string; createdAt: string }[] = [];
+      let cursor: { createdAt: string; auditLogId: string } | undefined;
+      for (let page = 0; page < 10; page += 1) {
+        const entries = await store.listProjectAuditLogs({
+          projectId: project.projectId,
+          limit: 2,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        if (entries.length === 0) break;
+        collected.push(...entries);
+        const lastEntry = entries[entries.length - 1]!;
+        cursor = { createdAt: lastEntry.createdAt, auditLogId: lastEntry.auditLogId };
+      }
+
+      const collectedIds = collected.map((entry) => entry.auditLogId);
+      expect(collectedIds).toHaveLength(4);
+      expect(new Set(collectedIds).size).toBe(4);
+    });
+
+    it("마지막 항목을 가리키는 커서는 빈 배열을 반환한다", async () => {
+      const store = open();
+      const project = await store.createProject({ name: "Audit", allowedDomains: [] });
+
+      await store.createAuditLog({
+        action: "project.created",
+        projectId: project.projectId,
+        createdAt: "2026-08-31T00:00:00.000Z",
+        metadata: {},
+      });
+      await store.createAuditLog({
+        action: "project.updated",
+        projectId: project.projectId,
+        createdAt: "2026-08-31T01:00:00.000Z",
+        metadata: {},
+      });
+
+      const entries = await store.listProjectAuditLogs({
+        projectId: project.projectId,
+        limit: 20,
+      });
+      expect(entries).toHaveLength(2);
+
+      const last = entries[entries.length - 1]!;
+      const nextPage = await store.listProjectAuditLogs({
+        projectId: project.projectId,
+        limit: 20,
+        cursor: { createdAt: last.createdAt, auditLogId: last.auditLogId },
+      });
+
+      expect(nextPage).toEqual([]);
+    });
+
     it("이벤트를 저장하고 eventId 중복을 무시한다", async () => {
       const store = open();
       const project = await store.createProject({
