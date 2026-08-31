@@ -285,9 +285,17 @@
   padding: 12px 14px;
 }
 
+.member-row > :first-child {
+  min-width: 0;
+}
+
 .member-row strong,
 .member-row span {
   display: block;
+}
+
+.member-row strong {
+  overflow-wrap: anywhere;
 }
 
 .member-row span,
@@ -361,5 +369,15 @@
   .header-actions {
     flex-direction: column;
     gap: 6px;
+  }
+
+  .member-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .member-meta {
+    min-width: 0;
+    text-align: left;
   }
 }

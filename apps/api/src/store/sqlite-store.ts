@@ -232,14 +232,49 @@ export class SqliteStore implements TraceStore {
   }
 
   async addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord> {
-    this.db
+    const result = this.db
       .prepare(
-        `INSERT OR REPLACE INTO project_memberships (project_id, admin_user_id, role, created_at)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO project_memberships (project_id, admin_user_id, role, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(project_id, admin_user_id) DO NOTHING`,
       )
       .run(input.projectId, input.adminUserId, input.role, input.createdAt);
+    if (result.changes === 0) throw new Error("project_member_exists");
 
     return input;
+  }
+
+  async addProjectMembershipWithAudit(
+    membership: AddProjectMembershipInput,
+    auditLog: CreateAuditLogInput,
+  ): Promise<ProjectMembershipRecord> {
+    const addMembershipAndAudit = this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `INSERT INTO project_memberships (project_id, admin_user_id, role, created_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(project_id, admin_user_id) DO NOTHING`,
+        )
+        .run(membership.projectId, membership.adminUserId, membership.role, membership.createdAt);
+      if (result.changes === 0) throw new Error("project_member_exists");
+
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (audit_log_id, admin_user_id, action, project_id, created_at, metadata)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          `audit_${nanoid(10)}`,
+          auditLog.adminUserId ?? null,
+          auditLog.action,
+          auditLog.projectId ?? null,
+          auditLog.createdAt,
+          JSON.stringify(auditLog.metadata ?? {}),
+        );
+    });
+
+    addMembershipAndAudit();
+    return membership;
   }
 
   async getProjectMembership(

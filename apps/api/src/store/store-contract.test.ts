@@ -204,6 +204,45 @@ function describeTraceStoreContract(
       expect((await store.getAdminSession("hash_1"))?.revokedAt).toBe("2026-08-25T00:10:00.000Z");
     });
 
+    it("멤버십과 감사 로그를 원자적으로 저장하고 중복 멤버십을 보존한다", async () => {
+      const store = open();
+      const membership = {
+        projectId: "proj_1",
+        adminUserId: "admin_1",
+        role: "viewer" as const,
+        createdAt: "2026-08-28T00:00:00.000Z",
+      };
+      const auditLog = {
+        adminUserId: "admin_owner",
+        action: "project.member_added",
+        projectId: "proj_1",
+        createdAt: "2026-08-28T00:00:00.000Z",
+        metadata: {
+          addedAdminUserId: "admin_1",
+          email: "member@example.com",
+          role: "viewer",
+        },
+      };
+
+      await expect(store.addProjectMembershipWithAudit(membership, auditLog)).resolves.toEqual(membership);
+      await expect(store.addProjectMembershipWithAudit(
+        { ...membership, role: "admin", createdAt: "2026-08-29T00:00:00.000Z" },
+        { ...auditLog, createdAt: "2026-08-29T00:00:00.000Z", metadata: { ...auditLog.metadata, role: "admin" } },
+      )).rejects.toThrow("project_member_exists");
+
+      await expect(store.getProjectMembership(membership.projectId, membership.adminUserId)).resolves.toEqual(membership);
+      await expect(store.listAuditLogs()).resolves.toEqual([
+        expect.objectContaining({
+          action: "project.member_added",
+          metadata: {
+            addedAdminUserId: "admin_1",
+            email: "member@example.com",
+            role: "viewer",
+          },
+        }),
+      ]);
+    });
+
     it("세션 활동 시각을 갱신한다", async () => {
       const store = open();
       await store.createAdminSession({

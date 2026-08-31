@@ -35,6 +35,19 @@ async function signedInStore() {
   return { store, user, cookie: `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`, csrfToken: session.csrfToken };
 }
 
+class SaveTimeDuplicateStore extends MemoryStore {
+  targetAdminUserId: string | undefined;
+
+  override async getProjectMembership(projectId: string, adminUserId: string) {
+    if (adminUserId === this.targetAdminUserId) return undefined;
+    return super.getProjectMembership(projectId, adminUserId);
+  }
+
+  override async addProjectMembershipWithAudit(): Promise<never> {
+    throw new Error("project_member_exists");
+  }
+}
+
 describe("admin bff routes", () => {
   it("rejects Admin BFF requests without a session cookie", async () => {
     const app = createApp({ store: new MemoryStore(), authConfig });
@@ -191,6 +204,37 @@ describe("admin bff routes", () => {
     ]);
   });
 
+  it.each(["owner", "admin", "viewer"] as const)("lets a %s list project members", async (role) => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: `Demo ${role}`,
+      allowedDomains: [`https://${role}.example.com`],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role,
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      {
+        adminUserId: user.adminUserId,
+        email: "admin@example.com",
+        role,
+        createdAt: "2026-08-27T00:00:00.000Z",
+      },
+    ]);
+  });
+
   it("lets an owner add an existing admin user as a project member", async () => {
     const { store, user, cookie, csrfToken } = await signedInStore();
     const project = await store.createProject({
@@ -276,6 +320,46 @@ describe("admin bff routes", () => {
       email: "added-admin@example.com",
       role: "admin",
     });
+  });
+
+  it("translates a save-time duplicate membership rejection to a conflict", async () => {
+    const store = new SaveTimeDuplicateStore();
+    const user = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_owner",
+      email: "admin@example.com",
+      emailVerified: true,
+      now: "2026-08-25T00:00:00.000Z",
+    });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user });
+    const target = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_target",
+      email: "target@example.com",
+      emailVerified: true,
+      now: "2026-08-25T00:01:00.000Z",
+    });
+    store.targetAdminUserId = target.adminUserId;
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    const cookie = `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`;
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/admin/api/projects/${project.projectId}/members`,
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": session.csrfToken },
+      payload: { email: target.email, role: "viewer" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: "project_member_exists" });
   });
 
   it("rejects project member creation from admin and viewer members", async () => {

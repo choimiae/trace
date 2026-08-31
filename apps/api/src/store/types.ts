@@ -109,6 +109,10 @@ export interface TraceStore {
   revokeAdminSession(sessionIdHash: string, revokedAt: string): Promise<void>;
   touchAdminSession(sessionIdHash: string, lastSeenAt: string): Promise<void>;
   addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord>;
+  addProjectMembershipWithAudit(
+    membership: AddProjectMembershipInput,
+    auditLog: CreateAuditLogInput,
+  ): Promise<ProjectMembershipRecord>;
   getProjectMembership(projectId: string, adminUserId: string): Promise<ProjectMembershipRecord | undefined>;
   listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]>;
   listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]>;

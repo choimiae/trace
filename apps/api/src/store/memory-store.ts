@@ -124,8 +124,22 @@ export class MemoryStore implements TraceStore {
   }
 
   async addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord> {
-    this.projectMemberships.set(`${input.projectId}:${input.adminUserId}`, input);
+    const key = `${input.projectId}:${input.adminUserId}`;
+    if (this.projectMemberships.has(key)) throw new Error("project_member_exists");
+    this.projectMemberships.set(key, input);
     return input;
+  }
+
+  async addProjectMembershipWithAudit(
+    membership: AddProjectMembershipInput,
+    auditLog: CreateAuditLogInput,
+  ): Promise<ProjectMembershipRecord> {
+    const key = `${membership.projectId}:${membership.adminUserId}`;
+    if (this.projectMemberships.has(key)) throw new Error("project_member_exists");
+
+    this.projectMemberships.set(key, membership);
+    this.addAuditLog(auditLog);
+    return membership;
   }
 
   async getProjectMembership(
@@ -144,6 +158,10 @@ export class MemoryStore implements TraceStore {
   }
 
   async createAuditLog(input: CreateAuditLogInput): Promise<void> {
+    this.addAuditLog(input);
+  }
+
+  private addAuditLog(input: CreateAuditLogInput): void {
     const auditLog: AuditLogRecord = { auditLogId: `audit_${nanoid(10)}`, ...input };
     this.auditLogs.set(auditLog.auditLogId, auditLog);
   }

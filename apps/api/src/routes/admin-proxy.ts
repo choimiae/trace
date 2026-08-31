@@ -121,24 +121,33 @@ export async function registerAdminProxyRoutes(
     if (existing) return reply.code(409).send({ error: "project_member_exists" });
 
     const createdAt = new Date().toISOString();
-    const membership = await options.store.addProjectMembership({
-      projectId,
-      adminUserId: user.adminUserId,
-      role: parsed.data.role,
-      createdAt,
-    });
-
-    await options.store.createAuditLog({
-      adminUserId: authenticated.adminUserId,
-      action: "project.member_added",
-      projectId,
-      createdAt,
-      metadata: {
-        addedAdminUserId: user.adminUserId,
-        email: user.email,
-        role: parsed.data.role,
-      },
-    });
+    let membership: ProjectMembershipRecord;
+    try {
+      membership = await options.store.addProjectMembershipWithAudit(
+        {
+          projectId,
+          adminUserId: user.adminUserId,
+          role: parsed.data.role,
+          createdAt,
+        },
+        {
+          adminUserId: authenticated.adminUserId,
+          action: "project.member_added",
+          projectId,
+          createdAt,
+          metadata: {
+            addedAdminUserId: user.adminUserId,
+            email: user.email,
+            role: parsed.data.role,
+          },
+        },
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === "project_member_exists") {
+        return reply.code(409).send({ error: "project_member_exists" });
+      }
+      throw error;
+    }
 
     return reply.code(201).send(toProjectMemberResponse(membership, user));
   });

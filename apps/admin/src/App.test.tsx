@@ -559,13 +559,19 @@ describe("App 프로젝트 설정", () => {
     expect(screen.getByText("added@example.com")).toBeInTheDocument();
   });
 
-  it("maps project member add errors to Korean messages", async () => {
+  it.each([
+    ["admin_user_not_found", "해당 이메일의 관리자를 찾을 수 없습니다."],
+    ["project_member_exists", "이미 이 프로젝트의 멤버입니다."],
+    ["project_role_forbidden", "멤버를 추가할 권한이 없습니다."],
+    ["invalid_project_member", "멤버 이메일 또는 역할이 올바르지 않습니다."],
+    ["csrf_token_invalid", "보안 확인에 실패했습니다. 새로고침 후 다시 시도해주세요."],
+  ])("maps project member error %s to Korean", async (errorCode, message) => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
       projects: [{ projectId: "proj_demo", role: "owner" }],
       csrfToken: "csrf_1",
     });
-    api.addProjectMember.mockRejectedValue(new api.ApiError(409, "project_member_exists"));
+    api.addProjectMember.mockRejectedValue(new api.ApiError(400, errorCode));
 
     render(<App />);
 
@@ -575,7 +581,7 @@ describe("App 프로젝트 설정", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "멤버 추가" }));
 
-    expect(await screen.findByText("이미 이 프로젝트의 멤버입니다.")).toBeInTheDocument();
+    expect(await screen.findByText(message)).toBeInTheDocument();
   });
 
   it("ignores delayed settings member responses after project switch", async () => {
@@ -618,6 +624,41 @@ describe("App 프로젝트 설정", () => {
       ]);
     });
 
+    expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
+    expect(screen.queryByText("late@example.com")).not.toBeInTheDocument();
+  });
+
+  it("ignores delayed settings member responses after logout", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    let resolveMembers: (members: unknown[]) => void = () => undefined;
+    api.getProjectMembers.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveMembers = resolve;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveMembers([
+        {
+          adminUserId: "admin_late",
+          email: "late@example.com",
+          role: "viewer",
+          createdAt: "2026-08-28T00:00:00.000Z",
+        },
+      ]);
+    });
+
+    expect(screen.getByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
     expect(screen.queryByText("late@example.com")).not.toBeInTheDocument();
   });
