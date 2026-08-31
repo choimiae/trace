@@ -91,6 +91,150 @@ function describeTraceStoreContract(
       await expect(store.getAdminUserByEmail("missing@example.com")).resolves.toBeUndefined();
     });
 
+    it("빈 검색어는 이메일 오름차순으로 limit 만큼 반환한다", async () => {
+      const store = open();
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_c",
+        email: "carol@example.com",
+        emailVerified: true,
+        name: "Carol",
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_a",
+        email: "alice@example.com",
+        emailVerified: true,
+        name: "Alice",
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_b",
+        email: "bob@example.com",
+        emailVerified: true,
+        now: "2026-08-31T00:00:02.000Z",
+      });
+
+      const all = await store.searchAdminUsers({ query: "", limit: 20 });
+      expect(all.map((user) => user.email)).toEqual([
+        "alice@example.com",
+        "bob@example.com",
+        "carol@example.com",
+      ]);
+
+      const limited = await store.searchAdminUsers({ query: "", limit: 2 });
+      expect(limited.map((user) => user.email)).toEqual(["alice@example.com", "bob@example.com"]);
+    });
+
+    it("이메일 부분 검색은 대소문자를 구분하지 않는다", async () => {
+      const store = open();
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_email_alice",
+        email: "alice@example.com",
+        emailVerified: true,
+        name: "Alice",
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_email_bob",
+        email: "bob@other.example.com",
+        emailVerified: true,
+        name: "Bob",
+        now: "2026-08-31T00:00:01.000Z",
+      });
+
+      await expect(
+        store.searchAdminUsers({ query: "OTHER", limit: 20 }),
+      ).resolves.toMatchObject([{ email: "bob@other.example.com" }]);
+
+      const lower = await store.searchAdminUsers({ query: "alice", limit: 20 });
+      const upper = await store.searchAdminUsers({ query: "ALICE", limit: 20 });
+      expect(lower.map((user) => user.email)).toEqual(["alice@example.com"]);
+      expect(upper.map((user) => user.email)).toEqual(lower.map((user) => user.email));
+    });
+
+    it("이름 부분 검색은 대소문자를 구분하지 않는다", async () => {
+      const store = open();
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_name_kim",
+        email: "named@example.com",
+        emailVerified: true,
+        name: "Alice Kim",
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_name_none",
+        email: "nameless@example.com",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+
+      await expect(
+        store.searchAdminUsers({ query: "kim", limit: 20 }),
+      ).resolves.toMatchObject([{ email: "named@example.com", name: "Alice Kim" }]);
+      await expect(
+        store.searchAdminUsers({ query: "KIM", limit: 20 }),
+      ).resolves.toMatchObject([{ email: "named@example.com" }]);
+    });
+
+    it("이름이 없는 사용자도 이메일 검색으로 찾는다", async () => {
+      const store = open();
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_nameless",
+        email: "nameless@example.com",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+
+      const found = await store.searchAdminUsers({ query: "nameless", limit: 20 });
+      expect(found.map((user) => user.email)).toEqual(["nameless@example.com"]);
+      expect(found[0]).not.toHaveProperty("name");
+    });
+
+    it("검색어가 아무것도 일치하지 않으면 빈 배열을 반환한다", async () => {
+      const store = open();
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_miss",
+        email: "present@example.com",
+        emailVerified: true,
+        name: "Present",
+        now: "2026-08-31T00:00:00.000Z",
+      });
+
+      await expect(store.searchAdminUsers({ query: "absent", limit: 20 })).resolves.toEqual([]);
+    });
+
+    it("검색 결과도 이메일 오름차순이고 limit이 적용된다", async () => {
+      const store = open();
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_order_c",
+        email: "c-team@example.com",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_order_b",
+        email: "b-team@example.com",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      await store.upsertAdminUserFromGoogle({
+        googleSub: "search_order_a",
+        email: "a-team@example.com",
+        emailVerified: true,
+        now: "2026-08-31T00:00:02.000Z",
+      });
+
+      const all = await store.searchAdminUsers({ query: "team", limit: 20 });
+      expect(all.map((user) => user.email)).toEqual([
+        "a-team@example.com",
+        "b-team@example.com",
+        "c-team@example.com",
+      ]);
+
+      const limited = await store.searchAdminUsers({ query: "team", limit: 2 });
+      expect(limited.map((user) => user.email)).toEqual(["a-team@example.com", "b-team@example.com"]);
+    });
+
     it("프로젝트별 멤버십 목록만 조회한다", async () => {
       const store = open();
       const owner = await store.upsertAdminUserFromGoogle({

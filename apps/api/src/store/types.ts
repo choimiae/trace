@@ -106,6 +106,7 @@ export interface TraceStore {
   upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord>;
   getAdminUser(adminUserId: string): Promise<AdminUserRecord | undefined>;
   getAdminUserByEmail(email: string): Promise<AdminUserRecord | undefined>;
+  searchAdminUsers(input: { query: string; limit: number }): Promise<AdminUserRecord[]>;
   createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord>;
   getAdminSession(sessionIdHash: string): Promise<AdminSessionRecord | undefined>;
   revokeAdminSession(sessionIdHash: string, revokedAt: string): Promise<void>;

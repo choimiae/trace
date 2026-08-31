@@ -106,6 +106,18 @@ export class MemoryStore implements TraceStore {
     return googleSub ? this.adminUsers.get(googleSub) : undefined;
   }
 
+  async searchAdminUsers(input: { query: string; limit: number }): Promise<AdminUserRecord[]> {
+    const needle = input.query.toLowerCase();
+    return [...this.adminUsers.values()]
+      .filter((user) => {
+        if (needle === "") return true;
+        if (user.email.toLowerCase().includes(needle)) return true;
+        return user.name !== undefined && user.name.toLowerCase().includes(needle);
+      })
+      .sort((left, right) => left.email.localeCompare(right.email))
+      .slice(0, input.limit);
+  }
+
   async createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord> {
     this.adminSessions.set(input.sessionIdHash, input);
     return input;

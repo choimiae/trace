@@ -147,12 +147,7 @@ export class SqliteStore implements TraceStore {
     return (await this.getAdminUser(adminUserId))!;
   }
 
-  async getAdminUser(adminUserId: string): Promise<AdminUserRecord | undefined> {
-    const row = this.db.prepare(`SELECT * FROM admin_users WHERE admin_user_id = ?`).get(adminUserId) as
-      | Row
-      | undefined;
-    if (!row) return undefined;
-
+  private toAdminUserRecord(row: Row): AdminUserRecord {
     return compact({
       adminUserId: row.admin_user_id as string,
       googleSub: row.google_sub as string,
@@ -165,22 +160,37 @@ export class SqliteStore implements TraceStore {
     }) as AdminUserRecord;
   }
 
+  async getAdminUser(adminUserId: string): Promise<AdminUserRecord | undefined> {
+    const row = this.db.prepare(`SELECT * FROM admin_users WHERE admin_user_id = ?`).get(adminUserId) as
+      | Row
+      | undefined;
+    return row ? this.toAdminUserRecord(row) : undefined;
+  }
+
   async getAdminUserByEmail(email: string): Promise<AdminUserRecord | undefined> {
     const row = this.db.prepare(`SELECT * FROM admin_users WHERE email = ?`).get(email.toLowerCase()) as
       | Row
       | undefined;
-    if (!row) return undefined;
+    return row ? this.toAdminUserRecord(row) : undefined;
+  }
 
-    return compact({
-      adminUserId: row.admin_user_id as string,
-      googleSub: row.google_sub as string,
-      email: row.email as string,
-      emailVerified: row.email_verified === 1,
-      name: row.name as string | null,
-      pictureUrl: row.picture_url as string | null,
-      createdAt: row.created_at as string,
-      lastLoginAt: row.last_login_at as string,
-    }) as AdminUserRecord;
+  async searchAdminUsers(input: { query: string; limit: number }): Promise<AdminUserRecord[]> {
+    const needle = input.query.toLowerCase();
+    // name 은 nullable 컬럼이다. COALESCE 로 감싸지 않으면 name 이 NULL 인 행에서
+    // LOWER(name) LIKE ? 가 NULL 이 되어 email 조건만 맞는 사용자가 탈락한다.
+    const rows = needle === ""
+      ? (this.db
+          .prepare(`SELECT * FROM admin_users ORDER BY email ASC LIMIT ?`)
+          .all(input.limit) as Row[])
+      : (this.db
+          .prepare(
+            `SELECT * FROM admin_users
+             WHERE LOWER(email) LIKE ? OR LOWER(COALESCE(name, '')) LIKE ?
+             ORDER BY email ASC LIMIT ?`,
+          )
+          .all(`%${needle}%`, `%${needle}%`, input.limit) as Row[]);
+
+    return rows.map((row) => this.toAdminUserRecord(row));
   }
 
   async createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord> {
