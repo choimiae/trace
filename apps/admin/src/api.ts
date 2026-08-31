@@ -84,6 +84,32 @@ export async function addProjectMember(
   return response.json() as Promise<ProjectMemberResponse>;
 }
 
+export async function updateProjectMemberRole(
+  projectId: string,
+  adminUserId: string,
+  input: { role: ProjectRole },
+  csrfToken: string,
+): Promise<ProjectMemberResponse> {
+  const response = await ensureSuccess(`/admin/api/projects/${projectId}/members/${adminUserId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", "x-trace-csrf": csrfToken },
+    body: JSON.stringify(input),
+  });
+
+  return response.json() as Promise<ProjectMemberResponse>;
+}
+
+export async function removeProjectMember(
+  projectId: string,
+  adminUserId: string,
+  csrfToken: string,
+): Promise<void> {
+  await ensureSuccess(`/admin/api/projects/${projectId}/members/${adminUserId}`, {
+    method: "DELETE",
+    headers: { "x-trace-csrf": csrfToken },
+  });
+}
+
 export async function updateProjectSettings(
   projectId: string,
   input: { name: string; allowedDomains: string[] },

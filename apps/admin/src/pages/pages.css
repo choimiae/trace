@@ -311,6 +311,40 @@
   text-align: right;
 }
 
+.member-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.member-row-actions select {
+  min-width: 104px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 7px 10px;
+  color: var(--ink);
+  font: inherit;
+}
+
+.member-row-actions select:disabled {
+  background: var(--surface-sunk);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .member-add-form {
   display: grid;
   gap: var(--space-4);
@@ -379,5 +413,9 @@
   .member-meta {
     min-width: 0;
     text-align: left;
+  }
+
+  .member-row-actions {
+    width: 100%;
   }
 }

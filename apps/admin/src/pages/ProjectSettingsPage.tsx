@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import type { AddProjectMemberInput, ProjectMemberResponse } from "../api.js";
+import type { AddProjectMemberInput, ProjectMemberResponse, ProjectRole } from "../api.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 import { Field } from "../ui/Field.js";
@@ -17,6 +17,12 @@ interface ProjectSettingsPageProps {
   onBack: () => void;
   onSave: (input: { name: string; allowedDomains: string[] }) => void;
   onAddMember: (input: AddProjectMemberInput) => void;
+  currentAdminUserId: string;
+  memberActionInFlight?: string | undefined;
+  memberActionError?: string | undefined;
+  memberActionSavedMessage?: string | undefined;
+  onUpdateMemberRole: (adminUserId: string, role: ProjectRole) => void;
+  onRemoveMember: (adminUserId: string) => void;
   saving?: boolean;
   addingMember?: boolean;
   error?: string | undefined;
@@ -31,6 +37,12 @@ export function ProjectSettingsPage({
   onBack,
   onSave,
   onAddMember,
+  currentAdminUserId,
+  memberActionInFlight,
+  memberActionError,
+  memberActionSavedMessage,
+  onUpdateMemberRole,
+  onRemoveMember,
   saving = false,
   addingMember = false,
   error,
@@ -77,6 +89,7 @@ export function ProjectSettingsPage({
     .map((domain) => domain.trim())
     .filter((domain) => domain.length > 0);
   const canSave = !readOnly && !saving && name.trim().length > 0 && allowedDomains.length > 0;
+  const ownerCount = members.filter((member) => member.role === "owner").length;
 
   return (
     <main className="app-shell settings-page">
@@ -132,19 +145,62 @@ export function ProjectSettingsPage({
           <h2>멤버</h2>
         </div>
         <div className="members-list">
-          {members.map((member) => (
-            <div className="member-row" key={member.adminUserId}>
-              <div>
-                <strong>{member.name !== undefined ? member.name : member.email}</strong>
-                {member.name ? <span>{member.email}</span> : null}
+          {members.map((member) => {
+            const actionBusy = memberActionInFlight === member.adminUserId;
+            const isSelf = member.adminUserId === currentAdminUserId;
+            const isLastOwner = member.role === "owner" && ownerCount === 1;
+            const ownerLossDisabled = member.role === "owner" && (isSelf || isLastOwner);
+            const removeDisabled = actionBusy || isSelf || isLastOwner;
+
+            return (
+              <div className="member-row" key={member.adminUserId}>
+                <div>
+                  <strong>{member.name !== undefined ? member.name : member.email}</strong>
+                  {member.name ? <span>{member.email}</span> : null}
+                </div>
+                <div className="member-meta">
+                  <span>{roleLabel(member.role)}</span>
+                  <span>{member.createdAt.slice(0, 10)}</span>
+                </div>
+                {project.role === "owner" ? (
+                  <div className="member-row-actions">
+                    <label className="sr-only" htmlFor={`member-role-${member.adminUserId}`}>
+                      {member.email} 역할
+                    </label>
+                    <select
+                      id={`member-role-${member.adminUserId}`}
+                      value={member.role}
+                      disabled={actionBusy}
+                      onChange={(event) => {
+                        const nextRole = event.target.value as ProjectRole;
+                        if (nextRole !== member.role) {
+                          onUpdateMemberRole(member.adminUserId, nextRole);
+                        }
+                      }}
+                    >
+                      <option value="owner">소유자</option>
+                      <option value="admin" disabled={ownerLossDisabled}>관리자</option>
+                      <option value="viewer" disabled={ownerLossDisabled}>조회자</option>
+                    </select>
+                    <Button
+                      variant="secondary"
+                      disabled={removeDisabled}
+                      onClick={() => {
+                        if (window.confirm("이 멤버를 프로젝트에서 제거할까요?")) {
+                          onRemoveMember(member.adminUserId);
+                        }
+                      }}
+                    >
+                      제거
+                    </Button>
+                  </div>
+                ) : null}
               </div>
-              <div className="member-meta">
-                <span>{roleLabel(member.role)}</span>
-                <span>{member.createdAt.slice(0, 10)}</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
+        {memberActionSavedMessage ? <span className="settings-success">{memberActionSavedMessage}</span> : null}
+        {memberActionError ? <p className="field-error">{memberActionError}</p> : null}
         {project.role === "owner" ? (
           <form className="member-add-form" onSubmit={handleAddMemberSubmit}>
             <Field
