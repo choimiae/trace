@@ -1,13 +1,14 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AdminAuthConfig } from "../auth/config.js";
 import { parseCookieHeader } from "../auth/cookies.js";
 import { verifyCsrfRequest } from "../auth/csrf.js";
 import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js";
 import type { AdminRole, AdminUserRecord, ProjectMembershipRecord, ProjectRecord, TraceStore } from "../store/types.js";
-import { addProjectMemberSchema, createProjectSchema, updateProjectSchema } from "./admin.js";
+import { addProjectMemberSchema, createProjectSchema, updateProjectMemberRoleSchema, updateProjectSchema } from "./admin.js";
 
 const projectParamsSchema = z.object({ projectId: z.string() });
+const projectMemberParamsSchema = z.object({ projectId: z.string(), adminUserId: z.string() });
 const issueParamsSchema = z.object({ issueId: z.string() });
 const sessionParamsSchema = z.object({ sessionId: z.string() });
 const projectQuerySchema = z.object({ projectId: z.string() });
@@ -150,6 +151,112 @@ export async function registerAdminProxyRoutes(
     }
 
     return reply.code(201).send(toProjectMemberResponse(membership, user));
+  });
+
+  app.patch("/admin/api/projects/:projectId/members/:adminUserId", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const csrf = verifyCsrfRequest({
+      method: request.method,
+      origin: request.headers.origin,
+      referer: request.headers.referer,
+      adminAppOrigin: options.config.adminAppOrigin,
+      csrfCookie: parseCookieHeader(request.headers.cookie).get(options.config.csrfCookieName),
+      csrfHeader: firstHeaderValue(request.headers["x-trace-csrf"]),
+    });
+    if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
+
+    const params = projectMemberParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: "project_not_found" });
+    const body = updateProjectMemberRoleSchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_project_member" });
+
+    const access = await getProjectAccess(options.store, params.data.projectId, authenticated, "project_members");
+    if ("error" in access) return reply.code(access.statusCode).send({ error: access.error });
+    if (access.membership.role !== "owner") return reply.code(403).send({ error: "project_role_forbidden" });
+
+    const before = await options.store.getProjectMembership(params.data.projectId, params.data.adminUserId);
+    if (!before) return reply.code(404).send({ error: "project_member_not_found" });
+    const targetUser = await options.store.getAdminUser(params.data.adminUserId);
+    if (!targetUser) return reply.code(404).send({ error: "project_member_not_found" });
+
+    try {
+      const updated = await options.store.updateProjectMembershipRoleWithAudit({
+        projectId: params.data.projectId,
+        targetAdminUserId: params.data.adminUserId,
+        requestedByAdminUserId: authenticated.adminUserId,
+        role: body.data.role,
+        ...(before.role === body.data.role ? {} : {
+          auditLog: {
+            adminUserId: authenticated.adminUserId,
+            projectId: params.data.projectId,
+            createdAt: new Date().toISOString(),
+            action: "project.member_role_updated",
+            metadata: {
+              targetAdminUserId: targetUser.adminUserId,
+              email: targetUser.email,
+              beforeRole: before.role,
+              afterRole: body.data.role,
+            },
+          },
+        }),
+      });
+      if (!updated) return reply.code(404).send({ error: "project_member_not_found" });
+      return reply.send(toProjectMemberResponse(updated, targetUser));
+    } catch (error) {
+      return sendProjectMemberMutationError(reply, error, "project_member_update_failed");
+    }
+  });
+
+  app.delete("/admin/api/projects/:projectId/members/:adminUserId", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const csrf = verifyCsrfRequest({
+      method: request.method,
+      origin: request.headers.origin,
+      referer: request.headers.referer,
+      adminAppOrigin: options.config.adminAppOrigin,
+      csrfCookie: parseCookieHeader(request.headers.cookie).get(options.config.csrfCookieName),
+      csrfHeader: firstHeaderValue(request.headers["x-trace-csrf"]),
+    });
+    if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
+
+    const params = projectMemberParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: "project_not_found" });
+
+    const access = await getProjectAccess(options.store, params.data.projectId, authenticated, "project_members");
+    if ("error" in access) return reply.code(access.statusCode).send({ error: access.error });
+    if (access.membership.role !== "owner") return reply.code(403).send({ error: "project_role_forbidden" });
+
+    const before = await options.store.getProjectMembership(params.data.projectId, params.data.adminUserId);
+    if (!before) return reply.code(404).send({ error: "project_member_not_found" });
+    const targetUser = await options.store.getAdminUser(params.data.adminUserId);
+    if (!targetUser) return reply.code(404).send({ error: "project_member_not_found" });
+
+    try {
+      const removed = await options.store.removeProjectMembershipWithAudit({
+        projectId: params.data.projectId,
+        targetAdminUserId: params.data.adminUserId,
+        requestedByAdminUserId: authenticated.adminUserId,
+        auditLog: {
+          adminUserId: authenticated.adminUserId,
+          projectId: params.data.projectId,
+          createdAt: new Date().toISOString(),
+          action: "project.member_removed",
+          metadata: {
+            targetAdminUserId: targetUser.adminUserId,
+            email: targetUser.email,
+            role: before.role,
+          },
+        },
+      });
+      if (!removed) return reply.code(404).send({ error: "project_member_not_found" });
+      return reply.code(204).send();
+    } catch (error) {
+      return sendProjectMemberMutationError(reply, error, "project_member_remove_failed");
+    }
   });
 
   app.patch("/admin/api/projects/:projectId", async (request, reply) => {
@@ -322,6 +429,17 @@ async function auditProjectAccessDenied(
     createdAt: new Date().toISOString(),
     metadata: { resourceType },
   });
+}
+
+function sendProjectMemberMutationError(reply: FastifyReply, error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  if (message === "self_owner_change_forbidden") {
+    return reply.code(403).send({ error: "self_owner_change_forbidden" });
+  }
+  if (message === "last_owner_forbidden") {
+    return reply.code(403).send({ error: "last_owner_forbidden" });
+  }
+  throw error;
 }
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {

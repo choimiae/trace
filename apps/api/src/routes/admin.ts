@@ -14,3 +14,7 @@ export const addProjectMemberSchema = z.object({
   email: z.string().trim().email().transform((email) => email.toLowerCase()),
   role: z.enum(["admin", "viewer"]),
 });
+
+export const updateProjectMemberRoleSchema = z.object({
+  role: z.enum(["owner", "admin", "viewer"]),
+});
