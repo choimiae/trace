@@ -18,3 +18,8 @@ export const addProjectMemberSchema = z.object({
 export const updateProjectMemberRoleSchema = z.object({
   role: z.enum(["owner", "admin", "viewer"]),
 });
+
+export const memberCandidateSearchSchema = z.object({
+  query: z.string().trim().default(""),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});

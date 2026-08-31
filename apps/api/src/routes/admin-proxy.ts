@@ -5,7 +5,13 @@ import { parseCookieHeader } from "../auth/cookies.js";
 import { verifyCsrfRequest } from "../auth/csrf.js";
 import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js";
 import type { AdminRole, AdminUserRecord, ProjectMembershipRecord, ProjectRecord, TraceStore } from "../store/types.js";
-import { addProjectMemberSchema, createProjectSchema, updateProjectMemberRoleSchema, updateProjectSchema } from "./admin.js";
+import {
+  addProjectMemberSchema,
+  createProjectSchema,
+  memberCandidateSearchSchema,
+  updateProjectMemberRoleSchema,
+  updateProjectSchema,
+} from "./admin.js";
 
 const projectParamsSchema = z.object({ projectId: z.string() });
 const projectMemberParamsSchema = z.object({ projectId: z.string(), adminUserId: z.string() });
@@ -87,6 +93,44 @@ export async function registerAdminProxyRoutes(
     );
 
     return members.filter((member): member is ProjectMemberResponse => member !== undefined);
+  });
+
+  app.get("/admin/api/projects/:projectId/member-candidates", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const access = await getProjectAccess(options.store, projectId, authenticated, "project_member_candidates");
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+    // 권한 검사를 schema 검증보다 먼저 둔다. owner 가 아닌 요청자에게
+    // limit 검증 결과를 흘리지 않는다.
+    if (access.membership.role !== "owner") {
+      return reply.code(403).send({ error: "project_role_forbidden" });
+    }
+
+    const parsed = memberCandidateSearchSchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_member_candidate_search" });
+
+    const [users, memberships] = await Promise.all([
+      options.store.searchAdminUsers(parsed.data),
+      options.store.listProjectMemberships(projectId),
+    ]);
+    const roleByAdminUserId = new Map(
+      memberships.map((membership) => [membership.adminUserId, membership.role]),
+    );
+
+    return users.map((user) => {
+      const candidate: ProjectMemberCandidateResponse = {
+        adminUserId: user.adminUserId,
+        email: user.email,
+      };
+      if (user.name !== undefined) candidate.name = user.name;
+      const role = roleByAdminUserId.get(user.adminUserId);
+      if (role !== undefined) candidate.membership = { role };
+      return candidate;
+    });
   });
 
   app.post("/admin/api/projects/:projectId/members", async (request, reply) => {
@@ -405,6 +449,7 @@ type ProjectAccessError =
 type ProjectResourceType =
   | "project_settings"
   | "project_members"
+  | "project_member_candidates"
   | "project_summary"
   | "project_issues"
   | "issue_detail"
@@ -461,6 +506,13 @@ type ProjectMemberResponse = {
   name?: string;
   role: AdminRole;
   createdAt: string;
+};
+
+type ProjectMemberCandidateResponse = {
+  adminUserId: string;
+  email: string;
+  name?: string;
+  membership?: { role: AdminRole };
 };
 
 function toProjectMemberResponse(

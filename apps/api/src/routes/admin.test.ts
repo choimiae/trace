@@ -535,6 +535,286 @@ describe("admin bff routes", () => {
     ]));
   });
 
+  it("lets an owner search member candidates with an empty query", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const outsider = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_candidate",
+      email: "aaa-candidate@example.com",
+      emailVerified: true,
+      name: "Candidate",
+      now: "2026-08-31T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/member-candidates`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      {
+        adminUserId: outsider.adminUserId,
+        email: "aaa-candidate@example.com",
+        name: "Candidate",
+      },
+      {
+        adminUserId: user.adminUserId,
+        email: "admin@example.com",
+        membership: { role: "owner" },
+      },
+    ]);
+  });
+
+  it("lets an owner search member candidates by email", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const outsider = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_other",
+      email: "person@other.example.com",
+      emailVerified: true,
+      now: "2026-08-31T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/member-candidates?query=other`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      { adminUserId: outsider.adminUserId, email: "person@other.example.com" },
+    ]);
+  });
+
+  it("lets an owner search member candidates by name", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const outsider = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_named",
+      email: "named@example.com",
+      emailVerified: true,
+      name: "Alice Kim",
+      now: "2026-08-31T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/member-candidates?query=kim`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      { adminUserId: outsider.adminUserId, email: "named@example.com", name: "Alice Kim" },
+    ]);
+  });
+
+  it("trims and lowercases the member candidate search query", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const outsider = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_alice",
+      email: "alice@example.com",
+      emailVerified: true,
+      name: "Alice",
+      now: "2026-08-31T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/member-candidates?query=${encodeURIComponent("  ALICE  ")}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      { adminUserId: outsider.adminUserId, email: "alice@example.com", name: "Alice" },
+    ]);
+  });
+
+  it("applies the member candidate search limit", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_limit",
+      email: "aaa-limit@example.com",
+      emailVerified: true,
+      now: "2026-08-31T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/member-candidates?limit=1`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      { adminUserId: expect.any(String), email: "aaa-limit@example.com" },
+    ]);
+  });
+
+  it.each(["admin", "viewer"] as const)(
+    "rejects member candidate search from a %s member",
+    async (role) => {
+      const { store, user, cookie } = await signedInStore();
+      const project = await store.createProject({
+        name: `Demo ${role}`,
+        allowedDomains: [`https://${role}.example.com`],
+      });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: user.adminUserId,
+        role,
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      const app = createApp({ store, authConfig });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/admin/api/projects/${project.projectId}/member-candidates`,
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "project_role_forbidden" });
+    },
+  );
+
+  it("returns 403 and audits when member candidates are requested by a non-member", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Private",
+      allowedDomains: ["https://private.example.com"],
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/member-candidates`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "project_access_denied" });
+    expect(await store.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        adminUserId: user.adminUserId,
+        action: "project.access_denied",
+        projectId: project.projectId,
+        metadata: { resourceType: "project_member_candidates" },
+      }),
+    ]));
+  });
+
+  it("returns 404 when searching member candidates for a missing project", async () => {
+    const { store, cookie } = await signedInStore();
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/api/projects/proj_missing/member-candidates",
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "project_not_found" });
+  });
+
+  it("rejects member candidate search without a session cookie", async () => {
+    const { store } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/member-candidates`,
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "admin_auth_required" });
+  });
+
+  it.each(["0", "51", "abc"])("rejects an out-of-range member candidate limit %s", async (limit) => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-31T00:00:00.000Z",
+    });
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/member-candidates?limit=${limit}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_member_candidate_search" });
+  });
+
   it("lets an owner update another project member role and audits the change", async () => {
     const { store, user, cookie, csrfToken } = await signedInStore();
     const project = await store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
