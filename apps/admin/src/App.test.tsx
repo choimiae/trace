@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
   getProjectSettings: vi.fn(),
   getProjectMembers: vi.fn(),
   searchProjectMemberCandidates: vi.fn(),
+  getProjectAuditLogs: vi.fn(),
   addProjectMember: vi.fn(),
   updateProjectMemberRole: vi.fn(),
   removeProjectMember: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("./api", () => ({
   getProjectSettings: api.getProjectSettings,
   getProjectMembers: api.getProjectMembers,
   searchProjectMemberCandidates: api.searchProjectMemberCandidates,
+  getProjectAuditLogs: api.getProjectAuditLogs,
   addProjectMember: api.addProjectMember,
   updateProjectMemberRole: api.updateProjectMemberRole,
   removeProjectMember: api.removeProjectMember,
@@ -88,6 +90,17 @@ async function removeMemberButton(email: string) {
   return screen.findByRole("button", { name: `${email} 제거` });
 }
 
+// 활동 이력 항목은 문장으로 렌더링된다. `${email}을 조회자로 추가했습니다.` 가 보인다.
+function auditLogEntry(auditLogId: string, email: string) {
+  return {
+    auditLogId,
+    action: "project.member_added",
+    createdAt: "2026-08-31T01:23:45.000Z",
+    actor: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+    metadata: { email, role: "viewer" },
+  };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   api.getDashboardData.mockResolvedValue({
@@ -130,6 +143,17 @@ beforeEach(() => {
       name: "Added",
     },
   ]);
+  api.getProjectAuditLogs.mockResolvedValue({
+    entries: [
+      {
+        auditLogId: "audit_1",
+        action: "project.member_added",
+        createdAt: "2026-08-31T01:23:45.000Z",
+        actor: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+        metadata: { email: "member@example.com", role: "viewer" },
+      },
+    ],
+  });
   api.addProjectMember.mockResolvedValue({
     adminUserId: "admin_added",
     email: "added@example.com",
@@ -1504,5 +1528,175 @@ describe("App 프로젝트 설정", () => {
 
     expect(await screen.findByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("설정 화면에서 활동 이력으로 진입해 목록을 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+
+    expect(await screen.findByRole("heading", { name: "활동 이력" })).toBeInTheDocument();
+    expect(api.getProjectAuditLogs).toHaveBeenCalledWith("proj_demo", undefined);
+    expect(screen.getByText("member@example.com을 조회자로 추가했습니다.")).toBeInTheDocument();
+  });
+
+  it("더 보기로 다음 페이지를 이어 붙인다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectAuditLogs
+      .mockResolvedValueOnce({
+        entries: [auditLogEntry("audit_1", "first@example.com")],
+        nextCursor: "cursor_1",
+      })
+      .mockResolvedValueOnce({ entries: [auditLogEntry("audit_2", "second@example.com")] });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+    expect(await screen.findByText("first@example.com을 조회자로 추가했습니다.")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "더 보기" }));
+
+    expect(await screen.findByText("second@example.com을 조회자로 추가했습니다.")).toBeInTheDocument();
+    expect(api.getProjectAuditLogs).toHaveBeenLastCalledWith("proj_demo", "cursor_1");
+    expect(screen.getByText("first@example.com을 조회자로 추가했습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "더 보기" })).not.toBeInTheDocument();
+  });
+
+  it("더 보기 실패 시 기존 목록을 유지하고 오류를 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectAuditLogs
+      .mockResolvedValueOnce({
+        entries: [auditLogEntry("audit_1", "first@example.com")],
+        nextCursor: "cursor_1",
+      })
+      .mockRejectedValueOnce(new api.ApiError(500, "internal_error"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+    expect(await screen.findByText("first@example.com을 조회자로 추가했습니다.")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "더 보기" }));
+
+    expect(await screen.findByText("활동 이력을 불러오지 못했습니다.")).toBeInTheDocument();
+    expect(screen.getByText("first@example.com을 조회자로 추가했습니다.")).toBeInTheDocument();
+  });
+
+  it("첫 로드 실패 시 오류 문구를 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectAuditLogs.mockRejectedValue(new api.ApiError(500, "internal_error"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+
+    expect(await screen.findByText("활동 이력을 불러오지 못했습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "활동 이력" })).toBeInTheDocument();
+  });
+
+  it("활동 이력 권한 오류 문구를 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectAuditLogs.mockRejectedValue(new api.ApiError(403, "project_role_forbidden"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+
+    expect(await screen.findByText("활동 이력을 볼 권한이 없습니다.")).toBeInTheDocument();
+  });
+
+  it("활동 이력이 401 이면 로그인 화면으로 보낸다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getProjectAuditLogs.mockRejectedValue(new api.ApiError(401, "admin_auth_required"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+  });
+
+  it("설정으로 돌아가면 설정 화면을 다시 로드하고 후보 검색이 다시 발동한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+    expect(await screen.findByRole("heading", { name: "활동 이력" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "설정으로 돌아가기" }));
+
+    expect(await screen.findByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
+    expect(api.getProjectSettings).toHaveBeenCalledTimes(2);
+    expect(api.getProjectMembers).toHaveBeenCalledTimes(2);
+    expect(api.searchProjectMemberCandidates).toHaveBeenCalledTimes(2);
+  });
+
+  it("늦게 도착한 활동 이력 응답은 무시한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    let resolveAuditLogs: (page: { entries: unknown[] }) => void = () => undefined;
+    api.getProjectAuditLogs.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveAuditLogs = resolve;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "프로젝트 설정" }));
+    fireEvent.click(await screen.findByRole("button", { name: "활동 이력" }));
+    expect(await screen.findByRole("heading", { name: "활동 이력" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "설정으로 돌아가기" }));
+    expect(await screen.findByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveAuditLogs({ entries: [auditLogEntry("audit_late", "late@example.com")] });
+    });
+
+    expect(screen.getByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "활동 이력" })).not.toBeInTheDocument();
+    expect(screen.queryByText("late@example.com을 조회자로 추가했습니다.")).not.toBeInTheDocument();
   });
 });

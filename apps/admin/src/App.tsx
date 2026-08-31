@@ -6,6 +6,7 @@ import {
   createProject,
   getAuthMe,
   getDashboardData,
+  getProjectAuditLogs,
   getProjectMembers,
   getProjectSettings,
   logout,
@@ -14,6 +15,7 @@ import {
   updateProjectMemberRole,
   updateProjectSettings,
   type AddProjectMemberInput,
+  type ProjectAuditLogEntryResponse,
   type ProjectMemberCandidateResponse,
   type ProjectMemberResponse,
   type ProjectRole,
@@ -25,6 +27,7 @@ import { CreateProjectPage } from "./pages/CreateProjectPage.js";
 import { DashboardPage, type ProjectOption } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
+import { ProjectAuditLogPage } from "./pages/ProjectAuditLogPage.js";
 import { ProjectSettingsPage } from "./pages/ProjectSettingsPage.js";
 import { StatusPage } from "./pages/StatusPage.js";
 import "./styles/tokens.css";
@@ -86,6 +89,23 @@ type AppState =
       memberActionsInFlight: Set<string>;
       memberActionError?: string | undefined;
       memberActionSavedMessage?: string | undefined;
+    }
+  | {
+      type: "audit";
+      project: ProjectSettingsResponse;
+      dashboardData: { summary: DashboardSummary; issues: Issue[] };
+      projects: ProjectOption[];
+      projectId: string;
+      userEmail: string;
+      adminUserId: string;
+      csrfToken: string;
+      settingsSessionId: number;
+      entries: ProjectAuditLogEntryResponse[];
+      nextCursor?: string | undefined;
+      auditRequestId: number;
+      loading: boolean;
+      loadingMore: boolean;
+      error?: string | undefined;
     };
 
 function describeApiError(
@@ -145,6 +165,26 @@ function describeMemberCandidateSearchError(error: unknown): string {
     MEMBER_CANDIDATE_SEARCH_ERROR_MESSAGES,
     error,
     "사용자를 검색하지 못했습니다.",
+  );
+}
+
+// 활동 이력 조회 라우트가 반환할 수 있는 오류 코드를 한국어 안내로 옮긴다.
+// apps/api/src/routes/admin-proxy.ts 의 GET audit-logs 핸들러 기준.
+// UI 는 owner 일 때만 진입하고 limit 을 보내지 않으므로 권한/조건 오류는 정상
+// 흐름에서는 나오지 않는다. 권한이 도중에 바뀐 경우를 위해 지도에 남긴다.
+// 401 admin_auth_required 는 login 화면으로 전이하므로 이 지도에 담지 않는다.
+const PROJECT_AUDIT_LOG_ERROR_MESSAGES: Record<string, string> = {
+  project_role_forbidden: "활동 이력을 볼 권한이 없습니다.",
+  project_access_denied: "더 이상 이 프로젝트의 멤버가 아닙니다.",
+  project_not_found: "프로젝트를 찾을 수 없습니다.",
+  invalid_audit_log_query: "조회 조건이 올바르지 않습니다.",
+};
+
+function describeProjectAuditLogError(error: unknown): string {
+  return describeApiError(
+    PROJECT_AUDIT_LOG_ERROR_MESSAGES,
+    error,
+    "활동 이력을 불러오지 못했습니다.",
   );
 }
 
@@ -299,6 +339,52 @@ export function App() {
       });
   };
 
+  // 진입 로드와 `더 보기` 가 같은 guard 를 쓰게 한다. requestId 는 호출자가 자기
+  // render 의 state 에서 계산해서 넘긴다. runMemberCandidateSearch 와 같은 이유로
+  // setState updater 안에서는 읽어 낼 수 없다. cursor 가 있으면 이어 붙이고
+  // 없으면(첫 페이지) 갈아 끼운다.
+  const runAuditLogLoad = (
+    projectId: string,
+    settingsSessionId: number,
+    requestId: number,
+    cursor: string | undefined,
+  ) => {
+    void getProjectAuditLogs(projectId, cursor)
+      .then((page) => {
+        setState((current) => {
+          if (
+            current.type !== "audit"
+            || current.projectId !== projectId
+            || current.settingsSessionId !== settingsSessionId
+            || current.auditRequestId !== requestId
+          ) return current;
+          return Object.assign({}, current, {
+            entries: cursor === undefined ? page.entries : current.entries.concat(page.entries),
+            nextCursor: page.nextCursor,
+            loading: false,
+            loadingMore: false,
+            error: undefined,
+          });
+        });
+      })
+      .catch((error: unknown) => {
+        setState((current) => {
+          if (error instanceof ApiError && error.status === 401) return { type: "login" };
+          if (
+            current.type !== "audit"
+            || current.projectId !== projectId
+            || current.settingsSessionId !== settingsSessionId
+            || current.auditRequestId !== requestId
+          ) return current;
+          return Object.assign({}, current, {
+            loading: false,
+            loadingMore: false,
+            error: describeProjectAuditLogError(error),
+          });
+        });
+      });
+  };
+
   useEffect(() => {
     if (state.type !== "install" || state.eventsSeen > 0) return;
 
@@ -430,8 +516,9 @@ export function App() {
     );
   }
 
+  // 대시보드(ready)와 활동 이력(audit) 두 화면에서 들어올 수 있다.
   const handleShowSettings = async () => {
-    if (state.type !== "ready") return;
+    if (state.type !== "ready" && state.type !== "audit") return;
     const projectId = state.projectId;
     setState((current) =>
       current.type === "ready" && current.settingsError !== undefined
@@ -446,12 +533,12 @@ export function App() {
       // 조회가 끝나기 전에 로그아웃하거나 다른 프로젝트로 전환했다면 지연
       // 응답으로 현재 화면을 덮어쓰지 않는다.
       setState((current) =>
-        current.type === "ready" && current.projectId === projectId
+        (current.type === "ready" || current.type === "audit") && current.projectId === projectId
           ? {
               type: "settings",
               project,
               members,
-              dashboardData: current.data,
+              dashboardData: current.type === "ready" ? current.data : current.dashboardData,
               projects: current.projects,
               projectId: current.projectId,
               userEmail: current.userEmail,
@@ -473,15 +560,33 @@ export function App() {
       );
     } catch (error) {
       setState((current) => {
-        if (current.type !== "ready" || current.projectId !== projectId) return current;
+        if (
+          (current.type !== "ready" && current.type !== "audit")
+          || current.projectId !== projectId
+        ) return current;
         if (error instanceof ApiError && error.status === 401) return { type: "login" };
+        const dashboardData = current.type === "ready" ? current.data : current.dashboardData;
         if (error instanceof ApiError && error.status === 403) {
-          return { ...current, settingsError: "접근 권한이 없습니다." };
+          // audit 에는 settingsError 를 담을 자리가 없고 ProjectAuditLogPage 도
+          // 그것을 그리지 않는다. 활동 이력에서 들어온 실패는 ready 로 되돌려
+          // 대시보드에서 안내를 보여준다. 실제로 접근 권한을 잃은 상태이므로
+          // 대시보드로 내려보내는 것이 ready 에서 들어온 경우와 같은 귀결이다.
+          return {
+            type: "ready",
+            data: dashboardData,
+            projects: current.projects,
+            projectId: current.projectId,
+            userEmail: current.userEmail,
+            adminUserId: current.adminUserId,
+            csrfToken: current.csrfToken,
+            settingsSessionId: current.settingsSessionId,
+            settingsError: "접근 권한이 없습니다.",
+          };
         }
         if (error instanceof ApiError && error.status === 404) {
           return {
             type: "settings-not-found",
-            dashboardData: current.data,
+            dashboardData,
             projects: current.projects,
             projectId: current.projectId,
             userEmail: current.userEmail,
@@ -581,6 +686,27 @@ export function App() {
           ? Object.assign({}, current, { selectedMemberCandidate: candidate })
           : current,
       );
+    };
+
+    const handleShowAuditLog = () => {
+      setState({
+        type: "audit",
+        project: state.project,
+        dashboardData: state.dashboardData,
+        projects: state.projects,
+        projectId: state.projectId,
+        userEmail: state.userEmail,
+        adminUserId: state.adminUserId,
+        csrfToken: state.csrfToken,
+        settingsSessionId: state.settingsSessionId,
+        entries: [],
+        nextCursor: undefined,
+        auditRequestId: 1,
+        loading: true,
+        loadingMore: false,
+        error: undefined,
+      });
+      runAuditLogLoad(state.projectId, state.settingsSessionId, 1, undefined);
     };
 
     const handleUpdateMemberRole = async (adminUserId: string, role: ProjectRole) => {
@@ -725,6 +851,7 @@ export function App() {
         onAddMember={(input) => { void handleAddMember(input); }}
         onUpdateMemberRole={(adminUserId, role) => { void handleUpdateMemberRole(adminUserId, role); }}
         onRemoveMember={(adminUserId) => { void handleRemoveMember(adminUserId); }}
+        onShowAuditLog={handleShowAuditLog}
         onBack={() =>
           setState({
             type: "ready",
@@ -737,6 +864,39 @@ export function App() {
             settingsSessionId: state.settingsSessionId,
           })
         }
+      />
+    );
+  }
+
+  if (state.type === "audit") {
+    const handleLoadMore = () => {
+      if (state.nextCursor === undefined) return;
+      const requestId = state.auditRequestId + 1;
+      const cursor = state.nextCursor;
+      setState((current) =>
+        current.type === "audit"
+        && current.projectId === state.projectId
+        && current.settingsSessionId === state.settingsSessionId
+          ? Object.assign({}, current, {
+              auditRequestId: requestId,
+              loadingMore: true,
+              error: undefined,
+            })
+          : current,
+      );
+      runAuditLogLoad(state.projectId, state.settingsSessionId, requestId, cursor);
+    };
+
+    return (
+      <ProjectAuditLogPage
+        projectId={state.projectId}
+        entries={state.entries}
+        hasMore={state.nextCursor !== undefined}
+        loading={state.loading}
+        loadingMore={state.loadingMore}
+        error={state.error}
+        onLoadMore={handleLoadMore}
+        onBack={() => { void handleShowSettings(); }}
       />
     );
   }
