@@ -408,4 +408,28 @@ describe("ProjectSettingsPage", () => {
     expect(screen.getByText("멤버 역할을 변경하지 못했습니다.")).toBeInTheDocument();
     expect(screen.getByText("멤버 역할을 변경했습니다.")).toBeInTheDocument();
   });
+
+  it("owner 에게 활동 이력 버튼을 보여주고 클릭을 전달한다", () => {
+    const onShowAuditLog = vi.fn();
+    renderRequiredProps({ onShowAuditLog });
+
+    fireEvent.click(screen.getByRole("button", { name: "활동 이력" }));
+
+    expect(onShowAuditLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("handler 가 없으면 활동 이력 버튼을 보여주지 않는다", () => {
+    renderRequiredProps();
+
+    expect(screen.queryByRole("button", { name: "활동 이력" })).not.toBeInTheDocument();
+  });
+
+  it.each(["admin", "viewer"] as const)("%s 에게는 활동 이력 버튼을 보여주지 않는다", (role) => {
+    renderRequiredProps({
+      project: { ...ownerProject, role },
+      onShowAuditLog: () => undefined,
+    });
+
+    expect(screen.queryByRole("button", { name: "활동 이력" })).not.toBeInTheDocument();
+  });
 });

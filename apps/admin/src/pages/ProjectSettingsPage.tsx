@@ -40,6 +40,7 @@ interface ProjectSettingsPageProps {
   savedMessage?: string | undefined;
   memberError?: string | undefined;
   memberSavedMessage?: string | undefined;
+  onShowAuditLog?: (() => void) | undefined;
 }
 
 export function ProjectSettingsPage({
@@ -66,6 +67,7 @@ export function ProjectSettingsPage({
   savedMessage,
   memberError,
   memberSavedMessage,
+  onShowAuditLog,
 }: ProjectSettingsPageProps) {
   const [name, setName] = useState(project.name);
   const [domains, setDomains] = useState(project.allowedDomains.join("\n"));
@@ -218,6 +220,11 @@ export function ProjectSettingsPage({
         </div>
         {memberActionSavedMessage ? <span className="settings-success">{memberActionSavedMessage}</span> : null}
         {memberActionError ? <p className="field-error">{memberActionError}</p> : null}
+        {project.role === "owner" && onShowAuditLog ? (
+          <div className="settings-actions">
+            <Button onClick={onShowAuditLog}>활동 이력</Button>
+          </div>
+        ) : null}
         {project.role === "owner" ? (
           <form className="member-add-form" onSubmit={handleAddMemberSubmit}>
             <Field
