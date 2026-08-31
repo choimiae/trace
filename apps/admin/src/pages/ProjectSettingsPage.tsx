@@ -1,5 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import type { AddProjectMemberInput, ProjectMemberResponse, ProjectRole } from "../api.js";
+import type {
+  AddProjectMemberInput,
+  ProjectMemberCandidateResponse,
+  ProjectMemberResponse,
+  ProjectRole,
+} from "../api.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 import { Field } from "../ui/Field.js";
@@ -18,6 +23,12 @@ interface ProjectSettingsPageProps {
   onSave: (input: { name: string; allowedDomains: string[] }) => void;
   onAddMember: (input: AddProjectMemberInput) => void;
   currentAdminUserId: string;
+  memberCandidates: ProjectMemberCandidateResponse[];
+  memberCandidateSearchLoading?: boolean;
+  memberCandidateSearchError?: string | undefined;
+  selectedMemberCandidate?: ProjectMemberCandidateResponse | undefined;
+  onSearchMemberCandidates: (query: string) => void;
+  onSelectMemberCandidate: (candidate: ProjectMemberCandidateResponse) => void;
   memberActionsInFlight?: ReadonlySet<string> | undefined;
   memberActionError?: string | undefined;
   memberActionSavedMessage?: string | undefined;
@@ -38,6 +49,12 @@ export function ProjectSettingsPage({
   onSave,
   onAddMember,
   currentAdminUserId,
+  memberCandidates,
+  memberCandidateSearchLoading = false,
+  memberCandidateSearchError,
+  selectedMemberCandidate,
+  onSearchMemberCandidates,
+  onSelectMemberCandidate,
   memberActionsInFlight,
   memberActionError,
   memberActionSavedMessage,
@@ -53,7 +70,7 @@ export function ProjectSettingsPage({
   const [name, setName] = useState(project.name);
   const [domains, setDomains] = useState(project.allowedDomains.join("\n"));
   const [successDismissed, setSuccessDismissed] = useState(false);
-  const [memberEmail, setMemberEmail] = useState("");
+  const [memberCandidateQuery, setMemberCandidateQuery] = useState("");
   const [memberRole, setMemberRole] = useState<AddProjectMemberInput["role"]>("viewer");
   const readOnly = project.role === "viewer";
 
@@ -79,9 +96,8 @@ export function ProjectSettingsPage({
 
   const handleAddMemberSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const trimmedEmail = memberEmail.trim();
-    if (!trimmedEmail) return;
-    onAddMember({ email: trimmedEmail, role: memberRole });
+    if (!selectedMemberCandidate) return;
+    onAddMember({ email: selectedMemberCandidate.email, role: memberRole });
   };
 
   const allowedDomains = domains
@@ -205,12 +221,51 @@ export function ProjectSettingsPage({
         {project.role === "owner" ? (
           <form className="member-add-form" onSubmit={handleAddMemberSubmit}>
             <Field
-              id="settings-member-email"
-              label="멤버 이메일"
-              value={memberEmail}
-              onChange={setMemberEmail}
+              id="settings-member-search"
+              label="멤버 검색"
+              value={memberCandidateQuery}
+              onChange={(value) => {
+                setMemberCandidateQuery(value);
+                onSearchMemberCandidates(value);
+              }}
               disabled={addingMember}
+              hint="이름 또는 이메일로 검색"
             />
+            {memberCandidateSearchLoading ? <p className="settings-subtitle">검색 중</p> : null}
+            {memberCandidateSearchError ? <p className="field-error">{memberCandidateSearchError}</p> : null}
+            {!memberCandidateSearchLoading && memberCandidates.length === 0 ? (
+              <p className="settings-subtitle">검색 결과가 없습니다.</p>
+            ) : null}
+            <div className="member-candidate-list">
+              {memberCandidates.map((candidate) => {
+                const alreadyMember = candidate.membership !== undefined;
+                const selected = selectedMemberCandidate?.adminUserId === candidate.adminUserId;
+
+                return (
+                  <button
+                    type="button"
+                    key={candidate.adminUserId}
+                    className="member-candidate-row"
+                    aria-pressed={selected}
+                    disabled={alreadyMember || addingMember}
+                    onClick={() => onSelectMemberCandidate(candidate)}
+                  >
+                    <span className="member-candidate-identity">
+                      {candidate.name !== undefined ? <strong>{candidate.name}</strong> : null}
+                      <span>{candidate.email}</span>
+                    </span>
+                    <span className="member-candidate-status">{candidateStatusLabel(candidate)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {selectedMemberCandidate ? (
+              <p className="member-candidate-selected">
+                선택됨: {selectedMemberCandidate.name !== undefined
+                  ? `${selectedMemberCandidate.name} · ${selectedMemberCandidate.email}`
+                  : selectedMemberCandidate.email}
+              </p>
+            ) : null}
             <div className="field">
               <label htmlFor="settings-member-role">멤버 역할</label>
               <select
@@ -224,7 +279,7 @@ export function ProjectSettingsPage({
               </select>
             </div>
             <div className="settings-actions">
-              <Button variant="primary" type="submit" disabled={addingMember || memberEmail.trim() === ""}>
+              <Button variant="primary" type="submit" disabled={addingMember || !selectedMemberCandidate}>
                 {addingMember ? "추가 중" : "멤버 추가"}
               </Button>
               {memberSavedMessage ? <span className="settings-success">{memberSavedMessage}</span> : null}
@@ -237,6 +292,12 @@ export function ProjectSettingsPage({
       </Card>
     </main>
   );
+}
+
+function candidateStatusLabel(candidate: ProjectMemberCandidateResponse): string {
+  return candidate.membership === undefined
+    ? "추가 가능"
+    : `이미 멤버 · ${roleLabel(candidate.membership.role)}`;
 }
 
 function roleLabel(role: ProjectSettingsViewModel["role"]): string {

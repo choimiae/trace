@@ -70,6 +70,24 @@ export async function getProjectMembers(projectId: string): Promise<ProjectMembe
   return getJson<ProjectMemberResponse[]>(`/admin/api/projects/${projectId}/members`);
 }
 
+export interface ProjectMemberCandidateResponse {
+  adminUserId: string;
+  email: string;
+  name?: string;
+  membership?: { role: ProjectRole };
+}
+
+export async function searchProjectMemberCandidates(
+  projectId: string,
+  query: string,
+): Promise<ProjectMemberCandidateResponse[]> {
+  // query 는 사용자 자유 입력이다. 인코딩하지 않으면 &, #, +, 공백이
+  // 서버에 잘못 전달된다.
+  return getJson<ProjectMemberCandidateResponse[]>(
+    `/admin/api/projects/${projectId}/member-candidates?query=${encodeURIComponent(query)}`,
+  );
+}
+
 export async function addProjectMember(
   projectId: string,
   input: AddProjectMemberInput,

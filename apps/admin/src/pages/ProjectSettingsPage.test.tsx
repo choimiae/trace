@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectSettingsPage } from "./ProjectSettingsPage.js";
 
@@ -33,6 +33,17 @@ const members = [
   },
 ];
 
+const memberCandidates = [
+  {
+    adminUserId: "admin_owner",
+    email: "owner@example.com",
+    name: "Owner",
+    membership: { role: "owner" as const },
+  },
+  { adminUserId: "admin_new", email: "new@example.com", name: "New Member" },
+  { adminUserId: "admin_nameless", email: "nameless@example.com" },
+];
+
 function renderRequiredProps(
   overrides: Partial<React.ComponentProps<typeof ProjectSettingsPage>> = {},
 ) {
@@ -41,11 +52,14 @@ function renderRequiredProps(
       project={ownerProject}
       members={members}
       currentAdminUserId="admin_owner"
+      memberCandidates={memberCandidates}
       onBack={() => undefined}
       onSave={() => undefined}
       onAddMember={() => undefined}
       onUpdateMemberRole={() => undefined}
       onRemoveMember={() => undefined}
+      onSearchMemberCandidates={() => undefined}
+      onSelectMemberCandidate={() => undefined}
       {...overrides}
     />,
   );
@@ -140,31 +154,137 @@ describe("ProjectSettingsPage", () => {
     renderRequiredProps();
 
     expect(screen.getByRole("heading", { name: "멤버" })).toBeInTheDocument();
-    expect(screen.getByText("Owner")).toBeInTheDocument();
-    expect(screen.getByText("owner@example.com")).toBeInTheDocument();
-    expect(screen.getByText("viewer@example.com")).toBeInTheDocument();
+    const memberList = screen.getByText("viewer@example.com").closest(".members-list")!;
+    expect(within(memberList as HTMLElement).getByText("Owner")).toBeInTheDocument();
+    expect(within(memberList as HTMLElement).getByText("owner@example.com")).toBeInTheDocument();
     expect(screen.getByText("조회자", { selector: ".member-meta span" })).toBeInTheDocument();
-    expect(screen.getByLabelText("멤버 이메일")).toBeInTheDocument();
+    expect(screen.getByLabelText("멤버 검색")).toBeInTheDocument();
     expect(screen.getByLabelText("멤버 역할")).toHaveValue("viewer");
     expect(screen.getByRole("button", { name: "멤버 추가" })).toBeDisabled();
   });
 
-  it("submits a member email and selected role", () => {
+  it("submits the selected candidate and role", () => {
     const onAddMember = vi.fn();
-    renderRequiredProps({ onAddMember });
+    renderRequiredProps({ onAddMember, selectedMemberCandidate: memberCandidates[1] });
 
-    fireEvent.change(screen.getByLabelText("멤버 이메일"), { target: { value: " New@Example.com " } });
     fireEvent.change(screen.getByLabelText("멤버 역할"), { target: { value: "admin" } });
     fireEvent.click(screen.getByRole("button", { name: "멤버 추가" }));
 
-    expect(onAddMember).toHaveBeenCalledWith({ email: "New@Example.com", role: "admin" });
+    expect(onAddMember).toHaveBeenCalledWith({ email: "new@example.com", role: "admin" });
+  });
+
+  it("renders the candidate search input and candidate list for owners", () => {
+    renderRequiredProps();
+
+    expect(screen.getByLabelText("멤버 검색")).toBeInTheDocument();
+    expect(screen.getByText("이름 또는 이메일로 검색")).toBeInTheDocument();
+    expect(screen.getByText("new@example.com")).toBeInTheDocument();
+    expect(screen.getByText("nameless@example.com")).toBeInTheDocument();
+    expect(screen.queryByLabelText("멤버 이메일")).not.toBeInTheDocument();
+  });
+
+  it("calls onSearchMemberCandidates when the search input changes", () => {
+    const onSearchMemberCandidates = vi.fn();
+    renderRequiredProps({ onSearchMemberCandidates });
+
+    fireEvent.change(screen.getByLabelText("멤버 검색"), { target: { value: "new" } });
+
+    expect(onSearchMemberCandidates).toHaveBeenCalledWith("new");
+  });
+
+  it("calls onSelectMemberCandidate for an addable candidate", () => {
+    const onSelectMemberCandidate = vi.fn();
+    renderRequiredProps({ onSelectMemberCandidate });
+
+    fireEvent.click(screen.getByRole("button", { name: /new@example\.com/ }));
+
+    expect(onSelectMemberCandidate).toHaveBeenCalledWith(memberCandidates[1]);
+  });
+
+  it("labels an existing member candidate with its role and blocks selection", () => {
+    const onSelectMemberCandidate = vi.fn();
+    renderRequiredProps({ onSelectMemberCandidate });
+
+    expect(screen.getByText("이미 멤버 · 소유자")).toBeInTheDocument();
+    const candidateList = screen.getByText("이미 멤버 · 소유자").closest(".member-candidate-list")!;
+    const ownerCandidate = within(candidateList as HTMLElement)
+      .getByRole("button", { name: /owner@example\.com/ });
+    expect(ownerCandidate).toBeDisabled();
+
+    fireEvent.click(ownerCandidate);
+
+    expect(onSelectMemberCandidate).not.toHaveBeenCalled();
+  });
+
+  it("labels an addable candidate as addable", () => {
+    renderRequiredProps();
+
+    expect(screen.getAllByText("추가 가능")).toHaveLength(2);
+  });
+
+  it("renders a nameless candidate with only its email", () => {
+    renderRequiredProps();
+
+    const nameless = screen.getByRole("button", { name: /nameless@example\.com/ });
+    expect(nameless.querySelector("strong")).toBeNull();
+  });
+
+  it("disables the add button when no candidate is selected", () => {
+    renderRequiredProps();
+
+    expect(screen.getByRole("button", { name: "멤버 추가" })).toBeDisabled();
+  });
+
+  it("summarizes the selected candidate", () => {
+    renderRequiredProps({ selectedMemberCandidate: memberCandidates[1] });
+
+    expect(screen.getByText("선택됨: New Member · new@example.com")).toBeInTheDocument();
+  });
+
+  it("summarizes a nameless selected candidate with only its email", () => {
+    renderRequiredProps({ selectedMemberCandidate: memberCandidates[2] });
+
+    expect(screen.getByText("선택됨: nameless@example.com")).toBeInTheDocument();
+  });
+
+  it("defaults the added member role to viewer", () => {
+    const onAddMember = vi.fn();
+    renderRequiredProps({ onAddMember, selectedMemberCandidate: memberCandidates[1] });
+
+    fireEvent.click(screen.getByRole("button", { name: "멤버 추가" }));
+
+    expect(onAddMember).toHaveBeenCalledWith({ email: "new@example.com", role: "viewer" });
+  });
+
+  it("shows the candidate search loading state", () => {
+    renderRequiredProps({ memberCandidateSearchLoading: true });
+
+    expect(screen.getByText("검색 중")).toBeInTheDocument();
+  });
+
+  it("shows the candidate search error", () => {
+    renderRequiredProps({ memberCandidateSearchError: "사용자를 검색하지 못했습니다." });
+
+    expect(screen.getByText("사용자를 검색하지 못했습니다.")).toBeInTheDocument();
+  });
+
+  it("shows an empty candidate result message", () => {
+    renderRequiredProps({ memberCandidates: [] });
+
+    expect(screen.getByText("검색 결과가 없습니다.")).toBeInTheDocument();
+  });
+
+  it("does not show the empty candidate message while searching", () => {
+    renderRequiredProps({ memberCandidates: [], memberCandidateSearchLoading: true });
+
+    expect(screen.queryByText("검색 결과가 없습니다.")).not.toBeInTheDocument();
   });
 
   it("renders non-owner member management as read-only", () => {
     renderRequiredProps({ project: { ...ownerProject, role: "admin" } });
 
     expect(screen.getByText("멤버 추가 권한이 없습니다.")).toBeInTheDocument();
-    expect(screen.queryByLabelText("멤버 이메일")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("멤버 검색")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "멤버 추가" })).not.toBeInTheDocument();
   });
 
@@ -198,11 +318,14 @@ describe("ProjectSettingsPage", () => {
         project={{ ...ownerProject, role: "viewer" }}
         members={members}
         currentAdminUserId="admin_owner"
+        memberCandidates={memberCandidates}
         onBack={() => undefined}
         onSave={() => undefined}
         onAddMember={() => undefined}
         onUpdateMemberRole={() => undefined}
         onRemoveMember={() => undefined}
+        onSearchMemberCandidates={() => undefined}
+        onSelectMemberCandidate={() => undefined}
       />,
     );
 
