@@ -113,6 +113,19 @@ export interface TraceStore {
     membership: AddProjectMembershipInput,
     auditLog: CreateAuditLogInput,
   ): Promise<ProjectMembershipRecord>;
+  updateProjectMembershipRoleWithAudit(input: {
+    projectId: string;
+    targetAdminUserId: string;
+    requestedByAdminUserId: string;
+    role: AdminRole;
+    auditLog?: CreateAuditLogInput;
+  }): Promise<ProjectMembershipRecord | undefined>;
+  removeProjectMembershipWithAudit(input: {
+    projectId: string;
+    targetAdminUserId: string;
+    requestedByAdminUserId: string;
+    auditLog: CreateAuditLogInput;
+  }): Promise<boolean>;
   getProjectMembership(projectId: string, adminUserId: string): Promise<ProjectMembershipRecord | undefined>;
   listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]>;
   listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]>;

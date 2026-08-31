@@ -4,6 +4,7 @@ import { buildDashboardSummary } from "./dashboard-summary.js";
 import { normalizeAllowedDomains } from "./types.js";
 import type {
   AddProjectMembershipInput,
+  AdminRole,
   AdminSessionRecord,
   AdminUserRecord,
   AuditLogRecord,
@@ -138,8 +139,53 @@ export class MemoryStore implements TraceStore {
     if (this.projectMemberships.has(key)) throw new Error("project_member_exists");
 
     this.projectMemberships.set(key, membership);
-    this.addAuditLog(auditLog);
+    this.appendAuditLog(auditLog);
     return membership;
+  }
+
+  async updateProjectMembershipRoleWithAudit(input: {
+    projectId: string;
+    targetAdminUserId: string;
+    requestedByAdminUserId: string;
+    role: AdminRole;
+    auditLog?: CreateAuditLogInput;
+  }): Promise<ProjectMembershipRecord | undefined> {
+    const key = `${input.projectId}:${input.targetAdminUserId}`;
+    const current = this.projectMemberships.get(key);
+    if (!current) return undefined;
+    if (current.role === input.role) return current;
+    if (input.targetAdminUserId === input.requestedByAdminUserId && current.role === "owner") {
+      throw new Error("self_owner_change_forbidden");
+    }
+    if (current.role === "owner" && input.role !== "owner" && this.ownerCount(input.projectId) <= 1) {
+      throw new Error("last_owner_forbidden");
+    }
+
+    const updated: ProjectMembershipRecord = { ...current, role: input.role };
+    this.projectMemberships.set(key, updated);
+    if (input.auditLog) this.appendAuditLog(input.auditLog);
+    return updated;
+  }
+
+  async removeProjectMembershipWithAudit(input: {
+    projectId: string;
+    targetAdminUserId: string;
+    requestedByAdminUserId: string;
+    auditLog: CreateAuditLogInput;
+  }): Promise<boolean> {
+    const key = `${input.projectId}:${input.targetAdminUserId}`;
+    const current = this.projectMemberships.get(key);
+    if (!current) return false;
+    if (input.targetAdminUserId === input.requestedByAdminUserId) {
+      throw new Error("self_owner_change_forbidden");
+    }
+    if (current.role === "owner" && this.ownerCount(input.projectId) <= 1) {
+      throw new Error("last_owner_forbidden");
+    }
+
+    this.projectMemberships.delete(key);
+    this.appendAuditLog(input.auditLog);
+    return true;
   }
 
   async getProjectMembership(
@@ -158,12 +204,25 @@ export class MemoryStore implements TraceStore {
   }
 
   async createAuditLog(input: CreateAuditLogInput): Promise<void> {
-    this.addAuditLog(input);
+    this.appendAuditLog(input);
   }
 
-  private addAuditLog(input: CreateAuditLogInput): void {
-    const auditLog: AuditLogRecord = { auditLogId: `audit_${nanoid(10)}`, ...input };
+  private appendAuditLog(input: CreateAuditLogInput): void {
+    const auditLog: AuditLogRecord = {
+      auditLogId: `audit_${nanoid(10)}`,
+      ...(input.adminUserId === undefined ? {} : { adminUserId: input.adminUserId }),
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      action: input.action,
+      metadata: input.metadata,
+      createdAt: input.createdAt,
+    };
     this.auditLogs.set(auditLog.auditLogId, auditLog);
+  }
+
+  private ownerCount(projectId: string): number {
+    return Array.from(this.projectMemberships.values()).filter(
+      (membership) => membership.projectId === projectId && membership.role === "owner",
+    ).length;
   }
 
   async listAuditLogs(): Promise<AuditLogRecord[]> {

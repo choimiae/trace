@@ -258,23 +258,72 @@ export class SqliteStore implements TraceStore {
         .run(membership.projectId, membership.adminUserId, membership.role, membership.createdAt);
       if (result.changes === 0) throw new Error("project_member_exists");
 
-      this.db
-        .prepare(
-          `INSERT INTO audit_logs (audit_log_id, admin_user_id, action, project_id, created_at, metadata)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          `audit_${nanoid(10)}`,
-          auditLog.adminUserId ?? null,
-          auditLog.action,
-          auditLog.projectId ?? null,
-          auditLog.createdAt,
-          JSON.stringify(auditLog.metadata ?? {}),
-        );
+      this.insertAuditLog(auditLog);
     });
 
     addMembershipAndAudit();
     return membership;
+  }
+
+  async updateProjectMembershipRoleWithAudit(input: {
+    projectId: string;
+    targetAdminUserId: string;
+    requestedByAdminUserId: string;
+    role: AdminRole;
+    auditLog?: CreateAuditLogInput;
+  }): Promise<ProjectMembershipRecord | undefined> {
+    const updateMembershipAndAudit = this.db.transaction(() => {
+      const current = this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
+      if (!current) return undefined;
+      if (current.role === input.role) return current;
+      if (input.targetAdminUserId === input.requestedByAdminUserId && current.role === "owner") {
+        throw new Error("self_owner_change_forbidden");
+      }
+      if (current.role === "owner" && input.role !== "owner" && this.ownerCountSync(input.projectId) <= 1) {
+        throw new Error("last_owner_forbidden");
+      }
+
+      this.db
+        .prepare(
+          `UPDATE project_memberships
+           SET role = @role
+           WHERE project_id = @projectId AND admin_user_id = @adminUserId`,
+        )
+        .run({ role: input.role, projectId: input.projectId, adminUserId: input.targetAdminUserId });
+      if (input.auditLog) this.insertAuditLog(input.auditLog);
+      return this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
+    });
+
+    return updateMembershipAndAudit();
+  }
+
+  async removeProjectMembershipWithAudit(input: {
+    projectId: string;
+    targetAdminUserId: string;
+    requestedByAdminUserId: string;
+    auditLog: CreateAuditLogInput;
+  }): Promise<boolean> {
+    const removeMembershipAndAudit = this.db.transaction(() => {
+      const current = this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
+      if (!current) return false;
+      if (input.targetAdminUserId === input.requestedByAdminUserId) {
+        throw new Error("self_owner_change_forbidden");
+      }
+      if (current.role === "owner" && this.ownerCountSync(input.projectId) <= 1) {
+        throw new Error("last_owner_forbidden");
+      }
+
+      this.db
+        .prepare(
+          `DELETE FROM project_memberships
+           WHERE project_id = @projectId AND admin_user_id = @adminUserId`,
+        )
+        .run({ projectId: input.projectId, adminUserId: input.targetAdminUserId });
+      this.insertAuditLog(input.auditLog);
+      return true;
+    });
+
+    return removeMembershipAndAudit();
   }
 
   async getProjectMembership(
@@ -305,6 +354,10 @@ export class SqliteStore implements TraceStore {
   }
 
   async createAuditLog(input: CreateAuditLogInput): Promise<void> {
+    this.insertAuditLog(input);
+  }
+
+  private insertAuditLog(input: CreateAuditLogInput): void {
     this.db
       .prepare(
         `INSERT INTO audit_logs (audit_log_id, admin_user_id, action, project_id, created_at, metadata)
@@ -443,6 +496,28 @@ export class SqliteStore implements TraceStore {
       .get(projectId) as { total: number };
 
     return buildDashboardSummary(await this.listIssues(projectId), row.total);
+  }
+
+  private getProjectMembershipSync(projectId: string, adminUserId: string): ProjectMembershipRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT project_id, admin_user_id, role, created_at
+         FROM project_memberships
+         WHERE project_id = @projectId AND admin_user_id = @adminUserId`,
+      )
+      .get({ projectId, adminUserId }) as Row | undefined;
+    return row ? this.toMembership(row) : undefined;
+  }
+
+  private ownerCountSync(projectId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM project_memberships
+         WHERE project_id = @projectId AND role = 'owner'`,
+      )
+      .get({ projectId }) as { count: number };
+    return row.count;
   }
 
   private toMembership(row: Row): ProjectMembershipRecord {

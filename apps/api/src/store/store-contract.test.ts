@@ -243,6 +243,356 @@ function describeTraceStoreContract(
       ]);
     });
 
+    it("updates a project member role with audit and keeps createdAt", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-role-update@example.com",
+        name: "Owner",
+        googleSub: "owner-role-update",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const member = await store.upsertAdminUserFromGoogle({
+        email: "member-role-update@example.com",
+        name: "Member",
+        googleSub: "member-role-update",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      const project = await store.createProject({ name: "Role Update", allowedDomains: [] });
+
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      const created = await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: member.adminUserId,
+        role: "viewer",
+        createdAt: "2026-08-31T00:00:01.000Z",
+      });
+
+      const updated = await store.updateProjectMembershipRoleWithAudit({
+        projectId: project.projectId,
+        targetAdminUserId: member.adminUserId,
+        requestedByAdminUserId: owner.adminUserId,
+        role: "admin",
+        auditLog: {
+          adminUserId: owner.adminUserId,
+          projectId: project.projectId,
+          createdAt: "2026-08-31T00:00:00.000Z",
+          action: "project.member_role_updated",
+          metadata: {
+            targetAdminUserId: member.adminUserId,
+            email: member.email,
+            beforeRole: "viewer",
+            afterRole: "admin",
+          },
+        },
+      });
+
+      expect(updated).toEqual({
+        projectId: project.projectId,
+        adminUserId: member.adminUserId,
+        role: "admin",
+        createdAt: created.createdAt,
+      });
+      expect(await store.listAuditLogs()).toEqual([
+        expect.objectContaining({
+          action: "project.member_role_updated",
+          metadata: {
+            targetAdminUserId: member.adminUserId,
+            email: member.email,
+            beforeRole: "viewer",
+            afterRole: "admin",
+          },
+        }),
+      ]);
+    });
+
+    it("returns the current member without audit when role is unchanged", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-unchanged@example.com",
+        googleSub: "owner-unchanged",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const member = await store.upsertAdminUserFromGoogle({
+        email: "member-unchanged@example.com",
+        googleSub: "member-unchanged",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      const project = await store.createProject({ name: "Unchanged Role", allowedDomains: [] });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      const membership = await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: member.adminUserId,
+        role: "viewer",
+        createdAt: "2026-08-31T00:00:01.000Z",
+      });
+
+      await expect(
+        store.updateProjectMembershipRoleWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: member.adminUserId,
+          requestedByAdminUserId: owner.adminUserId,
+          role: "viewer",
+        }),
+      ).resolves.toEqual(membership);
+      await expect(store.listAuditLogs()).resolves.toEqual([]);
+    });
+
+    it("returns undefined when updating a missing project member", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-missing-update@example.com",
+        googleSub: "owner-missing-update",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const project = await store.createProject({ name: "Missing Update", allowedDomains: [] });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+
+      await expect(
+        store.updateProjectMembershipRoleWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: "admin_missing",
+          requestedByAdminUserId: owner.adminUserId,
+          role: "admin",
+        }),
+      ).resolves.toBeUndefined();
+      await expect(store.listAuditLogs()).resolves.toEqual([]);
+    });
+
+    it("removes a project member with audit", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-remove@example.com",
+        googleSub: "owner-remove",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const member = await store.upsertAdminUserFromGoogle({
+        email: "member-remove@example.com",
+        googleSub: "member-remove",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      const project = await store.createProject({ name: "Remove Member", allowedDomains: [] });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: member.adminUserId,
+        role: "viewer",
+        createdAt: "2026-08-31T00:00:01.000Z",
+      });
+
+      await expect(
+        store.removeProjectMembershipWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: member.adminUserId,
+          requestedByAdminUserId: owner.adminUserId,
+          auditLog: {
+            adminUserId: owner.adminUserId,
+            projectId: project.projectId,
+            createdAt: "2026-08-31T00:00:02.000Z",
+            action: "project.member_removed",
+            metadata: { targetAdminUserId: member.adminUserId, email: member.email },
+          },
+        }),
+      ).resolves.toBe(true);
+      await expect(store.listProjectMemberships(project.projectId)).resolves.toEqual([
+        expect.objectContaining({ adminUserId: owner.adminUserId, role: "owner" }),
+      ]);
+      await expect(store.listAuditLogs()).resolves.toEqual([
+        expect.objectContaining({ action: "project.member_removed" }),
+      ]);
+    });
+
+    it("returns false when removing a missing project member", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-missing-remove@example.com",
+        googleSub: "owner-missing-remove",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const project = await store.createProject({ name: "Missing Remove", allowedDomains: [] });
+      await store.addProjectMembership({
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner",
+        createdAt: "2026-08-31T00:00:00.000Z",
+      });
+
+      await expect(
+        store.removeProjectMembershipWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: "admin_missing",
+          requestedByAdminUserId: owner.adminUserId,
+          auditLog: {
+            adminUserId: owner.adminUserId,
+            projectId: project.projectId,
+            createdAt: "2026-08-31T00:00:01.000Z",
+            action: "project.member_removed",
+            metadata: { targetAdminUserId: "admin_missing" },
+          },
+        }),
+      ).resolves.toBe(false);
+      await expect(store.listAuditLogs()).resolves.toEqual([]);
+    });
+
+    it("rejects self owner demotion and removal without mutation or audit", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-self-forbidden@example.com",
+        googleSub: "owner-self-forbidden",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const otherOwner = await store.upsertAdminUserFromGoogle({
+        email: "other-owner-self-forbidden@example.com",
+        googleSub: "other-owner-self-forbidden",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      const project = await store.createProject({ name: "Self Owner", allowedDomains: [] });
+      const ownerMembership = {
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner" as const,
+        createdAt: "2026-08-31T00:00:00.000Z",
+      };
+      const otherOwnerMembership = {
+        projectId: project.projectId,
+        adminUserId: otherOwner.adminUserId,
+        role: "owner" as const,
+        createdAt: "2026-08-31T00:00:01.000Z",
+      };
+      await store.addProjectMembership(ownerMembership);
+      await store.addProjectMembership(otherOwnerMembership);
+
+      await expect(
+        store.updateProjectMembershipRoleWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: owner.adminUserId,
+          requestedByAdminUserId: owner.adminUserId,
+          role: "admin",
+          auditLog: {
+            adminUserId: owner.adminUserId,
+            projectId: project.projectId,
+            createdAt: "2026-08-31T00:00:02.000Z",
+            action: "project.member_role_updated",
+            metadata: {},
+          },
+        }),
+      ).rejects.toThrow("self_owner_change_forbidden");
+      await expect(
+        store.removeProjectMembershipWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: owner.adminUserId,
+          requestedByAdminUserId: owner.adminUserId,
+          auditLog: {
+            adminUserId: owner.adminUserId,
+            projectId: project.projectId,
+            createdAt: "2026-08-31T00:00:03.000Z",
+            action: "project.member_removed",
+            metadata: {},
+          },
+        }),
+      ).rejects.toThrow("self_owner_change_forbidden");
+      await expect(store.listProjectMemberships(project.projectId)).resolves.toEqual([
+        ownerMembership,
+        otherOwnerMembership,
+      ]);
+      await expect(store.listAuditLogs()).resolves.toEqual([]);
+    });
+
+    it("rejects last owner demotion and removal without mutation or audit", async () => {
+      const store = open();
+      const owner = await store.upsertAdminUserFromGoogle({
+        email: "owner-last-forbidden@example.com",
+        googleSub: "owner-last-forbidden",
+        emailVerified: true,
+        now: "2026-08-31T00:00:00.000Z",
+      });
+      const viewer = await store.upsertAdminUserFromGoogle({
+        email: "viewer-last-forbidden@example.com",
+        googleSub: "viewer-last-forbidden",
+        emailVerified: true,
+        now: "2026-08-31T00:00:01.000Z",
+      });
+      const project = await store.createProject({ name: "Last Owner", allowedDomains: [] });
+      const ownerMembership = {
+        projectId: project.projectId,
+        adminUserId: owner.adminUserId,
+        role: "owner" as const,
+        createdAt: "2026-08-31T00:00:00.000Z",
+      };
+      const viewerMembership = {
+        projectId: project.projectId,
+        adminUserId: viewer.adminUserId,
+        role: "viewer" as const,
+        createdAt: "2026-08-31T00:00:01.000Z",
+      };
+      await store.addProjectMembership(ownerMembership);
+      await store.addProjectMembership(viewerMembership);
+
+      await expect(
+        store.updateProjectMembershipRoleWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: owner.adminUserId,
+          requestedByAdminUserId: viewer.adminUserId,
+          role: "admin",
+          auditLog: {
+            adminUserId: viewer.adminUserId,
+            projectId: project.projectId,
+            createdAt: "2026-08-31T00:00:02.000Z",
+            action: "project.member_role_updated",
+            metadata: {},
+          },
+        }),
+      ).rejects.toThrow("last_owner_forbidden");
+      await expect(
+        store.removeProjectMembershipWithAudit({
+          projectId: project.projectId,
+          targetAdminUserId: owner.adminUserId,
+          requestedByAdminUserId: viewer.adminUserId,
+          auditLog: {
+            adminUserId: viewer.adminUserId,
+            projectId: project.projectId,
+            createdAt: "2026-08-31T00:00:03.000Z",
+            action: "project.member_removed",
+            metadata: {},
+          },
+        }),
+      ).rejects.toThrow("last_owner_forbidden");
+      await expect(store.listProjectMemberships(project.projectId)).resolves.toEqual([
+        ownerMembership,
+        viewerMembership,
+      ]);
+      await expect(store.listAuditLogs()).resolves.toEqual([]);
+    });
+
     it("세션 활동 시각을 갱신한다", async () => {
       const store = open();
       await store.createAdminSession({
