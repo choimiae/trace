@@ -26,6 +26,7 @@ CREATE TABLE events (
   session_id TEXT NOT NULL,
   page_id TEXT NOT NULL,
   timestamp TIMESTAMPTZ NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   type TEXT NOT NULL,
   url_path TEXT NOT NULL,
   url_query_redacted TEXT,

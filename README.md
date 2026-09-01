@@ -79,6 +79,10 @@ npm run dev:api
 
 데이터는 `TRACE_DB_PATH`에 지정한 SQLite 파일에 저장되고 서버를 재시작해도 남습니다.
 
+`events.timestamp`는 SDK가 기록한 이벤트 발생 시각이며 UTC ISO 문자열로 저장합니다. 서버가 받은 시각은
+`events.received_at`에 UTC로 저장합니다. DB Browser에서 한국시간 기준으로 확인하려면 `events_debug`
+view를 열면 됩니다. 이 view에는 `occurred_at_kst`, `received_at_kst` 컬럼이 포함됩니다.
+
 `EVENT_RETENTION_DAYS`를 설정하면 지정한 일수보다 오래된 원본 이벤트만 자동 삭제합니다. 예를 들어 `EVENT_RETENTION_DAYS=30`이면 30일보다 오래된 `events` 행을 서버 시작 시와 이벤트 수집 후 정리합니다. `issues`, 관리자 활동 이력, 프로젝트, 사용자, 세션 데이터는 이 설정으로 삭제하지 않습니다.
 
 ### 5. 관리자 페이지 실행

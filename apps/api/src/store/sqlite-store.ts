@@ -27,6 +27,11 @@ function compact<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null && v !== undefined)) as T;
 }
 
+function hasColumn(db: Database.Database, tableName: string, columnName: string): boolean {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  return columns.some((column) => column.name === columnName);
+}
+
 export class SqliteStore implements TraceStore {
   readonly isDurable = true;
   private readonly db: Database.Database;
@@ -35,6 +40,8 @@ export class SqliteStore implements TraceStore {
     this.db = new Database(filePath);
     if (filePath !== ":memory:") this.db.pragma("journal_mode = WAL");
     this.db.exec(SQLITE_SCHEMA);
+    this.migrate();
+    this.createDebugViews();
   }
 
   close(): void {
@@ -442,12 +449,13 @@ export class SqliteStore implements TraceStore {
   }
 
   async saveBatch(batch: EventBatch): Promise<void> {
+    const receivedAt = new Date().toISOString();
     const insert = this.db.prepare(
       `INSERT OR IGNORE INTO events
-         (event_id, project_id, session_id, page_id, timestamp, type, url_path, url_query_redacted,
+         (event_id, project_id, session_id, page_id, timestamp, received_at, type, url_path, url_query_redacted,
           title_masked, element_selector_hash, element_role, element_text_masked_or_limited,
           x, y, viewport_x, viewport_y, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertAll = this.db.transaction((events: TraceEvent[]) => {
@@ -458,6 +466,7 @@ export class SqliteStore implements TraceStore {
           event.sessionId,
           event.pageId,
           event.timestamp,
+          receivedAt,
           event.type,
           event.urlPath,
           event.urlQueryRedacted ?? null,
@@ -625,5 +634,44 @@ export class SqliteStore implements TraceStore {
       exampleSessionIds: JSON.parse(row.example_session_ids as string) as string[],
       status: row.status as Issue["status"],
     }) as Issue;
+  }
+
+  private migrate(): void {
+    if (!hasColumn(this.db, "events", "received_at")) {
+      this.db.exec(`
+        ALTER TABLE events ADD COLUMN received_at TEXT;
+        UPDATE events SET received_at = timestamp WHERE received_at IS NULL;
+      `);
+    }
+  }
+
+  private createDebugViews(): void {
+    this.db.exec(`
+      DROP VIEW IF EXISTS events_debug;
+
+      CREATE VIEW events_debug AS
+      SELECT
+        event_id,
+        project_id,
+        session_id,
+        page_id,
+        timestamp AS occurred_at_utc,
+        strftime('%Y-%m-%d %H:%M:%f', timestamp, '+9 hours') AS occurred_at_kst,
+        received_at AS received_at_utc,
+        strftime('%Y-%m-%d %H:%M:%f', received_at, '+9 hours') AS received_at_kst,
+        type,
+        url_path,
+        url_query_redacted,
+        title_masked,
+        element_selector_hash,
+        element_role,
+        element_text_masked_or_limited,
+        x,
+        y,
+        viewport_x,
+        viewport_y,
+        metadata
+      FROM events;
+    `);
   }
 }
