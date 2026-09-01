@@ -1,9 +1,46 @@
 import type { Issue } from "@trace/shared";
-import { Eye } from "lucide-react";
-import { Button } from "../ui/Button.js";
+import { Eye, Minus, TrendingDown, TrendingUp } from "lucide-react";
+import { formatKoreanDateTime } from "../time.js";
 import { Chip, issueStatusToChip } from "../ui/Chip.js";
 import { Card } from "../ui/Card.js";
-import { DataTable, type Column } from "../ui/DataTable.js";
+
+type SeverityLevel = "critical" | "warning" | "low";
+
+const SEVERITY_META: Record<SeverityLevel, { label: string; tone: string }> = {
+  critical: { label: "긴급", tone: "crit" },
+  warning: { label: "주의", tone: "warn" },
+  low: { label: "낮음", tone: "low" },
+};
+
+const ISSUE_TYPE_LABELS: Record<Issue["issueType"], string> = {
+  dead_click_cluster: "데드 클릭",
+  rage_click: "분노 클릭",
+  long_pause: "긴 멈춤",
+  scroll_friction: "스크롤 마찰",
+  error_friction: "오류 마찰",
+  form_friction: "폼 마찰",
+};
+
+function severityLevel(score: number): SeverityLevel {
+  if (score >= 80) return "critical";
+  if (score >= 50) return "warning";
+  return "low";
+}
+
+function trendLabel(trend: Issue["trend"]): string {
+  if (trend === "up") return "증가";
+  if (trend === "down") return "감소";
+  return "유지";
+}
+
+function sortIssues(issues: Issue[]): Issue[] {
+  return [...issues].sort((left, right) => {
+    if (right.severityScore !== left.severityScore) {
+      return right.severityScore - left.severityScore;
+    }
+    return new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime();
+  });
+}
 
 export function IssueTable({
   issues,
@@ -12,40 +49,14 @@ export function IssueTable({
   issues: Issue[];
   onSelectIssue?: ((issue: Issue) => void) | undefined;
 }) {
-  const columns: Array<Column<Issue>> = [
-    {
-      key: "title",
-      header: "제목",
-      render: (issue) => (
-        <>
-          <strong>{issue.title}</strong>
-          <span className="cell-sub">{issue.summary}</span>
-        </>
-      ),
+  const sortedIssues = sortIssues(issues);
+  const severityCounts = issues.reduce<Record<SeverityLevel, number>>(
+    (counts, issue) => {
+      counts[severityLevel(issue.severityScore)] += 1;
+      return counts;
     },
-    {
-      key: "status",
-      header: "상태",
-      render: (issue) => {
-        const chip = issueStatusToChip(issue.status);
-        return <Chip status={chip.status} label={chip.label} />;
-      },
-    },
-    { key: "path", header: "화면", render: (issue) => issue.relatedUrlPath ?? "-" },
-    { key: "sessions", header: "세션", align: "end", render: (issue) => issue.affectedSessionsCount },
-    { key: "score", header: "점수", align: "end", render: (issue) => issue.severityScore },
-    {
-      key: "action",
-      header: "",
-      headerLabel: "작업",
-      align: "end",
-      render: (issue) => (
-        <Button variant="icon" aria-label={`${issue.title} 보기`} onClick={() => onSelectIssue?.(issue)}>
-          <Eye aria-hidden="true" size={18} />
-        </Button>
-      ),
-    },
-  ];
+    { critical: 0, warning: 0, low: 0 },
+  );
 
   return (
     <Card as="section" className="table-panel">
@@ -53,12 +64,68 @@ export function IssueTable({
         <h2>문제 목록</h2>
         <span>{issues.length}건</span>
       </div>
-      <DataTable
-        columns={columns}
-        rows={issues}
-        rowKey={(issue) => issue.issueId}
-        empty="아직 감지된 문제가 없습니다."
-      />
+      {issues.length === 0 ? (
+        <p className="empty-state">아직 감지된 문제가 없습니다.</p>
+      ) : (
+        <>
+          <div className="issue-overview-summary" aria-label="문제 심각도 요약">
+            {(["critical", "warning", "low"] as const).map((level) => (
+              <span className={`issue-summary-pill issue-summary-${level}`} key={level}>
+                {SEVERITY_META[level].label} {severityCounts[level]}
+              </span>
+            ))}
+          </div>
+          <div className="issue-overview-list">
+            {sortedIssues.map((issue) => {
+              const severity = severityLevel(issue.severityScore);
+              const severityMeta = SEVERITY_META[severity];
+              const chip = issueStatusToChip(issue.status);
+              const TrendIcon =
+                issue.trend === "up" ? TrendingUp : issue.trend === "down" ? TrendingDown : Minus;
+
+              return (
+                <button
+                  type="button"
+                  aria-label={`${issue.title} 보기`}
+                  className={`issue-overview-row issue-overview-${severity}`}
+                  key={issue.issueId}
+                  onClick={() => onSelectIssue?.(issue)}
+                >
+                  <span className={`issue-severity issue-severity-${severityMeta.tone}`}>
+                    <strong>{issue.severityScore}</strong>
+                    <span>{severityMeta.label}</span>
+                  </span>
+                  <span className="issue-main">
+                    <span className="issue-kicker">{ISSUE_TYPE_LABELS[issue.issueType]}</span>
+                    <strong>{issue.title}</strong>
+                    <span className="issue-summary">{issue.summary}</span>
+                    <span className="issue-path">{issue.relatedUrlPath ?? "-"}</span>
+                  </span>
+                  <span className="issue-meta">
+                    <span className="issue-meta-top">
+                      <Chip status={chip.status} label={chip.label} />
+                      <span className={`issue-trend issue-trend-${issue.trend}`}>
+                        <TrendIcon aria-hidden="true" size={14} />
+                        {trendLabel(issue.trend)}
+                      </span>
+                    </span>
+                    <span className="issue-stats">
+                      <span>세션 {issue.affectedSessionsCount}</span>
+                      <span>사용자 {issue.affectedUsersCount}</span>
+                    </span>
+                    <span className="issue-last-seen">
+                      마지막 발견 {formatKoreanDateTime(issue.lastSeenAt)}
+                    </span>
+                  </span>
+                  <span className="issue-open-icon" aria-hidden="true">
+                    <Eye size={18} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </Card>
   );
 }
