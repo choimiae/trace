@@ -234,6 +234,42 @@ describe("App auth state", () => {
     expect(await screen.findByText("설정 화면에서 반복 클릭")).toBeInTheDocument();
   });
 
+  it("ready 대시보드에서 현재 프로젝트 데이터를 주기적으로 갱신한다", async () => {
+    vi.useFakeTimers();
+    try {
+      api.getAuthMe.mockResolvedValue({
+        user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+        projects: [{ projectId: "proj_demo", role: "owner" }],
+        csrfToken: "csrf_1",
+      });
+      api.getDashboardData
+        .mockResolvedValueOnce({
+          summary: { ...baseSummary, insight: "처음 조회된 인사이트" },
+          issues: [],
+        })
+        .mockResolvedValueOnce({
+          summary: { ...baseSummary, insight: "갱신된 인사이트" },
+          issues: [],
+        });
+
+      render(<App />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText("처음 조회된 인사이트")).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(screen.getByText("갱신된 인사이트")).toBeInTheDocument();
+      expect(api.getDashboardData).toHaveBeenLastCalledWith("proj_demo");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("posts logout with the CSRF token", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },

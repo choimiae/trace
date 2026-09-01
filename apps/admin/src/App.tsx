@@ -225,6 +225,8 @@ const CREATE_PROJECT_ERROR_MESSAGES: Record<string, string> = {
   invalid_allowed_domains: "허용 도메인 형식이 올바르지 않습니다.",
 };
 
+const DASHBOARD_REFRESH_INTERVAL_MS = 5000;
+
 function describeCreateProjectError(error: unknown): string {
   return describeApiError(CREATE_PROJECT_ERROR_MESSAGES, error, "프로젝트를 만들지 못했습니다.");
 }
@@ -417,6 +419,33 @@ export function App() {
       clearInterval(timer);
     };
   }, [state]);
+
+  const readyProjectId = state.type === "ready" ? state.projectId : undefined;
+
+  useEffect(() => {
+    if (readyProjectId === undefined) return;
+
+    let active = true;
+    const timer = setInterval(() => {
+      void getDashboardData(readyProjectId)
+        .then((data) => {
+          if (!active) return;
+          setState((current) =>
+            current.type === "ready" && current.projectId === readyProjectId
+              ? { ...current, data }
+              : current,
+          );
+        })
+        .catch(() => {
+          // 백그라운드 갱신 실패는 현재 대시보드를 유지하고 다음 주기에 재시도한다.
+        });
+    }, DASHBOARD_REFRESH_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [readyProjectId]);
 
   // 진입 시 후보 검색은 handleShowSettings 안에서 이어 호출하지 않는다. 그 함수의
   // settings 전이는 settingsSessionId 를 updater 안에서 계산하므로, 이어 호출하면
