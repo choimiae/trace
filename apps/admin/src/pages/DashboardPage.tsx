@@ -33,6 +33,7 @@ export function DashboardPage({
   settingsError,
   onLogout,
   onSelectIssue,
+  onCreateProject,
   onShowInstall,
   onShowSettings,
 }: {
@@ -45,6 +46,7 @@ export function DashboardPage({
   settingsError?: string | undefined;
   onLogout: () => void;
   onSelectIssue?: ((issue: Issue) => void) | undefined;
+  onCreateProject: () => void;
   onShowInstall: () => void;
   onShowSettings: () => void;
 }) {
@@ -67,6 +69,7 @@ export function DashboardPage({
             </select>
           </label>
           <span className="user-email">{userEmail}</span>
+          <Button onClick={onCreateProject}>새 프로젝트</Button>
           <Button onClick={onShowSettings}>프로젝트 설정</Button>
           <Button onClick={onShowInstall}>설치 안내</Button>
           <Button onClick={onLogout}>로그아웃</Button>

@@ -34,6 +34,7 @@ describe("DashboardPage", () => {
         projects={[projects[0]!]}
         projectId="proj_demo"
         onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
         onLogout={vi.fn()}
         onShowInstall={vi.fn()}
         onShowSettings={vi.fn()}
@@ -52,6 +53,7 @@ describe("DashboardPage", () => {
         projects={[projects[0]!]}
         projectId="proj_demo"
         onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
         onLogout={vi.fn()}
         onShowInstall={vi.fn()}
         onShowSettings={vi.fn()}
@@ -59,6 +61,28 @@ describe("DashboardPage", () => {
     );
 
     expect(screen.getByRole("button", { name: "프로젝트 설정" })).toBeInTheDocument();
+  });
+
+  it("새 프로젝트 버튼 클릭을 전달한다", () => {
+    const onCreateProject = vi.fn();
+    render(
+      <DashboardPage
+        summary={summary}
+        issues={[]}
+        userEmail="admin@example.com"
+        projects={[projects[0]!]}
+        projectId="proj_demo"
+        onSelectProject={vi.fn()}
+        onCreateProject={onCreateProject}
+        onLogout={vi.fn()}
+        onShowInstall={vi.fn()}
+        onShowSettings={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트" }));
+
+    expect(onCreateProject).toHaveBeenCalledOnce();
   });
 
   it("프로젝트가 하나여도 프로젝트 select를 보여준다", () => {
@@ -70,6 +94,7 @@ describe("DashboardPage", () => {
         projects={[projects[0]!]}
         projectId="proj_demo"
         onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
         onLogout={vi.fn()}
         onShowInstall={vi.fn()}
         onShowSettings={vi.fn()}
@@ -92,6 +117,7 @@ describe("DashboardPage", () => {
         projects={projects}
         projectId="proj_demo"
         onSelectProject={onSelectProject}
+        onCreateProject={vi.fn()}
         onLogout={vi.fn()}
         onShowInstall={vi.fn()}
         onShowSettings={vi.fn()}

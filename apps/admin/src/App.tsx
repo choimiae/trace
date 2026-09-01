@@ -988,6 +988,7 @@ export function App() {
         settingsError={state.settingsError}
         onLogout={() => { void handleLogout(); }}
         onSelectIssue={setSelectedIssue}
+        onCreateProject={() => setState({ type: "create-project", csrfToken: state.csrfToken })}
         onShowInstall={() =>
           setState({
             type: "install",

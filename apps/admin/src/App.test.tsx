@@ -291,6 +291,32 @@ describe("App 온보딩", () => {
     expect(screen.getByText(/data-project-id="proj_new"/)).toBeInTheDocument();
   });
 
+  it("대시보드에서 새 프로젝트 생성 화면으로 진입해 새 프로젝트 설치 안내를 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.createProject.mockResolvedValue({ projectId: "proj_new" });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "새 프로젝트" }));
+    fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "내 다른 앱" } });
+    fireEvent.change(screen.getByLabelText("허용 도메인"), {
+      target: { value: "http://localhost:3000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
+
+    expect(await screen.findByRole("heading", { name: "스크립트를 붙여주세요." })).toBeInTheDocument();
+    expect(api.createProject).toHaveBeenCalledWith(
+      { name: "내 다른 앱", allowedDomains: ["http://localhost:3000"] },
+      "csrf_1",
+    );
+    expect(window.localStorage.getItem("trace.selectedProjectId")).toBe("proj_new");
+    expect(screen.getByText(/data-project-id="proj_new"/)).toBeInTheDocument();
+  });
+
   it("첫 이벤트가 도착하면 대시보드로 넘어가는 버튼을 보여준다", async () => {
     vi.useFakeTimers();
     api.getAuthMe.mockResolvedValue(emptyAuth);
