@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { Issue } from "@trace/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardPage } from "./DashboardPage.js";
 
@@ -23,6 +24,24 @@ const projects = [
   { projectId: "proj_demo", role: "owner" as const },
   { projectId: "proj_second", role: "viewer" as const },
 ];
+
+const issue = (overrides: Partial<Issue>): Issue => ({
+  issueId: "issue_base",
+  projectId: "proj_demo",
+  issueType: "rage_click",
+  title: "기본 문제",
+  summary: "요약",
+  affectedSessionsCount: 1,
+  affectedUsersCount: 1,
+  severityScore: 10,
+  firstSeenAt: "2026-09-01T00:00:00.000Z",
+  lastSeenAt: "2026-09-01T00:00:00.000Z",
+  trend: "flat",
+  relatedUrlPath: "/",
+  exampleSessionIds: ["sess_1"],
+  status: "new",
+  ...overrides,
+});
 
 describe("DashboardPage", () => {
   it("인사이트 상태를 글자 라벨과 함께 보여준다", () => {
@@ -127,5 +146,45 @@ describe("DashboardPage", () => {
     fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "proj_second" } });
 
     expect(onSelectProject).toHaveBeenCalledWith("proj_second");
+  });
+
+  it("문제 개요를 한눈에 볼 수 있게 보여준다", () => {
+    render(
+      <DashboardPage
+        summary={{
+          ...summary,
+          issueTypeDistribution: [{ issueType: "rage_click", count: 3 }],
+          topTargets: [{ label: "/settings", count: 5 }],
+        }}
+        issues={[
+          issue({
+            issueId: "issue_critical",
+            title: "설정 저장 버튼 반복 클릭",
+            summary: "저장 버튼에서 rage click이 반복됩니다.",
+            severityScore: 92,
+            affectedSessionsCount: 18,
+            affectedUsersCount: 12,
+            trend: "up",
+            relatedUrlPath: "/settings",
+            lastSeenAt: "2026-09-01T06:00:00.000Z",
+          }),
+        ]}
+        userEmail="admin@example.com"
+        projects={[projects[0]!]}
+        projectId="proj_demo"
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onLogout={vi.fn()}
+        onShowInstall={vi.fn()}
+        onShowSettings={vi.fn()}
+      />,
+    );
+
+    const overview = screen.getByRole("region", { name: "문제 한눈에 보기" });
+    expect(overview).toBeInTheDocument();
+    expect(within(overview).getAllByText("설정 저장 버튼 반복 클릭")).toHaveLength(2);
+    expect(within(overview).getByText("최근 발견 2026-09-01 15:00:00")).toBeInTheDocument();
+    expect(within(overview).getAllByText("/settings")).toHaveLength(2);
+    expect(within(overview).getByText("분노 클릭")).toBeInTheDocument();
   });
 });

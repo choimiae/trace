@@ -60,6 +60,10 @@ const baseSummary = {
   topTargets: [{ label: "/settings", count: 42 }],
 };
 
+async function expectIssueTitleVisible(title: string) {
+  expect((await screen.findAllByText(title)).length).toBeGreaterThan(0);
+}
+
 function dashboardDataFor(projectId: string) {
   return {
     summary: Object.assign({}, baseSummary, {
@@ -231,7 +235,7 @@ describe("App auth state", () => {
     });
     render(<App />);
     expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
-    expect(await screen.findByText("설정 화면에서 반복 클릭")).toBeInTheDocument();
+    await expectIssueTitleVisible("설정 화면에서 반복 클릭");
   });
 
   it("ready 대시보드에서 현재 프로젝트 데이터를 주기적으로 갱신한다", async () => {
@@ -459,7 +463,7 @@ describe("App 프로젝트 전환 초기 상태", () => {
 
     expect(await screen.findByLabelText("프로젝트")).toHaveValue("proj_second");
     expect(api.getDashboardData).toHaveBeenCalledWith("proj_second");
-    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    await expectIssueTitleVisible("proj_second 설정 화면에서 반복 클릭");
   });
 
   it("저장된 프로젝트가 현재 계정 프로젝트가 아니면 첫 번째 프로젝트로 fallback한다", async () => {
@@ -502,7 +506,7 @@ describe("App 프로젝트 전환 동작", () => {
 
     fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
 
-    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    await expectIssueTitleVisible("proj_second 설정 화면에서 반복 클릭");
     expect(screen.getByLabelText("프로젝트")).toHaveValue("proj_second");
     expect(api.getDashboardData).toHaveBeenLastCalledWith("proj_second");
     expect(window.localStorage.getItem("trace.selectedProjectId")).toBe("proj_second");
@@ -520,12 +524,15 @@ describe("App 프로젝트 전환 동작", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "proj_demo 설정 화면에서 반복 클릭 보기" }));
+    const [issueButton] = await screen.findAllByRole("button", {
+      name: "proj_demo 설정 화면에서 반복 클릭 보기",
+    });
+    fireEvent.click(issueButton!);
     expect(await screen.findByRole("complementary", { name: "문제 상세" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "proj_second" } });
 
-    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    await expectIssueTitleVisible("proj_second 설정 화면에서 반복 클릭");
     expect(screen.queryByRole("button", { name: "닫기" })).not.toBeInTheDocument();
   });
 
@@ -542,7 +549,7 @@ describe("App 프로젝트 전환 동작", () => {
     render(<App />);
 
     fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
-    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    await expectIssueTitleVisible("proj_second 설정 화면에서 반복 클릭");
 
     fireEvent.click(screen.getByRole("button", { name: "설치 안내" }));
 
@@ -569,7 +576,7 @@ describe("App 프로젝트 전환 동작", () => {
     render(<App />);
 
     fireEvent.change(await screen.findByLabelText("프로젝트"), { target: { value: "proj_second" } });
-    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    await expectIssueTitleVisible("proj_second 설정 화면에서 반복 클릭");
 
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 설정" }));
 
@@ -1523,13 +1530,13 @@ describe("App 프로젝트 설정", () => {
     expect(api.getProjectSettings).toHaveBeenCalledWith("proj_demo");
 
     fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "proj_second" } });
-    expect(await screen.findByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    await expectIssueTitleVisible("proj_second 설정 화면에서 반복 클릭");
 
     await act(async () => {
       resolveSettings(staleSettings);
     });
 
-    expect(screen.getByText("proj_second 설정 화면에서 반복 클릭")).toBeInTheDocument();
+    expect(screen.getAllByText("proj_second 설정 화면에서 반복 클릭").length).toBeGreaterThan(0);
     expect(screen.queryByRole("heading", { name: "프로젝트 설정" })).not.toBeInTheDocument();
   });
 

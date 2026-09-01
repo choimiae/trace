@@ -1,5 +1,6 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
 import { lazy, Suspense } from "react";
+import { IssueDashboardOverview } from "../components/IssueDashboardOverview.js";
 import { IssueTable } from "../components/IssueTable.js";
 import { MetricStrip } from "../components/MetricStrip.js";
 import { Button } from "../ui/Button.js";
@@ -85,6 +86,7 @@ export function DashboardPage({
         <Chip status="crit" label="심각" />
         <span>{summary.insight}</span>
       </section>
+      <IssueDashboardOverview summary={summary} issues={issues} onSelectIssue={onSelectIssue} />
       <section className="chart-grid" aria-label="막힘 분석 차트">
         <Suspense
           fallback={
