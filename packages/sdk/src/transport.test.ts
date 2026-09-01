@@ -79,6 +79,22 @@ describe("installTransport", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("큐 임계치보다 적은 이벤트도 짧은 지연 후 전송한다", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true });
+    const client = createClient(fetcher);
+    teardown = installTransport(client, { intervalMs: 5000, queueThreshold: 20, flushDelayMs: 1000 });
+
+    enqueueOne(client, "evt_1");
+    enqueueOne(client, "evt_2");
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetcher).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("화면이 가려지면 전송한다", async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: true });
     const client = createClient(fetcher);
