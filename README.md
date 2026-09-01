@@ -7,7 +7,7 @@ Trace는 self-hosted 제품입니다. 서버와 관리자 페이지를 직접 �
 ## 요구 사항
 
 - Node 22.5 이상 (`.nvmrc` 참고)
-- Google 계정 (관리자 로그인에 사용합니다)
+- Google 계정 (운영 배포 또는 Google 로그인에 사용합니다)
 
 ## 시작하기
 
@@ -18,9 +18,12 @@ npm install
 npm run build
 ```
 
-### 2. Google OAuth 클라이언트 준비
+### 2. 로그인 방식 선택
 
-관리자 로그인에 Google OAuth를 사용합니다. Google Cloud Console에서 OAuth 2.0 클라이언트 ID를 하나 만들고, 승인된 리디렉션 URI에 아래 주소를 등록합니다.
+로컬에서 먼저 체험할 때는 Google OAuth 없이 `LOCAL_ADMIN_LOGIN=true`를 쓸 수 있습니다. 이 방식은 `NODE_ENV=development` 또는 `test`에서만 동작하며, 서버에 올릴 때는 사용할 수 없습니다.
+
+운영 배포 또는 실제 Google 로그인을 확인하려면 Google OAuth를 준비합니다. Google Cloud Console에서 OAuth 2.0 클라이언트 ID를 하나 만들고, 승인된 리디렉션 URI에 아래 주소를 등록합니다.
+
 
 ```text
 http://localhost:4000/auth/google/callback
@@ -35,13 +38,18 @@ cp .env.example .env
 cp apps/api/.env.example apps/api/.env
 ```
 
-`apps/api/.env`에 Google Cloud Console에서 받은 값과 로그인할 관리자 이메일을 채웁니다.
+로컬 간편 로그인만 사용할 때는 `apps/api/.env`에 세션 키와 관리자 이메일만 채웁니다.
+
+```env
+SESSION_SECRET=<32자 이상 임의 문자열>
+ADMIN_ALLOWED_EMAILS=admin@example.com
+```
+
+Google 로그인을 함께 쓰려면 Google Cloud Console에서 받은 값도 추가합니다.
 
 ```env
 GOOGLE_CLIENT_ID=<client-id>
 GOOGLE_CLIENT_SECRET=<client-secret>
-SESSION_SECRET=<32자 이상 임의 문자열>
-ADMIN_ALLOWED_EMAILS=<로그인할 Google 계정 이메일>
 ```
 
 `SESSION_SECRET`은 Google에서 받는 값이 아니라 세션 쿠키 서명용 랜덤 문자열입니다.
@@ -57,10 +65,11 @@ NODE_ENV=development
 GOOGLE_REDIRECT_URI=http://localhost:4000/auth/google/callback
 ADMIN_APP_ORIGIN=http://localhost:5173
 COOKIE_SECURE=false
+LOCAL_ADMIN_LOGIN=true
 TRACE_DB_PATH=./trace.db
 ```
 
-`COOKIE_SECURE=false`는 `NODE_ENV`가 `development`나 `test`일 때만 허용됩니다.
+`COOKIE_SECURE=false`와 `LOCAL_ADMIN_LOGIN=true`는 `NODE_ENV`가 `development`나 `test`일 때만 허용됩니다.
 
 ### 4. API 서버 실행
 
@@ -76,7 +85,7 @@ npm run dev:api
 npm run dev:admin
 ```
 
-`http://localhost:5173`을 열고 Google로 로그인합니다. 로그인하면 프로젝트 생성 화면이 나오고, 이름과 허용 도메인을 입력하면 사이트에 붙일 스크립트를 알려줍니다.
+`http://localhost:5173`을 엽니다. 로컬 간편 로그인이 켜져 있으면 `로컬로 시작하기`를 누릅니다. Google OAuth를 설정했다면 `Google로 로그인`도 사용할 수 있습니다. 로그인하면 프로젝트 생성 화면이 나오고, 이름과 허용 도메인을 입력하면 사이트에 붙일 스크립트를 알려줍니다.
 
 ```html
 <script src="http://localhost:4000/trace.js" data-project-id="proj_xxxxxxxxxx"></script>
@@ -133,14 +142,15 @@ window.trace.consent.grant();
 
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `GOOGLE_CLIENT_ID` | 필수 | - | Google OAuth 클라이언트 ID |
-| `GOOGLE_CLIENT_SECRET` | 필수 | - | Google OAuth 클라이언트 시크릿 |
-| `GOOGLE_REDIRECT_URI` | 필수 | - | OAuth 콜백 주소 |
+| `GOOGLE_CLIENT_ID` | 운영 필수 | - | Google OAuth 클라이언트 ID |
+| `GOOGLE_CLIENT_SECRET` | 운영 필수 | - | Google OAuth 클라이언트 시크릿 |
+| `GOOGLE_REDIRECT_URI` | 운영 필수 | - | OAuth 콜백 주소 |
 | `SESSION_SECRET` | 필수 | - | 세션 쿠키 서명 키. 32자 이상 |
 | `ADMIN_APP_ORIGIN` | 필수 | - | 관리자 페이지 origin. CORS 허용 대상 |
 | `ADMIN_ALLOWED_EMAILS` | 필수 | - | 로그인 허용 이메일. 쉼표로 구분 |
 | `GOOGLE_ALLOWED_DOMAIN` | 선택 | - | 특정 Google Workspace 도메인으로 제한 |
-| `NODE_ENV` | 선택 | - | `development` 또는 `test`일 때만 `COOKIE_SECURE=false`를 허용합니다 |
+| `LOCAL_ADMIN_LOGIN` | 선택 | `false` | `true`이면 로컬 개발에서 Google OAuth 없이 로그인합니다 |
+| `NODE_ENV` | 선택 | - | `development` 또는 `test`일 때만 `COOKIE_SECURE=false`와 `LOCAL_ADMIN_LOGIN=true`를 허용합니다 |
 | `COOKIE_SECURE` | 선택 | `true` | 로컬 개발에서만 `false`로 둡니다 |
 | `TRACE_DB_PATH` | 선택 | `./trace.db` | SQLite 데이터베이스 파일 경로 |
 | `PORT` | 선택 | `4000` | API 서버 포트 |
@@ -152,7 +162,7 @@ window.trace.consent.grant();
 
 ## 서버에 올릴 때
 
-HTTPS를 사용하고 `COOKIE_SECURE=true`로 둡니다. `GOOGLE_REDIRECT_URI`와 `ADMIN_APP_ORIGIN`을 실제 주소로 바꾸고, Google Cloud Console의 승인된 리디렉션 URI에도 같은 주소를 등록해야 합니다.
+HTTPS를 사용하고 `COOKIE_SECURE=true`로 둡니다. `LOCAL_ADMIN_LOGIN`은 설정하지 않습니다. `GOOGLE_REDIRECT_URI`와 `ADMIN_APP_ORIGIN`을 실제 주소로 바꾸고, Google Cloud Console의 승인된 리디렉션 URI에도 같은 주소를 등록해야 합니다.
 
 SQLite를 쓰므로 단일 인스턴스로 운영합니다.
 

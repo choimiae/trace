@@ -1,12 +1,14 @@
 export interface AdminAuthConfig {
-  googleClientId: string;
-  googleClientSecret: string;
-  googleRedirectUri: string;
+  googleClientId?: string;
+  googleClientSecret?: string;
+  googleRedirectUri?: string;
   adminAppOrigin: string;
   sessionSecret: string;
   cookieSecure: boolean;
   allowedEmails: Set<string>;
   googleAllowedDomain?: string;
+  googleOAuthEnabled: boolean;
+  localAdminLoginEnabled: boolean;
   sessionTtlSeconds: number;
   loginRateLimitWindowSeconds: number;
   loginRateLimitMax: number;
@@ -28,28 +30,30 @@ export function loadAdminAuthConfig(env: NodeJS.ProcessEnv): AdminAuthConfig | u
   const allowedEmails = required(env.ADMIN_ALLOWED_EMAILS);
   const googleAllowedDomain = required(env.GOOGLE_ALLOWED_DOMAIN);
   const allowedEmailSet = new Set(allowedEmails?.split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
+  const googleOAuthEnabled = Boolean(googleClientId && googleClientSecret && googleRedirectUri);
+  const localAdminLoginEnabled = env.LOCAL_ADMIN_LOGIN === "true";
 
   if (
-    !googleClientId ||
-    !googleClientSecret ||
-    !googleRedirectUri ||
     !sessionSecret ||
     !adminAppOrigin ||
     !allowedEmails ||
-    allowedEmailSet.size === 0
+    allowedEmailSet.size === 0 ||
+    (!googleOAuthEnabled && !localAdminLoginEnabled)
   ) {
     return undefined;
   }
 
   return {
-    googleClientId,
-    googleClientSecret,
-    googleRedirectUri,
+    ...(googleClientId ? { googleClientId } : {}),
+    ...(googleClientSecret ? { googleClientSecret } : {}),
+    ...(googleRedirectUri ? { googleRedirectUri } : {}),
     adminAppOrigin,
     sessionSecret,
     cookieSecure: env.COOKIE_SECURE !== "false",
     allowedEmails: allowedEmailSet,
     ...(googleAllowedDomain ? { googleAllowedDomain } : {}),
+    googleOAuthEnabled,
+    localAdminLoginEnabled,
     sessionTtlSeconds: positiveSafeIntegerEnv(
       "SESSION_TTL_SECONDS",
       env.SESSION_TTL_SECONDS,
@@ -71,6 +75,14 @@ export function assertDeployableAdminAuthConfig(config: AdminAuthConfig | undefi
   if (!config) {
     if (env.NODE_ENV === "production") throw new Error("ADMIN_OAUTH_CONFIG_REQUIRED");
     return;
+  }
+
+  if (env.NODE_ENV === "production" && !config.googleOAuthEnabled) {
+    throw new Error("ADMIN_OAUTH_CONFIG_REQUIRED");
+  }
+
+  if (config.localAdminLoginEnabled && env.NODE_ENV !== "development" && env.NODE_ENV !== "test") {
+    throw new Error("LOCAL_ADMIN_LOGIN is only allowed in development and test");
   }
 
   if (!config.cookieSecure && env.NODE_ENV !== "development" && env.NODE_ENV !== "test") {

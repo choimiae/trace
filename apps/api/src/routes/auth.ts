@@ -19,6 +19,7 @@ export interface AuthMeResponse {
   user: { adminUserId: string; email: string; name?: string; pictureUrl?: string };
   projects: Array<{ projectId: string; role: AdminRole }>;
   csrfToken: string;
+  auth: { googleLogin: boolean; localLogin: boolean };
 }
 
 const callbackSchema = z.object({
@@ -29,7 +30,7 @@ const callbackSchema = z.object({
 
 export async function registerAuthRoutes(
   app: FastifyInstance,
-  options: { store: TraceStore; config: AdminAuthConfig; googleOAuthClient: GoogleOAuthClient },
+  options: { store: TraceStore; config: AdminAuthConfig; googleOAuthClient?: GoogleOAuthClient },
 ) {
   const stateStore = createOAuthStateStore();
   const rateLimiter = createFixedWindowRateLimiter({
@@ -37,7 +38,16 @@ export async function registerAuthRoutes(
     max: options.config.loginRateLimitMax,
   });
 
+  app.get("/auth/login-options", async () => ({
+    googleLogin: options.config.googleOAuthEnabled,
+    localLogin: options.config.localAdminLoginEnabled,
+  }));
+
   app.get("/auth/google/start", async (request, reply) => {
+    if (!options.config.googleOAuthEnabled || !options.googleOAuthClient) {
+      return reply.code(404).send({ error: "google_login_disabled" });
+    }
+
     if (!consumeLoginRateLimit(rateLimiter, request, "start")) {
       return reply.code(429).send({ error: "login_rate_limited" });
     }
@@ -54,6 +64,10 @@ export async function registerAuthRoutes(
   });
 
   app.get("/auth/google/callback", async (request, reply) => {
+    if (!options.config.googleOAuthEnabled || !options.googleOAuthClient) {
+      return reply.code(404).send({ error: "google_login_disabled" });
+    }
+
     if (!consumeLoginRateLimit(rateLimiter, request, "callback")) {
       return reply.code(429).send({ error: "login_rate_limited" });
     }
@@ -105,6 +119,35 @@ export async function registerAuthRoutes(
     }
   });
 
+  app.get("/auth/local/start", async (_request, reply) => {
+    if (!options.config.localAdminLoginEnabled) {
+      return reply.code(404).send({ error: "local_login_disabled" });
+    }
+
+    const email = options.config.allowedEmails.values().next().value;
+    if (!email) return reply.code(401).send({ error: "admin_auth_required" });
+
+    const now = new Date().toISOString();
+    const user = await options.store.upsertAdminUserFromGoogle({
+      googleSub: `local:${email}`,
+      email,
+      emailVerified: true,
+      name: "Local Admin",
+      now,
+    });
+    const session = await createAdminSessionForUser({ store: options.store, config: options.config, user });
+    await options.store.createAuditLog({
+      adminUserId: user.adminUserId,
+      action: "auth.login_success",
+      createdAt: new Date().toISOString(),
+      metadata: { provider: "local" },
+    });
+
+    return reply
+      .header("set-cookie", [session.cookie, session.csrfCookie])
+      .redirect(options.config.adminAppOrigin);
+  });
+
   app.get("/auth/me", async (request, reply): Promise<AuthMeResponse | ReturnType<typeof reply.code>> => {
     const authenticated = await requireAdminSession({
       store: options.store,
@@ -132,6 +175,10 @@ export async function registerAuthRoutes(
       },
       projects: memberships.map(({ projectId, role }) => ({ projectId, role })),
       csrfToken,
+      auth: {
+        googleLogin: options.config.googleOAuthEnabled,
+        localLogin: options.config.localAdminLoginEnabled,
+      },
     };
   });
 

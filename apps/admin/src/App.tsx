@@ -6,6 +6,7 @@ import {
   createProject,
   getAuthMe,
   getDashboardData,
+  getLoginOptions,
   getProjectAuditLogs,
   getProjectMembers,
   getProjectSettings,
@@ -15,6 +16,7 @@ import {
   updateProjectMemberRole,
   updateProjectSettings,
   type AddProjectMemberInput,
+  type LoginOptionsResponse,
   type ProjectAuditLogEntryResponse,
   type ProjectMemberCandidateResponse,
   type ProjectMemberResponse,
@@ -36,7 +38,7 @@ import "./pages/pages.css";
 
 type AppState =
   | { type: "loading" }
-  | { type: "login" }
+  | { type: "login"; loginOptions?: LoginOptionsResponse | undefined }
   | { type: "forbidden" }
   | { type: "network" }
   | { type: "create-project"; csrfToken: string; createError?: string | undefined }
@@ -269,7 +271,12 @@ export function App() {
       } catch (error) {
         if (!active) return;
         if (error instanceof ApiError && error.status === 401) {
-          setState({ type: "login" });
+          try {
+            const loginOptions = await getLoginOptions();
+            if (active) setState({ type: "login", loginOptions });
+          } catch {
+            if (active) setState({ type: "login" });
+          }
         } else if (error instanceof ApiError && error.status === 403) {
           setState({ type: "forbidden" });
         } else {
@@ -433,15 +440,32 @@ export function App() {
   if (state.type === "loading") return <StatusPage title="불러오는 중" />;
 
   if (state.type === "login") {
+    const loginOptions = state.loginOptions ?? { googleLogin: true, localLogin: false };
+    const actions = [
+      ...(loginOptions.localLogin
+        ? [{
+            label: "로컬로 시작하기",
+            variant: "primary" as const,
+            onClick: () => {
+              window.location.href = `${API_BASE_URL}/auth/local/start`;
+            },
+          }]
+        : []),
+      ...(loginOptions.googleLogin
+        ? [{
+            label: "Google로 로그인",
+            variant: loginOptions.localLogin ? "secondary" as const : "primary" as const,
+            onClick: () => {
+              window.location.href = `${API_BASE_URL}/auth/google/start`;
+            },
+          }]
+        : []),
+    ];
+
     return (
       <StatusPage
         title="관리자 로그인이 필요합니다."
-        action={{
-          label: "Google로 로그인",
-          onClick: () => {
-            window.location.href = `${API_BASE_URL}/auth/google/start`;
-          },
-        }}
+        actions={actions}
       />
     );
   }

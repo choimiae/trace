@@ -12,7 +12,12 @@ const authConfig = prepareServerStartup({ store, env: process.env });
 
 const app = createApp({
   store,
-  ...(authConfig ? { authConfig, googleOAuthClient: createGoogleOAuthClient(authConfig) } : {}),
+  ...(authConfig
+    ? {
+        authConfig,
+        ...(authConfig.googleOAuthEnabled ? { googleOAuthClient: createGoogleOAuthClient(authConfig) } : {}),
+      }
+    : {}),
 });
 
 await app.listen({ port, host: "0.0.0.0" });

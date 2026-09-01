@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
     }
   },
   getAuthMe: vi.fn(),
+  getLoginOptions: vi.fn(),
   createProject: vi.fn(),
   getDashboardData: vi.fn(),
   getProjectSettings: vi.fn(),
@@ -31,6 +32,7 @@ const api = vi.hoisted(() => ({
 vi.mock("./api", () => ({
   ApiError: api.ApiError,
   getAuthMe: api.getAuthMe,
+  getLoginOptions: api.getLoginOptions,
   createProject: api.createProject,
   getDashboardData: api.getDashboardData,
   getProjectSettings: api.getProjectSettings,
@@ -103,6 +105,7 @@ function auditLogEntry(auditLogId: string, email: string) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  api.getLoginOptions.mockResolvedValue({ googleLogin: true, localLogin: false });
   api.getDashboardData.mockResolvedValue({
     summary: baseSummary,
     issues: [{
@@ -183,6 +186,17 @@ describe("App auth state", () => {
     api.getAuthMe.mockRejectedValue(new api.ApiError(401, "admin_auth_required"));
     render(<App />);
     expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "로컬로 시작하기" })).not.toBeInTheDocument();
+  });
+
+  it("renders local login when the server exposes local login only", async () => {
+    api.getAuthMe.mockRejectedValue(new api.ApiError(401, "admin_auth_required"));
+    api.getLoginOptions.mockResolvedValue({ googleLogin: false, localLogin: true });
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "로컬로 시작하기" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Google로 로그인" })).not.toBeInTheDocument();
   });
 
   it("renders an access denied screen on auth/me 403", async () => {

@@ -30,7 +30,9 @@ export function createApp(options: {
     app.register(registerAuthRoutes, {
       store: options.store,
       config: options.authConfig,
-      googleOAuthClient: options.googleOAuthClient ?? createGoogleOAuthClient(options.authConfig),
+      ...(options.authConfig.googleOAuthEnabled
+        ? { googleOAuthClient: options.googleOAuthClient ?? createGoogleOAuthClient(options.authConfig) }
+        : {}),
     });
     app.register(registerAdminProxyRoutes, { store: options.store, config: options.authConfig });
   }

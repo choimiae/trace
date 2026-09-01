@@ -11,6 +11,8 @@ const config: AdminAuthConfig = {
   sessionSecret: "0123456789abcdef0123456789abcdef",
   cookieSecure: true,
   allowedEmails: new Set(["admin@example.com"]),
+  googleOAuthEnabled: true,
+  localAdminLoginEnabled: false,
   sessionTtlSeconds: 60,
   loginRateLimitWindowSeconds: 300,
   loginRateLimitMax: 20,

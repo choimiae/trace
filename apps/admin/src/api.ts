@@ -27,6 +27,12 @@ export interface AuthMeResponse {
   user: { adminUserId: string; email: string; name?: string; pictureUrl?: string };
   projects: Array<{ projectId: string; role: ProjectRole }>;
   csrfToken: string;
+  auth?: LoginOptionsResponse;
+}
+
+export interface LoginOptionsResponse {
+  googleLogin: boolean;
+  localLogin: boolean;
 }
 
 export class ApiError extends Error {
@@ -40,6 +46,10 @@ const credentialedFetch = (path: string, init: RequestInit = {}) =>
 
 export async function getAuthMe(): Promise<AuthMeResponse> {
   return getJson<AuthMeResponse>("/auth/me");
+}
+
+export async function getLoginOptions(): Promise<LoginOptionsResponse> {
+  return getJson<LoginOptionsResponse>("/auth/login-options");
 }
 
 export async function logout(csrfToken: string): Promise<void> {

@@ -143,14 +143,15 @@ export function createGoogleOAuthClient(
   fetchFn: typeof fetch = fetch,
   options?: { jwks?: ReturnType<typeof createLocalJWKSet> },
 ): GoogleOAuthClient {
+  const googleConfig = requireGoogleOAuthConfig(config);
   const jwks = options?.jwks ?? createRemoteJWKSet(new URL(GOOGLE_JWKS_URL));
 
   return {
     getAuthorizationUrl(input) {
       const url = new URL(GOOGLE_AUTHORIZATION_URL);
       url.searchParams.set("response_type", "code");
-      url.searchParams.set("client_id", config.googleClientId);
-      url.searchParams.set("redirect_uri", config.googleRedirectUri);
+      url.searchParams.set("client_id", googleConfig.googleClientId);
+      url.searchParams.set("redirect_uri", googleConfig.googleRedirectUri);
       url.searchParams.set("scope", "openid email profile");
       url.searchParams.set("state", input.state);
       url.searchParams.set("nonce", input.nonce);
@@ -165,9 +166,9 @@ export function createGoogleOAuthClient(
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
           code: input.code,
-          client_id: config.googleClientId,
-          client_secret: config.googleClientSecret,
-          redirect_uri: config.googleRedirectUri,
+          client_id: googleConfig.googleClientId,
+          client_secret: googleConfig.googleClientSecret,
+          redirect_uri: googleConfig.googleRedirectUri,
           grant_type: "authorization_code",
           code_verifier: input.codeVerifier,
         }),
@@ -182,7 +183,7 @@ export function createGoogleOAuthClient(
     async verifyIdToken(input) {
       const { payload } = await jwtVerify(input.idToken, jwks, {
         issuer: ["https://accounts.google.com", "accounts.google.com"],
-        audience: config.googleClientId,
+        audience: googleConfig.googleClientId,
         requiredClaims: ["exp"],
       });
       if (payload.nonce !== input.nonce) throw new Error("Google ID token nonce mismatch");
@@ -204,5 +205,21 @@ export function createGoogleOAuthClient(
         ...(typeof payload.picture === "string" ? { pictureUrl: payload.picture } : {}),
       };
     },
+  };
+}
+
+function requireGoogleOAuthConfig(config: AdminAuthConfig): {
+  googleClientId: string;
+  googleClientSecret: string;
+  googleRedirectUri: string;
+} {
+  if (!config.googleClientId || !config.googleClientSecret || !config.googleRedirectUri) {
+    throw new Error("Google OAuth configuration is not enabled");
+  }
+
+  return {
+    googleClientId: config.googleClientId,
+    googleClientSecret: config.googleClientSecret,
+    googleRedirectUri: config.googleRedirectUri,
   };
 }

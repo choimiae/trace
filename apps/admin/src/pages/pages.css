@@ -55,6 +55,12 @@
   width: fit-content;
 }
 
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 .dashboard-notice {
   margin-bottom: var(--space-5);
   border-left: 3px solid var(--status-crit);

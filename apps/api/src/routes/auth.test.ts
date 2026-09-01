@@ -14,6 +14,23 @@ const config: AdminAuthConfig = {
   sessionSecret: "0123456789abcdef0123456789abcdef",
   cookieSecure: false,
   allowedEmails: new Set(["admin@example.com"]),
+  googleOAuthEnabled: true,
+  localAdminLoginEnabled: false,
+  sessionTtlSeconds: 28800,
+  loginRateLimitWindowSeconds: 300,
+  loginRateLimitMax: 20,
+  oauthCookieName: "__trace_oauth",
+  sessionCookieName: "__trace_admin_session",
+  csrfCookieName: "__trace_csrf",
+};
+
+const localLoginConfig: AdminAuthConfig = {
+  adminAppOrigin: "http://localhost:5173",
+  sessionSecret: "0123456789abcdef0123456789abcdef",
+  cookieSecure: false,
+  allowedEmails: new Set(["admin@example.com"]),
+  googleOAuthEnabled: false,
+  localAdminLoginEnabled: true,
   sessionTtlSeconds: 28800,
   loginRateLimitWindowSeconds: 300,
   loginRateLimitMax: 20,
@@ -38,6 +55,24 @@ function fakeGoogleClient(): GoogleOAuthClient {
 }
 
 describe("auth routes", () => {
+  it("returns the enabled login options", async () => {
+    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+
+    const response = await app.inject({ method: "GET", url: "/auth/login-options" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ googleLogin: true, localLogin: false });
+  });
+
+  it("returns local login as the only option when Google OAuth is not configured", async () => {
+    const app = createApp({ store: new MemoryStore(), authConfig: localLoginConfig });
+
+    const response = await app.inject({ method: "GET", url: "/auth/login-options" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ googleLogin: false, localLogin: true });
+  });
+
   it("registers auth routes with the default Google client when auth config exists", async () => {
     const app = createApp({ store: new MemoryStore(), authConfig: config });
 
@@ -80,6 +115,51 @@ describe("auth routes", () => {
     expect(callback.statusCode).toBe(302);
     expect(callback.headers.location).toBe(config.adminAppOrigin);
     expect(String(callback.headers["set-cookie"])).toContain("__trace_admin_session=");
+  });
+
+  it("creates a local admin session and redirects to the Admin app", async () => {
+    const store = new MemoryStore();
+    const app = createApp({ store, authConfig: localLoginConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/auth/local/start",
+      headers: { origin: localLoginConfig.adminAppOrigin },
+    });
+
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe(localLoginConfig.adminAppOrigin);
+    const setCookies = Array.isArray(response.headers["set-cookie"])
+      ? response.headers["set-cookie"]
+      : [String(response.headers["set-cookie"])];
+    const sessionCookie = setCookies.find((value) => value.includes("__trace_admin_session="))!.split(";")[0]!;
+    const me = await app.inject({ method: "GET", url: "/auth/me", headers: { cookie: sessionCookie } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().user.email).toBe("admin@example.com");
+    expect(me.json().auth).toEqual({ googleLogin: false, localLogin: true });
+    expect(await store.listAuditLogs()).toContainEqual(expect.objectContaining({
+      action: "auth.login_success",
+      adminUserId: expect.stringMatching(/^admin_/),
+      metadata: { provider: "local" },
+    }));
+  });
+
+  it("does not expose local login when it is disabled", async () => {
+    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+
+    const response = await app.inject({ method: "GET", url: "/auth/local/start" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "local_login_disabled" });
+  });
+
+  it("does not expose Google login when Google OAuth is not configured", async () => {
+    const app = createApp({ store: new MemoryStore(), authConfig: localLoginConfig });
+
+    const response = await app.inject({ method: "GET", url: "/auth/google/start" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "google_login_disabled" });
   });
 
   it("returns auth/me for a valid session and 401 without a session", async () => {
