@@ -161,10 +161,10 @@ describe("ProjectAuditLogPage", () => {
     );
   }
 
-  it("시각을 UTC 로 표시하고 열 제목에 밝힌다", () => {
+  it("시각을 한국시간으로 표시하고 열 제목에 밝힌다", () => {
     renderPage();
-    expect(screen.getByText("시각 (UTC)")).toBeInTheDocument();
-    expect(screen.getByText("2026-08-31 01:23")).toBeInTheDocument();
+    expect(screen.getByText("시각 (KST)")).toBeInTheDocument();
+    expect(screen.getByText("2026-08-31 10:23:45")).toBeInTheDocument();
   });
 
   it("행위자와 내용을 함께 보여준다", () => {

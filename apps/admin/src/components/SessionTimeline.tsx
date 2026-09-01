@@ -1,4 +1,5 @@
 import type { SessionTimelineEvent } from "@trace/shared";
+import { formatKoreanDateTime } from "../time.js";
 
 export function SessionTimeline({ events }: { events: SessionTimelineEvent[] }) {
   return (
@@ -10,7 +11,7 @@ export function SessionTimeline({ events }: { events: SessionTimelineEvent[] }) 
         <ol>
           {events.map((event) => (
             <li key={event.eventId}>
-              <time>{formatTime(event.timestamp)}</time>
+              <time>{formatKoreanDateTime(event.timestamp)}</time>
               <div>
                 <strong>{event.type}</strong>
                 <span>{event.urlPath}</span>
@@ -21,12 +22,4 @@ export function SessionTimeline({ events }: { events: SessionTimelineEvent[] }) 
       )}
     </section>
   );
-}
-
-function formatTime(value: string): string {
-  return new Intl.DateTimeFormat("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
 }

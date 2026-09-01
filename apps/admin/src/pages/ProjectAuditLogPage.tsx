@@ -1,4 +1,5 @@
 import type { ProjectAuditLogEntryResponse } from "../api.js";
+import { formatKoreanDateTime } from "../time.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 
@@ -102,11 +103,6 @@ export function describeAuditLogActor(entry: ProjectAuditLogEntryResponse): stri
     : `${entry.actor.name} · ${entry.actor.email}`;
 }
 
-function formatAuditLogTime(createdAt: string): string {
-  // 시간대 변환을 하지 않는다. 열 제목에 (UTC) 를 명시한다.
-  return createdAt.slice(0, 16).replace("T", " ");
-}
-
 export interface ProjectAuditLogPageProps {
   projectId: string;
   entries: ProjectAuditLogEntryResponse[];
@@ -144,7 +140,7 @@ export function ProjectAuditLogPage({
       <Card as="section" className="settings-panel">
         {entries.length > 0 ? (
           <div className="audit-log-head">
-            <span>시각 (UTC)</span>
+            <span>시각 (KST)</span>
             <span>행위자</span>
             <span>내용</span>
           </div>
@@ -152,7 +148,7 @@ export function ProjectAuditLogPage({
         <div className="audit-log-list">
           {entries.map((entry) => (
             <div className="audit-log-row" key={entry.auditLogId}>
-              <span className="audit-log-time">{formatAuditLogTime(entry.createdAt)}</span>
+              <span className="audit-log-time">{formatKoreanDateTime(entry.createdAt)}</span>
               <span className="audit-log-actor">{describeAuditLogActor(entry)}</span>
               <span className="audit-log-detail">{describeAuditLogEntry(entry)}</span>
             </div>

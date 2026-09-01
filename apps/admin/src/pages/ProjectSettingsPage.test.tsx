@@ -158,6 +158,7 @@ describe("ProjectSettingsPage", () => {
     expect(within(memberList as HTMLElement).getByText("Owner")).toBeInTheDocument();
     expect(within(memberList as HTMLElement).getByText("owner@example.com")).toBeInTheDocument();
     expect(screen.getByText("조회자", { selector: ".member-meta span" })).toBeInTheDocument();
+    expect(screen.getByText("2026-08-25 09:00:00")).toBeInTheDocument();
     expect(screen.getByLabelText("멤버 검색")).toBeInTheDocument();
     expect(screen.getByLabelText("멤버 역할")).toHaveValue("viewer");
     expect(screen.getByRole("button", { name: "멤버 추가" })).toBeDisabled();

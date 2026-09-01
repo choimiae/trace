@@ -5,6 +5,7 @@ import type {
   ProjectMemberResponse,
   ProjectRole,
 } from "../api.js";
+import { formatKoreanDateTime } from "../time.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 import { Field } from "../ui/Field.js";
@@ -178,7 +179,7 @@ export function ProjectSettingsPage({
                 </div>
                 <div className="member-meta">
                   <span>{roleLabel(member.role)}</span>
-                  <span>{member.createdAt.slice(0, 10)}</span>
+                  <span>{formatKoreanDateTime(member.createdAt)}</span>
                 </div>
                 {project.role === "owner" ? (
                   <div className="member-row-actions">
