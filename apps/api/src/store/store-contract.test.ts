@@ -1143,6 +1143,83 @@ function describeTraceStoreContract(
       expect(await store.getSessionTimeline(project.projectId, "sess_1")).toHaveLength(1);
     });
 
+    it("cutoff 이전 이벤트만 삭제한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const otherProject = await store.createProject({
+        name: "Other",
+        allowedDomains: ["https://other.example.com"],
+      });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-08-25T00:00:03.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_old",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-25T00:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+          },
+          {
+            eventId: "evt_cutoff",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-26T00:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+          },
+          {
+            eventId: "evt_new",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-26T00:00:01.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+          },
+        ],
+      });
+      await store.saveBatch({
+        projectId: otherProject.projectId,
+        anonymousUserId: "anon_2",
+        sessionId: "sess_2",
+        sentAt: "2026-08-25T00:00:01.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://other.example.com/settings",
+        events: [
+          {
+            eventId: "evt_other_old",
+            sessionId: "sess_2",
+            pageId: "page_2",
+            timestamp: "2026-08-25T00:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+          },
+        ],
+      });
+
+      await expect(store.deleteEventsBefore("2026-08-26T00:00:00.000Z")).resolves.toBe(2);
+
+      expect((await store.listEvents(project.projectId)).map((event) => event.eventId)).toEqual([
+        "evt_cutoff",
+        "evt_new",
+      ]);
+      expect(await store.listEvents(otherProject.projectId)).toEqual([]);
+    });
+
     it("대시보드 요약에 이벤트 총 개수를 담는다", async () => {
       const store = open();
       const project = await store.createProject({

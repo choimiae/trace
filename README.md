@@ -79,6 +79,8 @@ npm run dev:api
 
 데이터는 `TRACE_DB_PATH`에 지정한 SQLite 파일에 저장되고 서버를 재시작해도 남습니다.
 
+`EVENT_RETENTION_DAYS`를 설정하면 지정한 일수보다 오래된 원본 이벤트만 자동 삭제합니다. 예를 들어 `EVENT_RETENTION_DAYS=30`이면 30일보다 오래된 `events` 행을 서버 시작 시와 이벤트 수집 후 정리합니다. `issues`, 관리자 활동 이력, 프로젝트, 사용자, 세션 데이터는 이 설정으로 삭제하지 않습니다.
+
 ### 5. 관리자 페이지 실행
 
 ```bash
@@ -153,6 +155,7 @@ window.trace.consent.grant();
 | `NODE_ENV` | 선택 | - | `development` 또는 `test`일 때만 `COOKIE_SECURE=false`와 `LOCAL_ADMIN_LOGIN=true`를 허용합니다 |
 | `COOKIE_SECURE` | 선택 | `true` | 로컬 개발에서만 `false`로 둡니다 |
 | `TRACE_DB_PATH` | 선택 | `./trace.db` | SQLite 데이터베이스 파일 경로 |
+| `EVENT_RETENTION_DAYS` | 선택 | - | 양의 정수. 지정한 일수보다 오래된 `events`만 삭제합니다 |
 | `PORT` | 선택 | `4000` | API 서버 포트 |
 | `SESSION_TTL_SECONDS` | 선택 | `28800` | 세션 유효 기간 |
 | `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | 선택 | `300` | 로그인 rate limit 시간 창 |

@@ -282,6 +282,16 @@ export class MemoryStore implements TraceStore {
     this.events.set(batch.projectId, [...existing, ...unique]);
   }
 
+  async deleteEventsBefore(cutoff: string): Promise<number> {
+    let deleted = 0;
+    for (const [projectId, events] of this.events) {
+      const retained = events.filter((event) => event.timestamp >= cutoff);
+      deleted += events.length - retained.length;
+      this.events.set(projectId, retained);
+    }
+    return deleted;
+  }
+
   async listEvents(projectId: string): Promise<TraceEvent[]> {
     return [...(this.events.get(projectId) ?? [])].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   }

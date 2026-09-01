@@ -14,6 +14,8 @@ import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { detectIssues } from "../detection/detect.js";
+import type { EventRetentionConfig } from "../retention/config.js";
+import { runEventRetention } from "../retention/events.js";
 import type { TraceStore } from "../store/types.js";
 
 const rawTraceEventSchema = z.object({
@@ -45,7 +47,14 @@ const rawEventBatchSchema = z.object({
   events: z.array(rawTraceEventSchema).min(1).max(100),
 });
 
-export async function registerIngestionRoutes(app: FastifyInstance, options: { store: TraceStore }) {
+export async function registerIngestionRoutes(
+  app: FastifyInstance,
+  options: {
+    store: TraceStore;
+    eventRetentionConfig?: EventRetentionConfig | undefined;
+    now?: (() => Date) | undefined;
+  },
+) {
   app.post("/v1/events/batch", async (request, reply) => {
     const rawBatch = rawEventBatchSchema.parse(request.body);
     const project = await options.store.getProject(rawBatch.projectId);
@@ -71,9 +80,14 @@ export async function registerIngestionRoutes(app: FastifyInstance, options: { s
     const issues = detectIssues({
       projectId: sanitizedBatch.projectId,
       events: projectEvents,
-      now: new Date().toISOString(),
+      now: (options.now?.() ?? new Date()).toISOString(),
     });
     await options.store.upsertIssues(sanitizedBatch.projectId, issues);
+    await runEventRetention(
+      options.store,
+      options.eventRetentionConfig ?? {},
+      options.now?.() ?? new Date(),
+    );
 
     return reply.code(202).send({ accepted: sanitizedBatch.events.length });
   });

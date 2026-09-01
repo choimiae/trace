@@ -237,4 +237,76 @@ describe("ingestion routes", () => {
       relatedUrlPath: "/settings",
     });
   });
+
+  it("prunes old events after storing detected issues when event retention is configured", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({
+      store,
+      eventRetentionConfig: { eventRetentionDays: 1 },
+      now: () => new Date("2026-09-01T00:00:00.000Z"),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-01T00:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_old_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-30T23:59:57.000Z",
+            type: "click",
+            urlPath: "/settings",
+            elementSelectorHash: "abc123",
+            metadata: {},
+          },
+          {
+            eventId: "evt_old_2",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-30T23:59:58.000Z",
+            type: "click",
+            urlPath: "/settings",
+            elementSelectorHash: "abc123",
+            metadata: {},
+          },
+          {
+            eventId: "evt_old_3",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-30T23:59:59.000Z",
+            type: "click",
+            urlPath: "/settings",
+            elementSelectorHash: "abc123",
+            metadata: {},
+          },
+          {
+            eventId: "evt_new",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-08-31T00:00:00.000Z",
+            type: "page_view",
+            urlPath: "/settings",
+            metadata: {},
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect((await store.listEvents(project.projectId)).map((event) => event.eventId)).toEqual(["evt_new"]);
+    expect((await store.listIssues(project.projectId)).map((issue) => issue.issueType)).toContain("rage_click");
+  });
 });

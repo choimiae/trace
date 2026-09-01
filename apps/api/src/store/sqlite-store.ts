@@ -477,6 +477,11 @@ export class SqliteStore implements TraceStore {
     insertAll(batch.events);
   }
 
+  async deleteEventsBefore(cutoff: string): Promise<number> {
+    const result = this.db.prepare(`DELETE FROM events WHERE timestamp < ?`).run(cutoff);
+    return result.changes;
+  }
+
   async listEvents(projectId: string): Promise<TraceEvent[]> {
     const rows = this.db
       .prepare(`SELECT * FROM events WHERE project_id = ? ORDER BY timestamp`)

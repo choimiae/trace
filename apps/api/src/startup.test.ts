@@ -42,6 +42,15 @@ describe("server startup", () => {
     })).toThrow("ADMIN_OAUTH_CONFIG_REQUIRED");
   });
 
+  it("returns event retention config from startup env", () => {
+    const startup = prepareServerStartup({
+      store: durableMemoryStore(),
+      env: { ...completeProductionEnv, EVENT_RETENTION_DAYS: "30" },
+    });
+
+    expect(startup.eventRetentionConfig).toEqual({ eventRetentionDays: 30 });
+  });
+
   it("runs the durable store guard even when Admin OAuth configuration is missing", () => {
     expect(() => prepareServerStartup({ store: new MemoryStore(), env: { NODE_ENV: "production" } }))
       .toThrow("DURABLE_TRACE_STORE_REQUIRED");

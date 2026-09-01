@@ -140,6 +140,7 @@ export interface TraceStore {
     cursor?: { createdAt: string; auditLogId: string };
   }): Promise<AuditLogRecord[]>;
   saveBatch(batch: EventBatch): Promise<void>;
+  deleteEventsBefore(cutoff: string): Promise<number>;
   listEvents(projectId: string): Promise<TraceEvent[]>;
   upsertIssues(projectId: string, issues: Issue[]): Promise<void>;
   listIssues(projectId: string): Promise<Issue[]>;
