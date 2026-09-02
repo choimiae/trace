@@ -88,6 +88,10 @@ export function IssueDashboardOverview({
     },
     { critical: 0, warning: 0, low: 0 },
   );
+  const heroTarget = representativeEvent?.screenContext?.target;
+  const clickEvidence = heroTarget
+    ? `${heroTarget.tagName}${heroTarget.textMaskedOrLimited ? ` · "${heroTarget.textMaskedOrLimited}"` : ""}`
+    : "-";
   const risingCount = issues.filter((issue) => issue.trend === "up").length;
   const maxTargetCount = Math.max(...summary.topTargets.map((target) => target.count), 1);
   const maxIssueTypeCount = Math.max(...summary.issueTypeDistribution.map((item) => item.count), 1);
@@ -95,34 +99,62 @@ export function IssueDashboardOverview({
   return (
     <>
       <section className="friction-hero" aria-labelledby="friction-hero-eyebrow">
-        {/* 읽는 순서: 1 문장 → 2 미리보기 → 3 운영 해석 → 4 근거 → 5 다음 액션 */}
-        <header className="friction-hero__intro">
+        {/* 읽는 순서: 1 문장 → 2 미리보기 → 3 근거 표 → 4 다음 액션 */}
+        <div className="friction-hero__intro">
           <p className="friction-hero__eyebrow" id="friction-hero-eyebrow">
             가장 먼저 볼 사용자 막힘
           </p>
-          <h2>{heroTitle}</h2>
-        </header>
-        <ScreenContextPreview
-          {...(representativeEvent?.screenContext ? { context: representativeEvent.screenContext } : {})}
-          {...(representativeEvent ? { event: representativeEvent } : {})}
-        />
+          <div className="friction-hero__headline">
+            <h2>{heroTitle}</h2>
+            <span className={`friction-hero__score friction-hero__score-${topIssueSeverity}`}>
+              <strong>{topIssue.severityScore}</strong>
+              <span>{SEVERITY_LABELS[topIssueSeverity]}</span>
+            </span>
+          </div>
+        </div>
+        <div className="friction-hero__screen">
+          <ScreenContextPreview
+            {...(representativeEvent?.screenContext ? { context: representativeEvent.screenContext } : {})}
+            {...(representativeEvent ? { event: representativeEvent } : {})}
+          />
+          {representativeEvent ? (
+            <p className="friction-hero__caption">
+              {formatKoreanDateTime(representativeEvent.timestamp)} · {topIssue.summary}
+            </p>
+          ) : null}
+        </div>
         <div className="friction-hero__analysis">
-          <dl>
+          <dl className="friction-hero__facts">
             <div>
-              <dt>운영 해석</dt>
-              <dd>{topIssue.summary}</dd>
+              <dt>화면</dt>
+              <dd>{topIssue.relatedUrlPath ?? "-"}</dd>
             </div>
             <div>
-              <dt>근거</dt>
+              <dt>클릭</dt>
+              <dd>{clickEvidence}</dd>
+            </div>
+            <div>
+              <dt>패턴</dt>
+              <dd>{ISSUE_TYPE_LABELS[topIssue.issueType]}</dd>
+            </div>
+            {topIssue.relatedErrorSignature ? (
+              <div>
+                <dt>오류</dt>
+                <dd>{topIssue.relatedErrorSignature}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>영향</dt>
               <dd>
-                세션 {topIssue.affectedSessionsCount}개, 사용자 {topIssue.affectedUsersCount}명 영향
+                {topIssue.affectedSessionsCount}세션 · 사용자 {topIssue.affectedUsersCount}명 · 최근{" "}
+                {formatKoreanDateTime(topIssue.lastSeenAt)}
               </dd>
             </div>
-            <div>
-              <dt>다음 액션</dt>
-              <dd>해당 화면의 클릭 후 반응, 성공 피드백, 오류 노출 상태를 우선 점검합니다.</dd>
-            </div>
           </dl>
+          <div className="friction-hero__action">
+            <dt>다음 액션</dt>
+            <dd>해당 화면의 클릭 후 반응, 성공 피드백, 오류 노출 상태를 우선 점검합니다.</dd>
+          </div>
         </div>
       </section>
       <Card as="section" className="dashboard-overview" aria-label="문제 한눈에 보기">

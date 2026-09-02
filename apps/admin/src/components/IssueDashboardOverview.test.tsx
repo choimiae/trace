@@ -244,4 +244,71 @@ describe("IssueDashboardOverview", () => {
       screen.getByRole("heading", { level: 2, name: "/reports 화면에서 오류 기반 막힘이 감지되었습니다" }),
     ).toBeInTheDocument();
   });
+
+  it("근거를 항목별 표로 보여주고 오류 서명을 포함한다", () => {
+    render(
+      <IssueDashboardOverview
+        summary={summary}
+        issues={[
+          issue({
+            issueId: "err",
+            issueType: "error_friction",
+            title: "/checkout 화면에서 오류 기반 막힘이 감지되었습니다",
+            severityScore: 90,
+            relatedUrlPath: "/checkout",
+            affectedSessionsCount: 58,
+            affectedUsersCount: 41,
+            lastSeenAt: "2026-09-02T01:00:00.000Z",
+            relatedErrorSignature: "TypeError · /assets/checkout.js:412",
+            representativeEvent: {
+              eventId: "evt_1",
+              sessionId: "sess_1",
+              pageId: "page_1",
+              timestamp: "2026-09-02T01:00:00.000Z",
+              type: "click",
+              urlPath: "/checkout",
+              metadata: {},
+              screenContext: {
+                viewport: { width: 1440, height: 900 },
+                target: {
+                  tagName: "button",
+                  role: "button",
+                  textMaskedOrLimited: "결제하기",
+                  rect: { x: 620, y: 420, width: 96, height: 40 },
+                },
+                layoutHints: [],
+              },
+            },
+          }),
+        ]}
+      />,
+    );
+    const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
+    const factsTable = hero.querySelector(".friction-hero__facts") as HTMLElement;
+
+    expect(within(hero).getByText("화면")).toBeInTheDocument();
+    expect(within(factsTable).getByText("/checkout")).toBeInTheDocument();
+    expect(within(hero).getByText("클릭")).toBeInTheDocument();
+    expect(within(hero).getByText(/button/)).toBeInTheDocument();
+    expect(within(hero).getByText("패턴")).toBeInTheDocument();
+    expect(within(hero).getByText("오류 마찰")).toBeInTheDocument();
+    expect(within(hero).getByText("오류")).toBeInTheDocument();
+    expect(within(hero).getByText("TypeError · /assets/checkout.js:412")).toBeInTheDocument();
+    expect(within(hero).getByText("영향")).toBeInTheDocument();
+    // hero 안 점수 필
+    expect(within(hero).getByText("90")).toBeInTheDocument();
+  });
+
+  it("오류 서명이 없으면 오류 행을 숨긴다", () => {
+    render(
+      <IssueDashboardOverview
+        summary={summary}
+        issues={[issue({ issueId: "plain", issueType: "rage_click", severityScore: 70 })]}
+      />,
+    );
+    const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
+
+    expect(within(hero).queryByText("오류")).not.toBeInTheDocument();
+    expect(within(hero).getByText("패턴")).toBeInTheDocument();
+  });
 });

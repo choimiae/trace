@@ -210,6 +210,7 @@ describe("DashboardPage", () => {
 
     const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
     expect(within(hero).getByLabelText("클릭 위치")).toBeInTheDocument();
+    expect(within(hero).getByText("패턴")).toBeInTheDocument();
 
     const heroHeading = screen.getByText("설정 화면에서 반복 클릭이 감지되었습니다");
     expect(heroHeading).toBeInTheDocument();
