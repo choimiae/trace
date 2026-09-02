@@ -401,6 +401,12 @@ const CONTENTEDITABLE_SELECTOR = '[contenteditable=""], [contenteditable="true"]
 // <option>김철수</option></select></a> 처럼 사용자 데이터가 실린다.
 const TEXT_ENTRY_SUBTREE_SELECTOR = `textarea, select, ${CONTENTEDITABLE_SELECTOR}`;
 
+// 자신과 자손을 모두 본다. querySelector 는 자신을 매칭하지 않으므로, 이걸
+// 자손만으로 두면 <select> 를 직접 클릭했을 때 option 라벨이 타겟 경로로 새어나간다.
+function containsTextEntrySubtree(element: Element): boolean {
+  return element.matches(TEXT_ENTRY_SUBTREE_SELECTOR) || element.querySelector(TEXT_ENTRY_SUBTREE_SELECTOR) !== null;
+}
+
 function isTextEntryElement(element: Element): boolean {
   if (element.tagName.toLowerCase() === "textarea") return true;
   if (element instanceof HTMLElement && element.isContentEditable) return true;
@@ -566,9 +572,15 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   // 요소는 all 에 없어서 indexOf 가 -1 이고, anchor 를 0 으로 떨어뜨리면 창이
   // 문서 앞쪽으로 붕괴해 페이지 크롬이 12칸을 다 먹는다. 가장 가까운 후보를
   // 기준으로 삼는다. 타겟 자체는 바꾸지 않는다 — 클릭 마커는 실제 클릭 요소를 쓴다.
-  const anchorElement = target.closest(NEIGHBOR_SELECTOR) ?? target;
-  const targetIndex = all.indexOf(anchorElement);
-  const anchor = targetIndex === -1 ? 0 : targetIndex;
+  // 신원(indexOf)이 아니라 문서 위치로 기준점을 잡는다. closest 로 상호작용 조상을
+  // 찾아도 그 조상이 nearestContainer 밖에 있으면 all 에 없어서 다시 -1 이 되고,
+  // 상호작용 조상이 아예 없는 클릭(맨 div)도 -1 이다. 두 경우 모두 anchor 가 0 으로
+  // 붕괴해 창이 문서 앞쪽으로 쏠린다. 타겟 뒤에 오는 첫 후보의 위치를 삽입점으로
+  // 쓰면 타겟이 all 에 있든 없든 항상 타겟 주변이 잡힌다.
+  let anchor = all.findIndex(
+    (candidate) => (target.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+  );
+  if (anchor === -1) anchor = all.length;
   const half = Math.floor(MAX_HINT_CANDIDATES / 2);
   const windowed = all.slice(Math.max(0, anchor - half), anchor + half);
   // 거리 계산도 rect 를 읽으므로 여기서 가드해야 한다. push 의 try/catch 는 이
