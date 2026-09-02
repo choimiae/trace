@@ -1,7 +1,11 @@
 import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
 import { buildDashboardSummary } from "./dashboard-summary.js";
-import { normalizeAllowedDomains } from "./types.js";
+import {
+  normalizeAllowedDomains,
+  pickRepresentativeScreenContextEvent,
+  SCREEN_CONTEXT_CANDIDATE_LIMIT,
+} from "./types.js";
 import type {
   AddProjectMembershipInput,
   AdminRole,
@@ -322,16 +326,19 @@ export class MemoryStore implements TraceStore {
     const matched: TraceEvent[] = [];
 
     for (const sessionId of query.sessionIds) {
-      const match = events.find(
-        (event) =>
-          event.sessionId === sessionId &&
-          event.screenContext !== undefined &&
-          (query.urlPath === undefined || event.urlPath === query.urlPath) &&
-          event.timestamp >= query.from &&
-          event.timestamp <= query.to &&
-          (query.types === undefined || query.types.length === 0 || query.types.includes(event.type)),
-      );
-      if (match) matched.push(match);
+      const candidates = events
+        .filter(
+          (event) =>
+            event.sessionId === sessionId &&
+            event.screenContext !== undefined &&
+            (query.urlPath === undefined || event.urlPath === query.urlPath) &&
+            event.timestamp >= query.from &&
+            event.timestamp <= query.to &&
+            (query.types === undefined || query.types.length === 0 || query.types.includes(event.type)),
+        )
+        .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+      const picked = pickRepresentativeScreenContextEvent(candidates);
+      if (picked) matched.push(picked);
     }
 
     return matched;

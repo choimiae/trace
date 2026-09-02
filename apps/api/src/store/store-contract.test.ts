@@ -1287,6 +1287,61 @@ function describeTraceStoreContract(
       ).resolves.toEqual([]);
     });
 
+    it("클릭 지점이 있는 이벤트를 먼저 고르고, 없을 때만 프레임뿐인 이벤트를 쓴다", async () => {
+      // 뷰포트보다 큰 대상(body·전체 래퍼 등 전형적인 dead click 대상)은 SDK 가
+      // target 을 버리고 화면 프레임만 남긴다. 그런 이벤트가 시간상 앞선다는 이유로
+      // 뽑히면 대시보드 대표 화면에 클릭 지점이 없는 빈 프레임이 뜬다.
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const frameOnly = { viewport: { width: 1440, height: 900 }, layoutHints: [] };
+      const withTarget = {
+        viewport: { width: 1440, height: 900 },
+        target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
+        layoutHints: [],
+      };
+      const event = (eventId: string, sessionId: string, timestamp: string, screenContext: unknown) => ({
+        eventId,
+        sessionId,
+        pageId: "page_1",
+        timestamp,
+        type: "click" as const,
+        urlPath: "/settings",
+        metadata: {},
+        screenContext,
+      });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T03:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          // sess_1: 프레임뿐인 이벤트가 더 이르다 -> 뒤의 target 있는 쪽을 골라야 한다.
+          event("evt_frame_only", "sess_1", "2026-09-02T02:00:01.000Z", frameOnly),
+          event("evt_has_target", "sess_1", "2026-09-02T02:00:02.000Z", withTarget),
+          // sess_2: 프레임뿐인 이벤트만 있다 -> 그거라도 돌려줘야 한다.
+          event("evt_only_frame", "sess_2", "2026-09-02T02:00:03.000Z", frameOnly),
+        ],
+      } as Parameters<typeof store.saveBatch>[0]);
+
+      const matched = await store.findScreenContextEvents({
+        projectId: project.projectId,
+        sessionIds: ["sess_1", "sess_2"],
+        urlPath: "/settings",
+        from: "2026-09-02T02:00:00.000Z",
+        to: "2026-09-02T02:00:10.000Z",
+      });
+
+      expect(matched.map((matchedEvent) => matchedEvent.eventId)).toEqual(["evt_has_target", "evt_only_frame"]);
+      expect(matched[0]?.screenContext?.target?.tagName).toBe("button");
+      expect(matched[1]?.screenContext?.target).toBeUndefined();
+    });
+
     it("cutoff 이전 이벤트만 삭제한다", async () => {
       const store = open();
       const project = await store.createProject({

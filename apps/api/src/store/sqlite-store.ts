@@ -4,7 +4,11 @@ import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
 import { buildDashboardSummary } from "./dashboard-summary.js";
-import { normalizeAllowedDomains } from "./types.js";
+import {
+  normalizeAllowedDomains,
+  pickRepresentativeScreenContextEvent,
+  SCREEN_CONTEXT_CANDIDATE_LIMIT,
+} from "./types.js";
 import type {
   AddProjectMembershipInput,
   AdminRole,
@@ -567,29 +571,32 @@ export class SqliteStore implements TraceStore {
       query.types === undefined || query.types.length === 0
         ? ""
         : ` AND type IN (${query.types.map(() => "?").join(", ")})`;
-    // (project_id, session_id, timestamp) 인덱스로 세션마다 한 행만 읽는다.
+    // (project_id, session_id, timestamp) 인덱스로 세션마다 후보 몇 건만 읽는다.
+    // 한 행만 읽으면 클릭 지점 없는 프레임뿐인 이벤트나 파싱 불가한 행이 그 자리를
+    // 차지해 버리므로, 후보 상한까지 읽고 pickRepresentative... 로 고른다.
     const statement = this.db.prepare(
       `SELECT * FROM events
        WHERE project_id = ? AND session_id = ? AND screen_context IS NOT NULL${pathFilter}
          AND timestamp BETWEEN ? AND ?${typeFilter}
        ORDER BY timestamp
-       LIMIT 1`,
+       LIMIT ${SCREEN_CONTEXT_CANDIDATE_LIMIT}`,
     );
     const matched: TraceEvent[] = [];
 
     for (const sessionId of query.sessionIds) {
-      const row = statement.get(
+      const rows = statement.all(
         query.projectId,
         sessionId,
         ...(query.urlPath === undefined ? [] : [query.urlPath]),
         query.from,
         query.to,
         ...(query.types ?? []),
-      ) as Row | undefined;
-      if (!row) continue;
-
-      const event = this.toEvent(row);
-      if (event.screenContext !== undefined) matched.push(event);
+      ) as Row[];
+      const candidates = rows
+        .map((row) => this.toEvent(row))
+        .filter((event) => event.screenContext !== undefined);
+      const picked = pickRepresentativeScreenContextEvent(candidates);
+      if (picked) matched.push(picked);
     }
 
     return matched;
