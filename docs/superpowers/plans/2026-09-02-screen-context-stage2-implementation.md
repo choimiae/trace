@@ -562,9 +562,17 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   const anchor = targetIndex === -1 ? 0 : targetIndex;
   const half = Math.floor(MAX_HINT_CANDIDATES / 2);
   const windowed = all.slice(Math.max(0, anchor - half), anchor + half);
-  const neighbors = windowed
-    .map((element) => ({ element, distance: rectCenterDistance(rectFromDomRect(element.getBoundingClientRect()), targetRect) }))
-    .sort((left, right) => left.distance - right.distance);
+  // 거리 계산도 rect 를 읽으므로 여기서 가드해야 한다. push 의 try/catch 는 이
+  // .map() 뒤에 실행되므로, 던지는 이웃이 하나 있으면 정렬 단계에서 먼저 터진다.
+  const ranked: Array<{ element: Element; distance: number }> = [];
+  for (const element of windowed) {
+    try {
+      ranked.push({ element, distance: rectCenterDistance(rectFromDomRect(element.getBoundingClientRect()), targetRect) });
+    } catch {
+      // 이 후보만 버린다.
+    }
+  }
+  const neighbors = ranked.sort((left, right) => left.distance - right.distance);
 
   // 랜드마크가 없으면 이웃이 유일한 신호다. 4+8 은 랜드마크 몫을 예약하는 뜻이지
   // 전체 상한을 8로 낮추라는 뜻이 아니므로, 이웃은 12칸까지 채운다.
