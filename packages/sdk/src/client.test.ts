@@ -59,6 +59,48 @@ describe("TraceClient", () => {
     expect(payload.events[0].urlPath).toBe("/users/:id/settings");
   });
 
+  it("sends screen context for click collector events", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://collector.example.com/ingest",
+      fetcher,
+      consent: "granted",
+    });
+
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `<button id="save">저장</button>`;
+    const button = document.querySelector("#save") as HTMLButtonElement;
+    button.getBoundingClientRect = vi.fn(() => ({
+      x: 620,
+      y: 420,
+      width: 96,
+      height: 40,
+      top: 420,
+      left: 620,
+      right: 716,
+      bottom: 460,
+      toJSON: () => ({}),
+    }));
+
+    installCollectors(client);
+    button.click();
+    await client.flush();
+
+    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body)) as { events: Array<{ type: string; screenContext?: unknown }> };
+    expect(payload.events.find((event) => event.type === "click")?.screenContext).toMatchObject({
+      viewport: { width: 1440, height: 900 },
+      target: {
+        tagName: "button",
+        role: "button",
+        textMaskedOrLimited: "저장",
+        rect: { x: 620, y: 420, width: 96, height: 40 },
+      },
+    });
+  });
+
   it("does not expose network failures and retries queued events", async () => {
     const fetcher = vi.fn().mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({ ok: true });
     const client = new TraceClient({

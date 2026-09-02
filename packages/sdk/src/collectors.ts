@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { redactUrl } from "@trace/shared/privacy";
 import type { TraceClient } from "./client.js";
-import { getElementMetadata } from "./dom.js";
+import { getElementMetadata, getScreenContext } from "./dom.js";
 import { installTransport } from "./transport.js";
 
 export function installCollectors(client: TraceClient) {
@@ -20,12 +20,14 @@ export function installCollectors(client: TraceClient) {
     if (!(event.target instanceof Element)) return;
 
     const metadata = getElementMetadata(event.target);
+    const screenContext = getScreenContext(event.target);
     client.enqueue(
       client.createEvent({
         eventId: `evt_${nanoid(10)}`,
         type: "click",
         urlPath: currentPath(),
         ...metadata,
+        ...(screenContext ? { screenContext } : {}),
         x: event.clientX,
         y: event.clientY,
         viewportX: window.innerWidth,
