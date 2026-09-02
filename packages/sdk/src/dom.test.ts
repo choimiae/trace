@@ -58,7 +58,6 @@ describe("getScreenContext", () => {
     const context = getScreenContext(button);
 
     expect(context).toEqual({
-      titleMasked: "설정",
       viewport: { width: 1440, height: 900 },
       target: {
         tagName: "button",
@@ -165,8 +164,7 @@ describe("getScreenContext 소비자 계약", () => {
     expect(expectValidScreenContext(element).target?.role).toBe("button");
   });
 
-  it("뷰포트보다 큰 대상은 화면 이름만 남기고 대상 정보를 버린다", () => {
-    document.title = "월간 리포트";
+  it("뷰포트보다 큰 대상은 화면 프레임만 남기고 대상 정보를 버린다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
     document.body.innerHTML = `<div id="wrapper">리포트</div>`;
@@ -175,14 +173,14 @@ describe("getScreenContext 소비자 계약", () => {
 
     const context = expectValidScreenContext(element);
 
-    expect(context.titleMasked).toBe("월간 리포트");
+    expect(context.viewport).toEqual({ width: 1440, height: 900 });
     expect(context.target).toBeUndefined();
   });
 
-  it("숫자 뒤에 글자가 붙은 120자 초과 제목도 이미 마스킹된 값으로 만든다", () => {
-    // redactText 는 자체 slice(0, 120) 때문에 멱등이 아니다. 1회 마스킹한 값은
-    // 잘린 끝에서 새 단어 경계가 생겨 screenContextSchema 검증에 걸린다.
-    document.title = `${"가".repeat(107)}1234567890123abc`;
+  it("페이지 제목은 수집하지 않는다", () => {
+    // 업무 화면의 title 은 레코드 주체(이름)를 담는 일이 많고 redactText 는
+    // 이메일·전화·9자리+ 숫자만 지운다. 미리보기는 urlPath 폴백을 쓴다.
+    document.title = "김철수 - 고객 상세";
     window.innerWidth = 1440;
     window.innerHeight = 900;
     document.body.innerHTML = `<button>저장</button>`;
@@ -191,7 +189,22 @@ describe("getScreenContext 소비자 계약", () => {
 
     const context = expectValidScreenContext(element);
 
-    expect(context.titleMasked).toBe(`${"가".repeat(107)}[redacted]`);
+    expect(context).not.toHaveProperty("titleMasked");
+    expect(JSON.stringify(context)).not.toContain("김철수");
     document.title = "설정";
+  });
+
+  it("숫자 뒤에 글자가 붙은 120자 초과 대상 텍스트도 이미 마스킹된 값으로 만든다", () => {
+    // redactText 는 자체 slice(0, 120) 때문에 멱등이 아니다. 1회 마스킹한 값은
+    // 잘린 끝에서 새 단어 경계가 생겨 screenContextSchema 검증에 걸린다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `<button>${"가".repeat(107)}1234567890123abc</button>`;
+    const element = document.querySelector("button")!;
+    stubRect(element, { x: 10, y: 20, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(element);
+
+    expect(context.target?.textMaskedOrLimited).toBe(`${"가".repeat(107)}[redacted]`);
   });
 });

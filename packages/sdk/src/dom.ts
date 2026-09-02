@@ -118,9 +118,11 @@ function buildScreenTarget(element: Element, viewport: ScreenViewport): ScreenTa
   };
 }
 
+// 페이지 제목은 수집하지 않는다. 업무 화면의 title 은 "김철수 - 고객 상세" 처럼
+// 레코드 주체를 담는 일이 많고, redactText 는 이메일·전화·9자리+ 숫자만 지우므로
+// 이름·주소를 걸러내지 못한다. 미리보기는 urlPath 폴백으로 화면을 표시한다.
 export function getScreenContext(element: Element): ScreenContext | undefined {
   try {
-    const title = redactScreenText(document.title.trim());
     const viewport: ScreenViewport = {
       width: clampViewportValue(window.innerWidth || document.documentElement.clientWidth || 1),
       height: clampViewportValue(window.innerHeight || document.documentElement.clientHeight || 1),
@@ -128,7 +130,6 @@ export function getScreenContext(element: Element): ScreenContext | undefined {
     const target = buildScreenTarget(element, viewport);
 
     return {
-      ...(title.length > 0 ? { titleMasked: title } : {}),
       viewport,
       ...(target ? { target } : {}),
       layoutHints: [],
