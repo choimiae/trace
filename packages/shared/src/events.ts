@@ -152,7 +152,7 @@ const errorSourceSchema = z
   .string()
   .trim()
   .max(256)
-  .regex(/^\/[^\s?#]*$/);
+  .regex(/^\/(?!\/)[^\s?#]*$/);
 
 export const screenRectSchema = z.object({
   x: z.number().finite().min(0).max(10000),

@@ -550,6 +550,15 @@ describe("오류 식별자 계약", () => {
     expect(parsed.errorLine).toBe(412);
   });
 
+  it("내부에 슬래시가 있는 정상 경로를 허용한다", () => {
+    const parsed = traceEventSchema.parse({
+      ...baseEvent,
+      errorSource: "/assets/vendor/checkout.js",
+    });
+
+    expect(parsed.errorSource).toBe("/assets/vendor/checkout.js");
+  });
+
   it("오류 필드가 없어도 통과한다", () => {
     const parsed = traceEventSchema.parse(baseEvent);
 
@@ -570,6 +579,8 @@ describe("오류 식별자 계약", () => {
   it("경로가 아닌 스크립트 값과 쿼리가 붙은 값을 거절한다", () => {
     expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "https://app.example.com/a.js" }).success).toBe(false);
     expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "/a.js?token=abc" }).success).toBe(false);
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "//host/a.js" }).success).toBe(false);
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "/a.js#frag" }).success).toBe(false);
   });
 
   it("0 이하 또는 소수 라인을 거절한다", () => {
