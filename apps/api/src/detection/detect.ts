@@ -44,8 +44,8 @@ function detectDeadClicks(projectId: string, events: TraceEvent[], now: string):
         relatedUrlPath: event.urlPath,
         selectorHash: event.elementSelectorHash,
         sessionIds: [event.sessionId],
+        timeRange: eventTimeRange([event]),
         severityScore: scoreIssue({ base: 38, affectedSessions: 1 }),
-        now,
       }),
     );
 }
@@ -78,8 +78,8 @@ function detectRageClicks(projectId: string, events: TraceEvent[], now: string):
           relatedUrlPath: current.urlPath,
           selectorHash: current.elementSelectorHash,
           sessionIds,
+          timeRange: eventTimeRange(cluster),
           severityScore: scoreIssue({ base: 44, affectedSessions: sessionIds.length, repeatedClicks: cluster.length }),
-          now,
         }),
       );
     }
@@ -100,8 +100,8 @@ function detectLongPauses(projectId: string, events: TraceEvent[], now: string):
         relatedUrlPath: event.urlPath,
         selectorHash: event.elementSelectorHash,
         sessionIds: [event.sessionId],
+        timeRange: eventTimeRange([event]),
         severityScore: scoreIssue({ base: 35, affectedSessions: 1 }),
-        now,
       }),
     );
 }
@@ -118,8 +118,8 @@ function detectErrorFriction(projectId: string, events: TraceEvent[], now: strin
         relatedUrlPath: event.urlPath,
         selectorHash: event.elementSelectorHash,
         sessionIds: [event.sessionId],
+        timeRange: eventTimeRange([event]),
         severityScore: scoreIssue({ base: 45, affectedSessions: 1, hasError: true }),
-        now,
       }),
     );
 }
@@ -132,8 +132,8 @@ function makeIssue(input: {
   relatedUrlPath: string;
   selectorHash?: string | undefined;
   sessionIds: string[];
+  timeRange: { firstSeenAt: string; lastSeenAt: string };
   severityScore: number;
-  now: string;
 }): Issue {
   return {
     issueId: `issue_${issueTargetKey({
@@ -148,8 +148,8 @@ function makeIssue(input: {
     affectedSessionsCount: input.sessionIds.length,
     affectedUsersCount: input.sessionIds.length,
     severityScore: input.severityScore,
-    firstSeenAt: input.now,
-    lastSeenAt: input.now,
+    firstSeenAt: input.timeRange.firstSeenAt,
+    lastSeenAt: input.timeRange.lastSeenAt,
     trend: "flat",
     relatedUrlPath: input.relatedUrlPath,
     exampleSessionIds: input.sessionIds.slice(0, 3),
@@ -158,9 +158,52 @@ function makeIssue(input: {
 }
 
 function dedupeIssues(issues: Issue[]): Issue[] {
-  return [...new Map(issues.map((issue) => [issue.issueId, issue])).values()];
+  const merged = new Map<string, Issue>();
+
+  for (const issue of issues) {
+    const existing = merged.get(issue.issueId);
+    if (!existing) {
+      merged.set(issue.issueId, issue);
+      continue;
+    }
+
+    const exampleSessionIds = unique([...existing.exampleSessionIds, ...issue.exampleSessionIds]).slice(0, 3);
+    const affectedSessionsCount = Math.max(
+      existing.affectedSessionsCount,
+      issue.affectedSessionsCount,
+      exampleSessionIds.length,
+    );
+
+    merged.set(issue.issueId, {
+      ...existing,
+      affectedSessionsCount,
+      affectedUsersCount: Math.max(existing.affectedUsersCount, issue.affectedUsersCount, affectedSessionsCount),
+      severityScore: Math.max(existing.severityScore, issue.severityScore),
+      firstSeenAt: minTimestamp(existing.firstSeenAt, issue.firstSeenAt),
+      lastSeenAt: maxTimestamp(existing.lastSeenAt, issue.lastSeenAt),
+      exampleSessionIds,
+    });
+  }
+
+  return [...merged.values()];
 }
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function eventTimeRange(events: TraceEvent[]): { firstSeenAt: string; lastSeenAt: string } {
+  const timestamps = events.map((event) => event.timestamp);
+  return {
+    firstSeenAt: timestamps.reduce(minTimestamp),
+    lastSeenAt: timestamps.reduce(maxTimestamp),
+  };
+}
+
+function minTimestamp(left: string, right: string): string {
+  return left <= right ? left : right;
+}
+
+function maxTimestamp(left: string, right: string): string {
+  return left >= right ? left : right;
 }

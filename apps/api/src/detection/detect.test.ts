@@ -36,6 +36,27 @@ describe("detectIssues", () => {
     });
   });
 
+  it("sets issue first and last seen times from matching event occurrences", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-08-24T12:00:00.000Z",
+      events: [
+        click({ eventId: "evt_1", timestamp: "2026-08-24T00:00:00.000Z" }),
+        click({ eventId: "evt_2", timestamp: "2026-08-24T00:00:01.000Z" }),
+        click({ eventId: "evt_3", timestamp: "2026-08-24T00:00:02.000Z" }),
+        click({ eventId: "evt_4", timestamp: "2026-08-24T01:00:00.000Z" }),
+        click({ eventId: "evt_5", timestamp: "2026-08-24T01:00:01.000Z" }),
+        click({ eventId: "evt_6", timestamp: "2026-08-24T01:00:02.000Z" }),
+      ],
+    });
+
+    expect(issues[0]).toMatchObject({
+      issueType: "rage_click",
+      firstSeenAt: "2026-08-24T00:00:00.000Z",
+      lastSeenAt: "2026-08-24T01:00:02.000Z",
+    });
+  });
+
   it("detects dead clicks when a click is followed by no response event", () => {
     const issues = detectIssues({
       projectId: "proj_1",

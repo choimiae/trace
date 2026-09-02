@@ -26,14 +26,14 @@ describe("GET /trace.js", () => {
     await app.close();
   });
 
-  it("캐시 수명을 짧게 설정한다", async () => {
+  it("SDK 번들이 바뀌면 브라우저가 즉시 다시 받도록 캐시를 막는다", async () => {
     const bundlePath = await createBundleFile("window.trace={};");
     const app = Fastify({ logger: false });
     await app.register(registerSdkBundleRoutes, { bundlePath });
 
     const response = await app.inject({ method: "GET", url: "/trace.js" });
 
-    expect(response.headers["cache-control"]).toBe("public, max-age=300");
+    expect(response.headers["cache-control"]).toBe("no-store");
     await app.close();
   });
 

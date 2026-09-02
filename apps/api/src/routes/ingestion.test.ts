@@ -194,7 +194,7 @@ describe("ingestion routes", () => {
         sessionId: "sess_1",
         sentAt: "2026-08-24T00:00:04.000Z",
         sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
+        url: "https://demo.example.com/#/settings",
         events: [
           {
             eventId: "evt_1",
@@ -202,7 +202,6 @@ describe("ingestion routes", () => {
             pageId: "page_1",
             timestamp: "2026-08-24T00:00:00.000Z",
             type: "click",
-            urlPath: "/settings",
             elementSelectorHash: "abc123",
             metadata: {},
           },
@@ -212,7 +211,6 @@ describe("ingestion routes", () => {
             pageId: "page_1",
             timestamp: "2026-08-24T00:00:01.000Z",
             type: "click",
-            urlPath: "/settings",
             elementSelectorHash: "abc123",
             metadata: {},
           },
@@ -222,7 +220,6 @@ describe("ingestion routes", () => {
             pageId: "page_1",
             timestamp: "2026-08-24T00:00:02.000Z",
             type: "click",
-            urlPath: "/settings",
             elementSelectorHash: "abc123",
             metadata: {},
           },

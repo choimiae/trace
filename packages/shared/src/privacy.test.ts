@@ -19,6 +19,15 @@ describe("privacy redaction", () => {
     });
   });
 
+  it("uses hash-router paths when the browser pathname is only root", () => {
+    expect(redactUrl("https://app.example.com/#/users/123/settings?email=choi@example.com&tab=invite")).toEqual({
+      origin: "https://app.example.com",
+      urlPath: "/users/:id/settings",
+      urlQueryRedacted: "?redacted_param_1=[redacted]&tab=[redacted]",
+      urlQueryKeys: ["redacted_param_1", "tab"],
+    });
+  });
+
   it("redacts identity-like and token-like URL path segments", () => {
     expect(
       redactUrl(

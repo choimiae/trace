@@ -24,7 +24,7 @@ export async function registerSdkBundleRoutes(
 
     return reply
       .header("content-type", "application/javascript; charset=utf-8")
-      .header("cache-control", "public, max-age=300")
+      .header("cache-control", "no-store")
       .send(contents);
   });
 }

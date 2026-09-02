@@ -74,10 +74,41 @@ export function redactText(value: string): string {
 
 export function redactUrl(rawUrl: string): RedactedUrl {
   const url = new URL(rawUrl);
+  const route = routeParts(url);
+  const queryRedaction = redactQuery(new URLSearchParams(route.search));
+
+  return {
+    origin: url.origin,
+    urlPath: normalizePath(route.pathname),
+    urlQueryRedacted: queryRedaction.urlQueryRedacted,
+    urlQueryKeys: queryRedaction.urlQueryKeys,
+  };
+}
+
+function routeParts(url: URL): { pathname: string; search: string } {
+  const hashRoute = parseHashRoute(url);
+  if (hashRoute) return hashRoute;
+  return { pathname: url.pathname, search: url.search };
+}
+
+function parseHashRoute(url: URL): { pathname: string; search: string } | undefined {
+  if (!url.hash.startsWith("#/") && !url.hash.startsWith("#!/")) return undefined;
+
+  const hashPath = url.hash.startsWith("#!/") ? url.hash.slice(2) : url.hash.slice(1);
+
+  try {
+    const routeUrl = new URL(hashPath, url.origin);
+    return { pathname: routeUrl.pathname, search: routeUrl.search };
+  } catch {
+    return undefined;
+  }
+}
+
+function redactQuery(queryParams: URLSearchParams): Pick<RedactedUrl, "urlQueryRedacted" | "urlQueryKeys"> {
   const urlQueryKeys: string[] = [];
   let unsafeKeyCount = 0;
 
-  for (const queryKey of url.searchParams.keys()) {
+  for (const queryKey of queryParams.keys()) {
     if (isSafeQueryKey(queryKey)) {
       urlQueryKeys.push(queryKey);
     } else {
@@ -87,8 +118,6 @@ export function redactUrl(rawUrl: string): RedactedUrl {
   }
 
   return {
-    origin: url.origin,
-    urlPath: normalizePath(url.pathname),
     urlQueryRedacted:
       urlQueryKeys.length === 0
         ? ""
