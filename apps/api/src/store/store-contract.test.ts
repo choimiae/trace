@@ -1143,6 +1143,53 @@ function describeTraceStoreContract(
       expect(await store.getSessionTimeline(project.projectId, "sess_1")).toHaveLength(1);
     });
 
+    it("오류 식별자를 타임라인에서 보존한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:01.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/checkout",
+        events: [
+          {
+            eventId: "evt_err",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "js_error",
+            urlPath: "/checkout",
+            errorName: "TypeError",
+            errorSource: "/assets/checkout.js",
+            errorLine: 412,
+            metadata: {},
+          },
+          {
+            eventId: "evt_plain",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.500Z",
+            type: "click",
+            urlPath: "/checkout",
+            metadata: {},
+          },
+        ],
+      });
+
+      const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+
+      expect(timeline[0]?.errorName).toBe("TypeError");
+      expect(timeline[0]?.errorSource).toBe("/assets/checkout.js");
+      expect(timeline[0]?.errorLine).toBe(412);
+      expect(timeline[1]).not.toHaveProperty("errorName");
+    });
+
     it("preserves screen context in session timeline events", async () => {
       const store = open();
       const project = await store.createProject({

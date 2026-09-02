@@ -24,6 +24,9 @@ const MAX_VIEWPORT = 10000;
 const MAX_LAYOUT_HINTS = 12;
 const MAX_SCREEN_TEXT = 120;
 const SAFE_TAG_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+const SAFE_ERROR_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const SAFE_ERROR_SOURCE_PATTERN = /^\/[^\s?#]*$/;
+const MAX_ERROR_SOURCE = 256;
 
 // 힌트의 masked 는 SDK 가 매긴 값이라 신뢰하지 않는다. 구식 SDK 는 input/select 에도
 // masked:false 를 실어 보낼 수 있으므로, 서버가 태그·role 로 직접 재판정한다.
@@ -78,6 +81,9 @@ const rawTraceEventSchema = z.object({
   viewportX: z.unknown().optional(),
   viewportY: z.unknown().optional(),
   metadata: z.record(z.unknown()).default({}),
+  errorName: z.unknown().optional(),
+  errorSource: z.unknown().optional(),
+  errorLine: z.unknown().optional(),
   screenContext: z.unknown().optional(),
 });
 
@@ -151,6 +157,9 @@ function sanitizeEvent(
   const screenContext = sanitizeScreenContext(event.screenContext);
   const viewportX = sanitizeViewportDimension(event.viewportX);
   const viewportY = sanitizeViewportDimension(event.viewportY);
+  const errorName = sanitizeErrorName(event.errorName);
+  const errorSource = sanitizeErrorSource(event.errorSource);
+  const errorLine = sanitizeErrorLine(event.errorLine);
 
   return {
     eventId: sanitizeTraceIdentifier(event.eventId, "evt"),
@@ -171,6 +180,9 @@ function sanitizeEvent(
     ...(viewportX === undefined ? {} : { viewportX }),
     ...(viewportY === undefined ? {} : { viewportY }),
     metadata: redactMetadata(event.metadata),
+    ...(errorName === undefined ? {} : { errorName }),
+    ...(errorSource === undefined ? {} : { errorSource }),
+    ...(errorLine === undefined ? {} : { errorLine }),
     ...(screenContext ? { screenContext } : {}),
   };
 }
@@ -180,6 +192,30 @@ function sanitizeEvent(
 function sanitizeViewportDimension(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
 
+  const rounded = Math.round(value);
+  return rounded > 0 ? rounded : undefined;
+}
+
+function sanitizeErrorName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const name = value.trim();
+  return SAFE_ERROR_NAME_PATTERN.test(name) ? name : undefined;
+}
+
+// 선행 "//" 를 "/" 로 접는다. new URL("https://h//a.js").pathname 이 "//a.js" 이고
+// normalizePath 가 빈 세그먼트를 보존하므로, redactUrl(...).urlPath 는 정상적으로
+// 선행 "//" 를 낼 수 있다. 계약은 선행 "//" 를 fail-closed 로 거절하므로(원시
+// protocol-relative filename 이 우회로로 들어오는 것을 막는 2차 방어), 여기서 접지
+// 않으면 멀쩡한 경로가 조용히 버려진다.
+function sanitizeErrorSource(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const collapsed = value.trim().replace(/^\/{2,}/, "/");
+  if (collapsed.length > MAX_ERROR_SOURCE) return undefined;
+  return SAFE_ERROR_SOURCE_PATTERN.test(collapsed) ? collapsed : undefined;
+}
+
+function sanitizeErrorLine(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   const rounded = Math.round(value);
   return rounded > 0 ? rounded : undefined;
 }

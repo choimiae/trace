@@ -460,8 +460,8 @@ export class SqliteStore implements TraceStore {
       `INSERT OR IGNORE INTO events
          (event_id, project_id, session_id, page_id, timestamp, received_at, type, url_path, url_query_redacted,
           title_masked, element_selector_hash, element_role, element_text_masked_or_limited,
-          x, y, viewport_x, viewport_y, metadata, screen_context)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          x, y, viewport_x, viewport_y, metadata, screen_context, error_name, error_source, error_line)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertAll = this.db.transaction((events: TraceEvent[]) => {
@@ -486,6 +486,9 @@ export class SqliteStore implements TraceStore {
           event.viewportY ?? null,
           JSON.stringify(event.metadata ?? {}),
           event.screenContext ? JSON.stringify(event.screenContext) : null,
+          event.errorName ?? null,
+          event.errorSource ?? null,
+          event.errorLine ?? null,
         );
       }
     });
@@ -661,6 +664,9 @@ export class SqliteStore implements TraceStore {
       viewportX: row.viewport_x as number | null,
       viewportY: row.viewport_y as number | null,
       metadata: JSON.parse(row.metadata as string) as TraceEvent["metadata"],
+      errorName: row.error_name as string | null,
+      errorSource: row.error_source as string | null,
+      errorLine: row.error_line as number | null,
       ...(screenContext ? { screenContext } : {}),
     }) as TraceEvent;
   }
@@ -706,6 +712,14 @@ export class SqliteStore implements TraceStore {
     if (!hasColumn(this.db, "events", "screen_context")) {
       this.db.exec("ALTER TABLE events ADD COLUMN screen_context TEXT");
     }
+    for (const column of ["error_name", "error_source"]) {
+      if (!hasColumn(this.db, "events", column)) {
+        this.db.exec(`ALTER TABLE events ADD COLUMN ${column} TEXT`);
+      }
+    }
+    if (!hasColumn(this.db, "events", "error_line")) {
+      this.db.exec("ALTER TABLE events ADD COLUMN error_line INTEGER");
+    }
   }
 
   private createDebugViews(): void {
@@ -734,7 +748,10 @@ export class SqliteStore implements TraceStore {
         viewport_x,
         viewport_y,
         metadata,
-        screen_context
+        screen_context,
+        error_name,
+        error_source,
+        error_line
       FROM events;
     `);
   }

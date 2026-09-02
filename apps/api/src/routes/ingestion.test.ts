@@ -837,4 +837,109 @@ describe("ingestion routes", () => {
     expect((await store.listEvents(project.projectId)).map((event) => event.eventId)).toEqual(["evt_new"]);
     expect((await store.listIssues(project.projectId)).map((issue) => issue.issueType)).toContain("rage_click");
   });
+
+  it("잘못된 오류 식별자는 배치를 거절하지 않고 필드만 버린다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/checkout",
+        events: [
+          {
+            eventId: "evt_bad",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "js_error",
+            urlPath: "/checkout",
+            errorName: "TypeError: 김철수 저장 실패",
+            errorSource: "https://app.example.com/a.js?token=abc",
+            errorLine: -3,
+            metadata: {},
+          },
+          {
+            eventId: "evt_good",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:01.000Z",
+            type: "js_error",
+            urlPath: "/checkout",
+            errorName: "RangeError",
+            errorSource: "/assets/pay.js",
+            errorLine: 88,
+            metadata: {},
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: 2 });
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+
+    expect(timeline[0]).not.toHaveProperty("errorName");
+    expect(timeline[0]).not.toHaveProperty("errorSource");
+    expect(timeline[0]).not.toHaveProperty("errorLine");
+    expect(timeline[1]?.errorName).toBe("RangeError");
+    expect(timeline[1]?.errorSource).toBe("/assets/pay.js");
+    expect(JSON.stringify(timeline)).not.toContain("김철수");
+    expect(JSON.stringify(timeline)).not.toContain("token=abc");
+  });
+
+  it("선행 이중 슬래시 경로를 버리지 않고 접어서 저장한다", async () => {
+    // new URL("https://cdn.example.com//vendor/lib.js").pathname 은 "//vendor/lib.js" 다.
+    // 계약이 선행 "//" 를 거절하므로 sanitize 단계에서 접어야 멀쩡한 경로가 살아남는다.
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/checkout",
+        events: [
+          {
+            eventId: "evt_double",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "js_error",
+            urlPath: "/checkout",
+            errorName: "TypeError",
+            errorSource: "//vendor/lib.js",
+            errorLine: 7,
+            metadata: {},
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+
+    expect(timeline[0]?.errorSource).toBe("/vendor/lib.js");
+  });
 });

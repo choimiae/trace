@@ -29,7 +29,10 @@ CREATE TABLE IF NOT EXISTS events (
   viewport_x INTEGER,
   viewport_y INTEGER,
   metadata TEXT NOT NULL DEFAULT '{}',
-  screen_context TEXT
+  screen_context TEXT,
+  error_name TEXT,
+  error_source TEXT,
+  error_line INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS events_project_timestamp ON events (project_id, timestamp);
