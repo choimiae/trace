@@ -5,10 +5,19 @@ import type { Consent } from "./install.js";
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<{ ok: boolean; status?: number }>;
 
-// 4xx 는 같은 배치를 다시 보내도 같은 응답이 온다. 큐 앞으로 되돌리면 이후 이벤트가
-// 영구히 막히고(head-of-line blocking) 클릭마다 POST 가 나가므로 그냥 버린다.
+// CDN·WAF·프록시가 내는 일시적인 4xx. 같은 배치를 다시 보내면 성공할 수 있으므로
+// 영구 실패로 묶어 버리면 멀쩡한 이벤트를 잃는다.
+const TRANSIENT_STATUSES = new Set([
+  408, // Request Timeout
+  425, // Too Early
+  429, // Too Many Requests
+]);
+
+// 그 밖의 4xx 는 같은 배치를 다시 보내도 같은 응답이 온다. 큐 앞으로 되돌리면 이후
+// 이벤트가 영구히 막히고(head-of-line blocking) 클릭마다 POST 가 나가므로 버린다.
 function isPermanentFailure(status: number | undefined): boolean {
-  return status !== undefined && status >= 400 && status < 500;
+  if (status === undefined) return false;
+  return status >= 400 && status < 500 && !TRANSIENT_STATUSES.has(status);
 }
 
 export interface TraceClientOptions {

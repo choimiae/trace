@@ -170,6 +170,32 @@ describe("TraceClient", () => {
     expect(client.queueLength).toBe(0);
   });
 
+  it.each([
+    ["408 Request Timeout", 408],
+    ["425 Too Early", 425],
+    ["429 Too Many Requests", 429],
+  ])("일시적인 4xx(%s)는 버리지 않고 재시도한다", async (_label, status) => {
+    // CDN·WAF·프록시가 내는 코드다. 같은 배치를 다시 보내면 성공할 수 있으므로
+    // 영구 실패로 묶어 버리면 멀쩡한 이벤트를 잃는다.
+    const fetcher = vi.fn().mockResolvedValueOnce({ ok: false, status }).mockResolvedValueOnce({ ok: true });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://trace.example.com/v1/events/batch",
+      fetcher,
+      consent: "granted",
+    });
+
+    client.track("report_export_clicked");
+    await client.flush();
+
+    expect(client.queueLength).toBe(1);
+
+    await client.flush();
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(client.queueLength).toBe(0);
+  });
+
   it("does not expose network failures and retries queued events", async () => {
     const fetcher = vi.fn().mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({ ok: true });
     const client = new TraceClient({
