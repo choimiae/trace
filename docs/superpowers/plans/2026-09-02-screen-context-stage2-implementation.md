@@ -726,6 +726,18 @@ Expected: FAIL — `masked` 힌트가 `textMaskedOrLimited: "고객 메모 원�
 
 `apps/api/src/routes/ingestion.ts` 의 `sanitizeScreenContext` 안 `layoutHints` 매핑을 바꾼다.
 
+같은 파일의 상수 블록에 서버 측 분류 집합을 추가한다.
+
+```ts
+// 힌트 텍스트는 서버도 독자 화이트리스트로 건다. SDK 화이트리스트가 유일한
+// 관문이면 구식·오염 SDK 가 컨테이너 텍스트를 그대로 밀어넣을 수 있다.
+// 타겟에는 적용하지 않는다 — 타겟은 클릭된 요소이고 그 라벨을 보여주는 것이 목적이다.
+const SERVER_MASKED_TAGS = new Set(["input", "select", "textarea"]);
+const SERVER_TEXT_TAGS = new Set(["button", "a", "h1", "h2", "h3"]);
+const SERVER_TEXT_ROLES = new Set(["button", "link", "tab", "heading"]);
+```
+
+
 ```ts
   const layoutHints = raw.data.layoutHints
     .slice(0, MAX_LAYOUT_HINTS)
@@ -843,13 +855,6 @@ Expected: FAIL — `errorName` 이 `undefined` 다.
 `packages/sdk/src/collectors.ts` 의 `measuredViewport` 아래에 추가한다.
 
 ```ts
-// 힌트 텍스트는 서버도 독자 화이트리스트로 건다. SDK 화이트리스트가 유일한
-// 관문이면 구식·오염 SDK 가 컨테이너 텍스트를 그대로 밀어넣을 수 있다.
-// 타겟에는 적용하지 않는다 — 타겟은 클릭된 요소이고 그 라벨을 보여주는 것이 목적이다.
-const SERVER_MASKED_TAGS = new Set(["input", "select", "textarea"]);
-const SERVER_TEXT_TAGS = new Set(["button", "a", "h1", "h2", "h3"]);
-const SERVER_TEXT_ROLES = new Set(["button", "link", "tab", "heading"]);
-
 const SAFE_ERROR_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 function safeErrorName(error: unknown): string | undefined {
@@ -1111,13 +1116,6 @@ Expected: FAIL — 계약 테스트는 `errorName` 이 `undefined`, 수집 테�
 같은 파일에 헬퍼를 추가한다.
 
 ```ts
-// 힌트 텍스트는 서버도 독자 화이트리스트로 건다. SDK 화이트리스트가 유일한
-// 관문이면 구식·오염 SDK 가 컨테이너 텍스트를 그대로 밀어넣을 수 있다.
-// 타겟에는 적용하지 않는다 — 타겟은 클릭된 요소이고 그 라벨을 보여주는 것이 목적이다.
-const SERVER_MASKED_TAGS = new Set(["input", "select", "textarea"]);
-const SERVER_TEXT_TAGS = new Set(["button", "a", "h1", "h2", "h3"]);
-const SERVER_TEXT_ROLES = new Set(["button", "link", "tab", "heading"]);
-
 const SAFE_ERROR_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const SAFE_ERROR_SOURCE_PATTERN = /^\/[^\s?#]*$/;
 const MAX_ERROR_SOURCE = 256;
