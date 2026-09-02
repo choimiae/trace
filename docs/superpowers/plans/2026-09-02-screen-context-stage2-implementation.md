@@ -397,6 +397,9 @@ Expected: FAIL — `layoutHints` 가 항상 `[]` 이므로 `toContain("header")`
 
 ```ts
 const CONTENTEDITABLE_SELECTOR = '[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
+// select 의 option 라벨도 textContent 에 들어간다. <a><span>행 열기</span><select>
+// <option>김철수</option></select></a> 처럼 사용자 데이터가 실린다.
+const TEXT_ENTRY_SUBTREE_SELECTOR = `textarea, select, ${CONTENTEDITABLE_SELECTOR}`;
 
 function isTextEntryElement(element: Element): boolean {
   if (element.tagName.toLowerCase() === "textarea") return true;
@@ -442,6 +445,7 @@ type ScreenLayoutHint = ScreenContext["layoutHints"][number];
 // 화면 위쪽·왼쪽으로 스크롤된 요소가 y:0 으로 접혀 통과하고, 미리보기 상단에
 // 몰려 실제 화면을 왜곡한다.
 function intersectsViewport(rect: DOMRect | ClientRect, viewport: ScreenViewport): boolean {
+  if (rect.width <= 0 || rect.height <= 0) return false;
   return rect.right > 0 && rect.bottom > 0 && rect.left < viewport.width && rect.top < viewport.height;
 }
 
@@ -558,7 +562,12 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   // 타겟의 문서 순서 위치를 중심으로 창을 잡아 rect 읽기를 묶은 뒤 거리로 정렬한다.
   const container = nearestContainer(target);
   const all = Array.from(container.querySelectorAll(NEIGHBOR_SELECTOR));
-  const targetIndex = all.indexOf(target);
+  // 클릭은 버튼 안의 아이콘·span, 테이블 셀, 평범한 div 에 자주 떨어진다. 그런
+  // 요소는 all 에 없어서 indexOf 가 -1 이고, anchor 를 0 으로 떨어뜨리면 창이
+  // 문서 앞쪽으로 붕괴해 페이지 크롬이 12칸을 다 먹는다. 가장 가까운 후보를
+  // 기준으로 삼는다. 타겟 자체는 바꾸지 않는다 — 클릭 마커는 실제 클릭 요소를 쓴다.
+  const anchorElement = target.closest(NEIGHBOR_SELECTOR) ?? target;
+  const targetIndex = all.indexOf(anchorElement);
   const anchor = targetIndex === -1 ? 0 : targetIndex;
   const half = Math.floor(MAX_HINT_CANDIDATES / 2);
   const windowed = all.slice(Math.max(0, anchor - half), anchor + half);
