@@ -81,12 +81,13 @@ export function DashboardPage({
           {settingsError}
         </p>
       ) : null}
+      {/* 화면 먼저, 숫자는 보조. 대표 막힘 문장과 화면 맥락이 지표보다 앞에 온다. */}
+      <IssueDashboardOverview summary={summary} issues={issues} onSelectIssue={onSelectIssue} />
       <MetricStrip summary={summary} />
       <section className="insight">
         <Chip status="crit" label="심각" />
         <span>{summary.insight}</span>
       </section>
-      <IssueDashboardOverview summary={summary} issues={issues} onSelectIssue={onSelectIssue} />
       <section className="chart-grid" aria-label="막힘 분석 차트">
         <Suspense
           fallback={

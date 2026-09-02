@@ -50,9 +50,7 @@ export function ScreenContextPreview({ context, event, compact = false }: Screen
         ))}
         {context.target ? (
           <div className="screen-preview__target" style={rectStyle(context, context.target.rect)}>
-            <span>
-              {context.target.textMaskedOrLimited ?? context.target.role ?? context.target.tagName ?? event?.type ?? "이벤트"}
-            </span>
+            <span>{context.target.textMaskedOrLimited ?? context.target.role ?? context.target.tagName}</span>
             <i role="img" aria-label="클릭 위치" />
           </div>
         ) : null}

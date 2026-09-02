@@ -74,7 +74,9 @@ export function IssueDashboardOverview({
   const titleMasked = representativeEvent?.screenContext?.titleMasked;
   const heroTitle =
     topIssue.relatedUrlPath && titleMasked
-      ? topIssue.title.replace(topIssue.relatedUrlPath, titleMasked)
+      // 함수 형태로 넘긴다. 화면 이름에 $&·$`·$'·$$ 가 있으면 문자열 치환값이
+      // 패턴으로 해석돼 지우려던 경로가 다시 들어온다.
+      ? topIssue.title.replace(topIssue.relatedUrlPath, () => titleMasked)
       : topIssue.title;
   const topIssueSeverity = severityLevel(topIssue.severityScore);
   const topIssueStatus = issueStatusToChip(topIssue.status);
@@ -93,15 +95,18 @@ export function IssueDashboardOverview({
   return (
     <>
       <section className="friction-hero" aria-labelledby="friction-hero-eyebrow">
+        {/* 읽는 순서: 1 문장 → 2 미리보기 → 3 운영 해석 → 4 근거 → 5 다음 액션 */}
+        <header className="friction-hero__intro">
+          <p className="friction-hero__eyebrow" id="friction-hero-eyebrow">
+            가장 먼저 볼 사용자 막힘
+          </p>
+          <h2>{heroTitle}</h2>
+        </header>
         <ScreenContextPreview
           {...(representativeEvent?.screenContext ? { context: representativeEvent.screenContext } : {})}
           {...(representativeEvent ? { event: representativeEvent } : {})}
         />
         <div className="friction-hero__analysis">
-          <p className="friction-hero__eyebrow" id="friction-hero-eyebrow">
-            가장 먼저 볼 사용자 막힘
-          </p>
-          <h2>{heroTitle}</h2>
           <dl>
             <div>
               <dt>운영 해석</dt>
@@ -133,12 +138,6 @@ export function IssueDashboardOverview({
             aria-label={`${topIssue.title} 보기`}
             onClick={() => onSelectIssue?.(topIssue)}
           >
-            <span className="priority-issue-copy">
-              <span className="issue-kicker">지금 먼저 볼 문제</span>
-              <strong>{topIssue.title}</strong>
-              <span>{topIssue.summary}</span>
-              <span className="issue-path">{topIssue.relatedUrlPath ?? "-"}</span>
-            </span>
             <span className="priority-issue-score">
               <strong>{topIssue.severityScore}</strong>
               <span>{SEVERITY_LABELS[topIssueSeverity]}</span>

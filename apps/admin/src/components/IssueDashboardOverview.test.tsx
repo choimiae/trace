@@ -67,12 +67,13 @@ describe("IssueDashboardOverview", () => {
     );
 
     const overview = screen.getByRole("region", { name: "문제 한눈에 보기" });
-    expect(within(overview).getByText("지금 먼저 볼 문제")).toBeInTheDocument();
-    expect(within(overview).getAllByText("설정 저장 버튼 반복 클릭")).toHaveLength(2);
+    // 대표 문제의 제목·요약·경로는 히어로가 이미 말한다. 한눈에 보기 카드는
+    // 점수·상태·추세 지표만 남긴다.
+    expect(within(overview).getAllByText("설정 저장 버튼 반복 클릭")).toHaveLength(1);
     expect(within(overview).getByText("92")).toBeInTheDocument();
     expect(within(overview).getByText("최근 발견 2026-09-01 15:00:00")).toBeInTheDocument();
     expect(within(overview).getByText("문제가 많은 화면")).toBeInTheDocument();
-    expect(within(overview).getAllByText("/settings")).toHaveLength(2);
+    expect(within(overview).getAllByText("/settings")).toHaveLength(1);
     expect(within(overview).getByText("문제 원인")).toBeInTheDocument();
     expect(within(overview).getByText("분노 클릭")).toBeInTheDocument();
     expect(within(overview).getByText("최근 발견")).toBeInTheDocument();
@@ -146,6 +147,70 @@ describe("IssueDashboardOverview", () => {
 
     const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
     expect(within(hero).getByLabelText("클릭 위치")).toBeInTheDocument();
+    // 문장(1) 이 미리보기(2) 보다 먼저 읽혀야 한다. 좁은 화면에서 한 열이 되면
+    // DOM 순서가 곧 읽는 순서다.
+    const preview = within(hero).getByLabelText("화면 맥락 미리보기");
+    expect(heading.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("대표 문제 카드는 제목을 지우고도 상세 열기 버튼을 유지한다", () => {
+    const onSelectIssue = vi.fn();
+    render(
+      <IssueDashboardOverview
+        summary={summary}
+        onSelectIssue={onSelectIssue}
+        issues={[
+          issue({
+            issueId: "critical",
+            title: "설정 저장 버튼 반복 클릭",
+            summary: "저장 버튼에서 rage click이 반복됩니다.",
+            severityScore: 92,
+            relatedUrlPath: "/settings",
+          }),
+        ]}
+      />,
+    );
+
+    const overview = screen.getByRole("region", { name: "문제 한눈에 보기" });
+    expect(within(overview).queryByText("지금 먼저 볼 문제")).not.toBeInTheDocument();
+    expect(within(overview).queryByText("저장 버튼에서 rage click이 반복됩니다.")).not.toBeInTheDocument();
+
+    fireEvent.click(within(overview).getByRole("button", { name: "설정 저장 버튼 반복 클릭 보기" }));
+
+    expect(onSelectIssue).toHaveBeenCalledWith(expect.objectContaining({ issueId: "critical" }));
+  });
+
+  it("화면 이름에 치환 패턴($&)이 있어도 경로를 되살리지 않는다", () => {
+    render(
+      <IssueDashboardOverview
+        summary={summary}
+        issues={[
+          issue({
+            issueId: "issue_dollar",
+            title: "/settings 화면에서 반복 클릭이 감지되었습니다",
+            relatedUrlPath: "/settings",
+            representativeEvent: {
+              eventId: "evt_1",
+              sessionId: "sess_1",
+              pageId: "page_1",
+              timestamp: "2026-09-02T01:00:00.000Z",
+              type: "click",
+              urlPath: "/settings",
+              metadata: {},
+              screenContext: {
+                titleMasked: "설정$&",
+                viewport: { width: 1440, height: 900 },
+                layoutHints: [],
+              },
+            },
+          }),
+        ]}
+      />,
+    );
+
+    const heading = screen.getByRole("heading", { level: 2, name: /설정/ });
+    expect(heading).toHaveTextContent("설정$& 화면에서 반복 클릭이 감지되었습니다");
+    expect(heading).not.toHaveTextContent("/settings");
   });
 
   it("renders the issue title unchanged when the representative event has no masked screen name", () => {

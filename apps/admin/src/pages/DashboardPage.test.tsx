@@ -202,9 +202,9 @@ describe("DashboardPage", () => {
 
     const overview = screen.getByRole("region", { name: "문제 한눈에 보기" });
     expect(overview).toBeInTheDocument();
-    expect(within(overview).getAllByText("/settings 화면에서 반복 클릭이 감지되었습니다")).toHaveLength(2);
+    expect(within(overview).getAllByText("/settings 화면에서 반복 클릭이 감지되었습니다")).toHaveLength(1);
     expect(within(overview).getByText("최근 발견 2026-09-01 15:00:00")).toBeInTheDocument();
-    expect(within(overview).getAllByText("/settings")).toHaveLength(2);
+    expect(within(overview).getAllByText("/settings")).toHaveLength(1);
     expect(within(overview).getByText("분노 클릭")).toBeInTheDocument();
     expect(screen.getByLabelText("화면 맥락 미리보기")).toBeInTheDocument();
 
@@ -214,5 +214,34 @@ describe("DashboardPage", () => {
     const heroHeading = screen.getByText("설정 화면에서 반복 클릭이 감지되었습니다");
     expect(heroHeading).toBeInTheDocument();
     expect(heroHeading).not.toHaveTextContent("/settings");
+  });
+
+  it("첫 화면을 숫자보다 화면 맥락 먼저 읽히게 배치한다", () => {
+    render(
+      <DashboardPage
+        summary={summary}
+        issues={[
+          issue({
+            issueId: "issue_critical",
+            title: "/settings 화면에서 반복 클릭이 감지되었습니다",
+            severityScore: 92,
+            relatedUrlPath: "/settings",
+          }),
+        ]}
+        userEmail="admin@example.com"
+        projects={[projects[0]!]}
+        projectId="proj_demo"
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onLogout={vi.fn()}
+        onShowInstall={vi.fn()}
+        onShowSettings={vi.fn()}
+      />,
+    );
+
+    const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
+    const metrics = screen.getByRole("region", { name: "핵심 지표" });
+
+    expect(hero.compareDocumentPosition(metrics) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
