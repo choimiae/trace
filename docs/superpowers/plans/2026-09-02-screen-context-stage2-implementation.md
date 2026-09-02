@@ -312,8 +312,12 @@ it("컨테이너에는 텍스트를 담지 않고 버튼·링크·제목에만 �
   const byTag = (tagName: string) => context.layoutHints.find((hint) => hint.tagName === tagName);
 
   expect(byTag("a")?.textMaskedOrLimited).toBe("도움말");
-  expect(byTag("section")).not.toHaveProperty("textMaskedOrLimited");
+  expect(byTag("h2")?.textMaskedOrLimited).toBe("결제 확인");
+  // main 은 랜드마크로 수집되지만 컨테이너이므로 텍스트가 없다.
+  expect(byTag("main")).toBeDefined();
   expect(byTag("main")).not.toHaveProperty("textMaskedOrLimited");
+  // section 은 이웃 셀렉터에도 랜드마크에도 없어 아예 수집되지 않는다.
+  expect(byTag("section")).toBeUndefined();
   expect(JSON.stringify(context)).not.toContain("박스 안의 긴 설명 문구");
 });
 
@@ -398,8 +402,10 @@ const MAX_NEIGHBOR_HINTS = 8;
 const MAX_HINT_CANDIDATES = 60;
 const LANDMARK_SELECTOR =
   "header, nav, main, aside, [role=banner], [role=navigation], [role=main], [role=complementary]";
+// 제목도 포함한다. h1-h3 는 TEXT_TAG_WHITELIST 에 있는데 랜드마크도 아니어서,
+// 이웃 셀렉터에 없으면 수집 자체가 안 돼 화이트리스트가 死코드가 된다.
 const NEIGHBOR_SELECTOR =
-  "button, a[href], input, select, textarea, [role=button], [role=link], [role=tab]";
+  "button, a[href], input, select, textarea, h1, h2, h3, [role=button], [role=link], [role=tab], [role=heading]";
 const CONTAINER_SELECTOR = "form, section, header, nav, main, aside";
 // role 은 getAttribute("role") ?? tagName 이므로 <a> 는 role 이 "a", <h2> 는 "h2" 다.
 // role 이름만으로 화이트리스트를 쓰면 대부분 걸리지 않는다.
@@ -440,9 +446,9 @@ function buildLayoutHint(
 
   const metadata = getElementMetadata(element);
   const role = safeRole(metadata.elementRole);
-  const masked = isTextEntryElement(element) || metadata.elementTextMaskedOrLimited === undefined;
+  const masked = isTextEntryElement(element);
   const text =
-    !isTextEntryElement(element) && allowsHintText(element, tagName, role) && metadata.elementTextMaskedOrLimited
+    allowsHintText(element, tagName, role) && metadata.elementTextMaskedOrLimited
       ? redactScreenText(metadata.elementTextMaskedOrLimited)
       : undefined;
 
@@ -453,13 +459,13 @@ function buildLayoutHint(
       ...(role ? { role } : {}),
       ...(text && text.length > 0 ? { textMaskedOrLimited: text } : {}),
       rect,
-      masked: isTextEntryElement(element),
+      masked,
     },
   };
 }
 ```
 
-`masked` 는 입력 계열일 때만 `true` 다. 위 `masked` 지역 변수는 쓰지 않으므로 넣지 않는다 — `hint.masked` 만 남긴다.
+`masked` 는 입력 계열일 때만 `true` 다. `allowsHintText` 가 이미 `isTextEntryElement` 를 먼저 걸러내므로 텍스트 조건에서 중복 검사하지 않는다.
 
 - [ ] **Step 4: 수집 함수 추가**
 
