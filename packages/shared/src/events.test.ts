@@ -525,3 +525,76 @@ describe("issue representative event", () => {
     expect(parsed.representativeEvent?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
   });
 });
+
+describe("오류 식별자 계약", () => {
+  const baseEvent = {
+    eventId: "evt_abcdefghij",
+    sessionId: "sess_abcdefghij",
+    pageId: "page_abcdefghij",
+    timestamp: "2026-09-02T01:00:00.000Z",
+    type: "js_error" as const,
+    urlPath: "/checkout",
+    metadata: {},
+  };
+
+  it("안전한 오류 종류·경로·라인을 허용한다", () => {
+    const parsed = traceEventSchema.parse({
+      ...baseEvent,
+      errorName: "TypeError",
+      errorSource: "/assets/checkout.js",
+      errorLine: 412,
+    });
+
+    expect(parsed.errorName).toBe("TypeError");
+    expect(parsed.errorSource).toBe("/assets/checkout.js");
+    expect(parsed.errorLine).toBe(412);
+  });
+
+  it("오류 필드가 없어도 통과한다", () => {
+    const parsed = traceEventSchema.parse(baseEvent);
+
+    expect(parsed).not.toHaveProperty("errorName");
+    expect(parsed).not.toHaveProperty("errorSource");
+    expect(parsed).not.toHaveProperty("errorLine");
+  });
+
+  it("메시지가 섞인 오류 종류를 거절한다", () => {
+    expect(
+      traceEventSchema.safeParse({
+        ...baseEvent,
+        errorName: "TypeError: Cannot read property 'id' of undefined",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("경로가 아닌 스크립트 값과 쿼리가 붙은 값을 거절한다", () => {
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "https://app.example.com/a.js" }).success).toBe(false);
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "/a.js?token=abc" }).success).toBe(false);
+  });
+
+  it("0 이하 또는 소수 라인을 거절한다", () => {
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorLine: 0 }).success).toBe(false);
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorLine: 12.5 }).success).toBe(false);
+  });
+
+  it("이슈에 오류 서명을 허용한다", () => {
+    const parsed = issueSchema.parse({
+      issueId: "issue_1",
+      projectId: "proj_1",
+      issueType: "error_friction",
+      title: "/checkout 화면에서 오류 기반 막힘이 감지되었습니다",
+      summary: "사용자 행동 흐름 중 js_error 이벤트가 발생했습니다.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 45,
+      firstSeenAt: "2026-09-02T01:00:00.000Z",
+      lastSeenAt: "2026-09-02T01:00:00.000Z",
+      trend: "flat",
+      exampleSessionIds: ["sess_1"],
+      status: "new",
+      relatedErrorSignature: "TypeError · /assets/checkout.js:412",
+    });
+
+    expect(parsed.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
+  });
+});

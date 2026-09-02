@@ -141,6 +141,19 @@ const tagNameSchema = z
   .toLowerCase()
   .regex(/^[a-z][a-z0-9-]{0,31}$/);
 
+const errorNameSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/);
+
+// redactUrl(...).urlPath 결과 형태만 받는다. origin·쿼리·해시가 붙은 값은 거절해서
+// 토큰이 실린 filename 이 그대로 저장되는 경로를 계약에서 막는다.
+const errorSourceSchema = z
+  .string()
+  .trim()
+  .max(256)
+  .regex(/^\/[^\s?#]*$/);
+
 export const screenRectSchema = z.object({
   x: z.number().finite().min(0).max(10000),
   y: z.number().finite().min(0).max(10000),
@@ -189,6 +202,9 @@ export const traceEventSchema = z.object({
   viewportX: z.number().int().positive().optional(),
   viewportY: z.number().int().positive().optional(),
   metadata: safeMetadataSchema,
+  errorName: errorNameSchema.optional(),
+  errorSource: errorSourceSchema.optional(),
+  errorLine: z.number().int().positive().optional(),
   screenContext: screenContextSchema.optional(),
 });
 
@@ -240,6 +256,7 @@ export const issueSchema = z.object({
   relatedFeatureId: z.string().optional(),
   exampleSessionIds: z.array(z.string()).default([]),
   representativeEvent: traceEventSchema.optional(),
+  relatedErrorSignature: z.string().trim().min(1).max(320).optional(),
   status: issueStatusSchema,
 });
 
