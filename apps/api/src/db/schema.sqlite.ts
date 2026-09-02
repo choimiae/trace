@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS events (
   y REAL,
   viewport_x INTEGER,
   viewport_y INTEGER,
-  metadata TEXT NOT NULL DEFAULT '{}'
+  metadata TEXT NOT NULL DEFAULT '{}',
+  screen_context TEXT
 );
 
 CREATE INDEX IF NOT EXISTS events_project_timestamp ON events (project_id, timestamp);

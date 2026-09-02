@@ -8,6 +8,7 @@ import {
   redactMetadata,
   redactText,
   redactUrl,
+  screenContextSchema,
 } from "@trace/shared";
 import type { EventBatch, RedactedUrl, TraceEvent } from "@trace/shared";
 import type { FastifyInstance } from "fastify";
@@ -35,6 +36,7 @@ const rawTraceEventSchema = z.object({
   viewportX: z.number().int().positive().optional(),
   viewportY: z.number().int().positive().optional(),
   metadata: z.record(z.unknown()).default({}),
+  screenContext: screenContextSchema.optional(),
 });
 
 const rawEventBatchSchema = z.object({
@@ -56,40 +58,45 @@ export async function registerIngestionRoutes(
   },
 ) {
   app.post("/v1/events/batch", async (request, reply) => {
-    const rawBatch = rawEventBatchSchema.parse(request.body);
-    const project = await options.store.getProject(rawBatch.projectId);
-    if (!project) return reply.code(404).send({ error: "project_not_found" });
+    try {
+      const rawBatch = rawEventBatchSchema.parse(request.body);
+      const project = await options.store.getProject(rawBatch.projectId);
+      if (!project) return reply.code(404).send({ error: "project_not_found" });
 
-    const redactedUrl = redactUrl(rawBatch.url);
-    const origin = request.headers.origin ?? redactedUrl.origin;
-    if (!project.allowedDomains.includes(origin) || !project.allowedDomains.includes(redactedUrl.origin)) {
-      return reply.code(403).send({ error: "domain_not_allowed" });
+      const redactedUrl = redactUrl(rawBatch.url);
+      const origin = request.headers.origin ?? redactedUrl.origin;
+      if (!project.allowedDomains.includes(origin) || !project.allowedDomains.includes(redactedUrl.origin)) {
+        return reply.code(403).send({ error: "domain_not_allowed" });
+      }
+
+      const sessionId = sanitizeTraceIdentifier(rawBatch.sessionId, "sess");
+      const sanitizedBatch = eventBatchSchema.parse({
+        ...rawBatch,
+        anonymousUserId: sanitizeTraceIdentifier(rawBatch.anonymousUserId, "anon"),
+        sessionId,
+        url: `${redactedUrl.origin}${redactedUrl.urlPath}${redactedUrl.urlQueryRedacted}`,
+        events: rawBatch.events.map((event) => sanitizeEvent(event, redactedUrl, sessionId)),
+      }) satisfies EventBatch;
+
+      await options.store.saveBatch(sanitizedBatch);
+      const projectEvents = await options.store.listEvents(sanitizedBatch.projectId);
+      const issues = detectIssues({
+        projectId: sanitizedBatch.projectId,
+        events: projectEvents,
+        now: (options.now?.() ?? new Date()).toISOString(),
+      });
+      await options.store.upsertIssues(sanitizedBatch.projectId, issues);
+      await runEventRetention(
+        options.store,
+        options.eventRetentionConfig ?? {},
+        options.now?.() ?? new Date(),
+      );
+
+      return reply.code(202).send({ accepted: sanitizedBatch.events.length });
+    } catch (error) {
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: "invalid_event_batch" });
+      throw error;
     }
-
-    const sessionId = sanitizeTraceIdentifier(rawBatch.sessionId, "sess");
-    const sanitizedBatch = eventBatchSchema.parse({
-      ...rawBatch,
-      anonymousUserId: sanitizeTraceIdentifier(rawBatch.anonymousUserId, "anon"),
-      sessionId,
-      url: `${redactedUrl.origin}${redactedUrl.urlPath}${redactedUrl.urlQueryRedacted}`,
-      events: rawBatch.events.map((event) => sanitizeEvent(event, redactedUrl, sessionId)),
-    }) satisfies EventBatch;
-
-    await options.store.saveBatch(sanitizedBatch);
-    const projectEvents = await options.store.listEvents(sanitizedBatch.projectId);
-    const issues = detectIssues({
-      projectId: sanitizedBatch.projectId,
-      events: projectEvents,
-      now: (options.now?.() ?? new Date()).toISOString(),
-    });
-    await options.store.upsertIssues(sanitizedBatch.projectId, issues);
-    await runEventRetention(
-      options.store,
-      options.eventRetentionConfig ?? {},
-      options.now?.() ?? new Date(),
-    );
-
-    return reply.code(202).send({ accepted: sanitizedBatch.events.length });
   });
 }
 
@@ -119,6 +126,7 @@ function sanitizeEvent(
     ...(event.viewportX === undefined ? {} : { viewportX: event.viewportX }),
     ...(event.viewportY === undefined ? {} : { viewportY: event.viewportY }),
     metadata: redactMetadata(event.metadata),
+    ...(event.screenContext ? { screenContext: event.screenContext } : {}),
   };
 }
 

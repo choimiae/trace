@@ -1143,6 +1143,55 @@ function describeTraceStoreContract(
       expect(await store.getSessionTimeline(project.projectId, "sess_1")).toHaveLength(1);
     });
 
+    it("preserves screen context in session timeline events", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:01.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: {
+              viewport: { width: 1440, height: 900 },
+              target: {
+                tagName: "button",
+                role: "button",
+                textMaskedOrLimited: "저장",
+                rect: { x: 620, y: 420, width: 96, height: 40 },
+              },
+              layoutHints: [],
+            },
+          },
+        ],
+      });
+
+      const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+
+      expect(timeline[0]?.screenContext).toMatchObject({
+        viewport: { width: 1440, height: 900 },
+        target: {
+          tagName: "button",
+          textMaskedOrLimited: "저장",
+          rect: { x: 620, y: 420, width: 96, height: 40 },
+        },
+      });
+    });
+
     it("cutoff 이전 이벤트만 삭제한다", async () => {
       const store = open();
       const project = await store.createProject({

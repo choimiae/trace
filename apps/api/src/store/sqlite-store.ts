@@ -1,4 +1,5 @@
 import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
+import { screenContextSchema } from "@trace/shared";
 import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
@@ -454,8 +455,8 @@ export class SqliteStore implements TraceStore {
       `INSERT OR IGNORE INTO events
          (event_id, project_id, session_id, page_id, timestamp, received_at, type, url_path, url_query_redacted,
           title_masked, element_selector_hash, element_role, element_text_masked_or_limited,
-          x, y, viewport_x, viewport_y, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          x, y, viewport_x, viewport_y, metadata, screen_context)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertAll = this.db.transaction((events: TraceEvent[]) => {
@@ -479,6 +480,7 @@ export class SqliteStore implements TraceStore {
           event.viewportX ?? null,
           event.viewportY ?? null,
           JSON.stringify(event.metadata ?? {}),
+          event.screenContext ? JSON.stringify(event.screenContext) : null,
         );
       }
     });
@@ -596,6 +598,8 @@ export class SqliteStore implements TraceStore {
   }
 
   private toEvent(row: Row): TraceEvent {
+    const screenContext = this.parseScreenContext(row.screen_context as string | null);
+
     return compact({
       eventId: row.event_id as string,
       sessionId: row.session_id as string,
@@ -613,7 +617,19 @@ export class SqliteStore implements TraceStore {
       viewportX: row.viewport_x as number | null,
       viewportY: row.viewport_y as number | null,
       metadata: JSON.parse(row.metadata as string) as TraceEvent["metadata"],
+      ...(screenContext ? { screenContext } : {}),
     }) as TraceEvent;
+  }
+
+  private parseScreenContext(rawScreenContext: string | null): TraceEvent["screenContext"] | undefined {
+    if (!rawScreenContext) return undefined;
+
+    try {
+      const parsed = screenContextSchema.safeParse(JSON.parse(rawScreenContext));
+      return parsed.success ? parsed.data : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private toIssue(row: Row): Issue {
@@ -643,6 +659,9 @@ export class SqliteStore implements TraceStore {
         UPDATE events SET received_at = timestamp WHERE received_at IS NULL;
       `);
     }
+    if (!hasColumn(this.db, "events", "screen_context")) {
+      this.db.exec("ALTER TABLE events ADD COLUMN screen_context TEXT");
+    }
   }
 
   private createDebugViews(): void {
@@ -670,7 +689,8 @@ export class SqliteStore implements TraceStore {
         y,
         viewport_x,
         viewport_y,
-        metadata
+        metadata,
+        screen_context
       FROM events;
     `);
   }
