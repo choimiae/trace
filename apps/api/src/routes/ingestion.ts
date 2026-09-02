@@ -64,8 +64,11 @@ const rawTraceEventSchema = z.object({
   elementTextMaskedOrLimited: z.string().max(500).optional(),
   x: z.number().finite().optional(),
   y: z.number().finite().optional(),
-  viewportX: z.number().int().positive().optional(),
-  viewportY: z.number().int().positive().optional(),
+  // 뷰포트는 느슨하게 받고 sanitizeViewportDimension 에서 정리한다. SDK 가
+  // window.innerWidth/innerHeight 를 무조건 보내는데 숨은 iframe·레이아웃 전에는
+  // 0, 확대 상태에서는 소수가 되므로, 엄격 검증은 배치 전체를 400 으로 떨어뜨린다.
+  viewportX: z.unknown().optional(),
+  viewportY: z.unknown().optional(),
   metadata: z.record(z.unknown()).default({}),
   screenContext: z.unknown().optional(),
 });
@@ -138,6 +141,8 @@ function sanitizeEvent(
 ): TraceEvent {
   const eventUrl = sanitizeEventUrl(event, batchUrl);
   const screenContext = sanitizeScreenContext(event.screenContext);
+  const viewportX = sanitizeViewportDimension(event.viewportX);
+  const viewportY = sanitizeViewportDimension(event.viewportY);
 
   return {
     eventId: sanitizeTraceIdentifier(event.eventId, "evt"),
@@ -155,11 +160,20 @@ function sanitizeEvent(
     ...(event.elementTextMaskedOrLimited ? { elementTextMaskedOrLimited: redactText(event.elementTextMaskedOrLimited) } : {}),
     ...(event.x === undefined ? {} : { x: event.x }),
     ...(event.y === undefined ? {} : { y: event.y }),
-    ...(event.viewportX === undefined ? {} : { viewportX: event.viewportX }),
-    ...(event.viewportY === undefined ? {} : { viewportY: event.viewportY }),
+    ...(viewportX === undefined ? {} : { viewportX }),
+    ...(viewportY === undefined ? {} : { viewportY }),
     metadata: redactMetadata(event.metadata),
     ...(screenContext ? { screenContext } : {}),
   };
+}
+
+// 측정 불가한 값(0·음수·비유한·숫자 아님)은 필드를 버리고, 소수는 반올림해 살린다.
+// traceEventSchema 가 viewportX/Y 를 양의 정수로 요구하므로 여기서 맞춰 준다.
+function sanitizeViewportDimension(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+
+  const rounded = Math.round(value);
+  return rounded > 0 ? rounded : undefined;
 }
 
 function sanitizeScreenContext(value: unknown): ScreenContext | undefined {

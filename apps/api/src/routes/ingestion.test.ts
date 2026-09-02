@@ -386,6 +386,80 @@ describe("ingestion routes", () => {
     expect(timeline[1]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
   });
 
+  it("측정 불가한 뷰포트 크기는 배치를 거절하지 않고 필드만 버린다", async () => {
+    // SDK 는 window.innerWidth/innerHeight 를 무조건 보낸다. 숨은 iframe 이나
+    // 레이아웃 전에는 0 이고, 브라우저 확대 상태에서는 소수가 될 수 있다.
+    // 어느 쪽도 배치 전체를 400 으로 떨어뜨려서는 안 된다.
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:03.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_hidden_iframe",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            viewportX: 0,
+            viewportY: 0,
+            metadata: {},
+          },
+          {
+            eventId: "evt_zoomed",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:01.000Z",
+            type: "click",
+            urlPath: "/settings",
+            viewportX: 1279.5,
+            viewportY: 719.5,
+            metadata: {},
+          },
+          {
+            eventId: "evt_ok",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:02.000Z",
+            type: "click",
+            urlPath: "/settings",
+            viewportX: 1440,
+            viewportY: 900,
+            metadata: {},
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: 3 });
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(timeline).toHaveLength(3);
+    // 0 은 측정 불가이므로 필드를 버린다.
+    expect(timeline[0]).not.toHaveProperty("viewportX");
+    expect(timeline[0]).not.toHaveProperty("viewportY");
+    // 소수는 버리지 않고 반올림해 살린다.
+    expect(timeline[1]?.viewportX).toBe(1280);
+    expect(timeline[1]?.viewportY).toBe(720);
+    expect(timeline[2]?.viewportX).toBe(1440);
+    expect(timeline[2]?.viewportY).toBe(900);
+  });
+
   it("rejects events from a disallowed domain", async () => {
     const store = new MemoryStore();
     const project = await store.createProject({

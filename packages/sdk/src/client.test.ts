@@ -59,6 +59,36 @@ describe("TraceClient", () => {
     expect(payload.events[0].urlPath).toBe("/users/:id/settings");
   });
 
+  it("측정 불가한 뷰포트 크기는 보내지 않는다", async () => {
+    // 숨은 iframe 이나 레이아웃 전에는 innerWidth/innerHeight 가 0 이다.
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+    window.innerWidth = 0;
+    window.innerHeight = 0;
+    const fetcher = vi.fn().mockResolvedValue({ ok: true });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://trace.example.com/v1/events/batch",
+      fetcher,
+      consent: "granted",
+    });
+
+    installCollectors(client);
+    document.body.innerHTML = `<button>저장</button>`;
+    document.querySelector("button")!.click();
+    await client.flush();
+
+    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    const click = payload.events.find((candidate: { type: string }) => candidate.type === "click");
+    expect(click).toBeDefined();
+    expect(click).not.toHaveProperty("viewportX");
+    expect(click).not.toHaveProperty("viewportY");
+
+    window.innerWidth = originalWidth;
+    window.innerHeight = originalHeight;
+  });
+
   it("sends screen context for click collector events", async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: true });
     const client = new TraceClient({
