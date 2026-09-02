@@ -1478,11 +1478,14 @@ it("근거를 항목별 표로 보여주고 오류 서명을 포함한다", () =
   const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
 
   expect(within(hero).getByText("화면")).toBeInTheDocument();
-  expect(within(hero).getByText("/checkout")).toBeInTheDocument();
+  // ScreenContextPreview 의 타이틀 바는 titleMasked 가 없으면 urlPath 로 폴백하므로
+  // "/checkout" 이 hero 안에 두 번 나온다. 근거 표로 범위를 좁혀야 모호하지 않다.
+  expect(within(hero.querySelector(".friction-hero__facts")!).getByText("/checkout")).toBeInTheDocument();
   expect(within(hero).getByText("클릭")).toBeInTheDocument();
   expect(within(hero).getByText(/button/)).toBeInTheDocument();
   expect(within(hero).getByText("패턴")).toBeInTheDocument();
-  expect(within(hero).getByText("오류 기반 막힘")).toBeInTheDocument();
+  // ISSUE_TYPE_LABELS["error_friction"] 의 실제 값은 "오류 마찰" 이다.
+  expect(within(hero).getByText("오류 마찰")).toBeInTheDocument();
   expect(within(hero).getByText("오류")).toBeInTheDocument();
   expect(within(hero).getByText("TypeError · /assets/checkout.js:412")).toBeInTheDocument();
   expect(within(hero).getByText("영향")).toBeInTheDocument();
