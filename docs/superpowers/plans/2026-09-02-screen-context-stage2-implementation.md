@@ -863,13 +863,27 @@ function safeErrorName(error: unknown): string | undefined {
   return SAFE_ERROR_NAME_PATTERN.test(name) ? name : undefined;
 }
 
+// 선행 "//" 는 통과시킨다. 정상 경로도 그 모양이 될 수 있고(new URL("https://h//a.js")
+// .pathname === "//a.js") 수집 API 의 sanitizeErrorSource 가 접는다. 여기서 접으면
+// 정규화가 되어 브리핑 제약을 벗어난다.
+const SAFE_ERROR_SOURCE_SHAPE = /^\/[^\s?#]*$/;
+const MAX_ERROR_SOURCE = 256;
+
 // filename 은 "https://app.example.com/assets/checkout.js?v=2" 같은 전체 URL 이고
 // 쿼리에 토큰이 실릴 수 있다. redactUrl 은 new URL 을 쓰므로 빈 값·비 URL 에서
 // throw 한다 — cross-origin 오류의 filename 이 "" 이라 가드가 필수다.
+//
+// 던지지 않는 것만으로는 부족하다. redactUrl 이 성공해도 계약이 거부하는 값이 나온다:
+// "data:text/javascript,alert(1)" -> urlPath "text/javascript,alert(1)" (선행 / 없음),
+// "about:blank" -> "blank", 그리고 300자 경로는 256 상한을 넘는다. 그대로 보내면
+// Task 5 가 필드를 연결한 뒤 배치 전체가 400 이 되고, client 는 4xx 를 영구 실패로
+// 보고 같은 flush 의 무관한 이벤트까지 버린다. 모양이 맞지 않으면 필드를 생략한다.
 function safeErrorSource(filename: string | undefined): string | undefined {
   if (!filename) return undefined;
   try {
-    return redactUrl(filename).urlPath;
+    const path = redactUrl(filename).urlPath;
+    if (path.length > MAX_ERROR_SOURCE) return undefined;
+    return SAFE_ERROR_SOURCE_SHAPE.test(path) ? path : undefined;
   } catch {
     return undefined;
   }
