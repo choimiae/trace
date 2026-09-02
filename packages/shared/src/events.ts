@@ -4,6 +4,7 @@ import {
   isSafeElementSelectorHash,
   isSafeTraceIdentifier,
   normalizePath,
+  redactText,
 } from "./privacy.js";
 
 export const eventTypeSchema = z.enum([
@@ -125,6 +126,52 @@ const redactedQuerySchema = z.string().superRefine((value, context) => {
   validateRedactedQuery(new URLSearchParams(value), context);
 });
 
+const safeScreenTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .refine((value) => redactText(value) === value, {
+    message: "screen context text must already be redacted",
+  });
+
+const tagNameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z][a-z0-9-]{0,31}$/);
+
+export const screenRectSchema = z.object({
+  x: z.number().finite().min(0).max(10000),
+  y: z.number().finite().min(0).max(10000),
+  width: z.number().finite().min(0).max(10000),
+  height: z.number().finite().min(0).max(10000),
+});
+
+const screenElementSchema = z.object({
+  tagName: tagNameSchema,
+  role: z.string().trim().max(64).refine(isSafeElementRole).optional(),
+  textMaskedOrLimited: safeScreenTextSchema.optional(),
+  selectorHash: z.string().trim().max(128).optional(),
+  rect: screenRectSchema,
+});
+
+export const screenContextSchema = z.object({
+  titleMasked: safeScreenTextSchema.optional(),
+  viewport: z.object({
+    width: z.number().int().min(1).max(10000),
+    height: z.number().int().min(1).max(10000),
+  }),
+  target: screenElementSchema.optional(),
+  layoutHints: screenElementSchema
+    .extend({ masked: z.boolean() })
+    .array()
+    .max(12)
+    .default([]),
+});
+
+export type ScreenContext = z.infer<typeof screenContextSchema>;
+
 export const traceEventSchema = z.object({
   eventId: z.string().refine((value) => isSafeTraceIdentifier(value, "evt")),
   sessionId: z.string().refine((value) => isSafeTraceIdentifier(value, "sess")),
@@ -142,6 +189,7 @@ export const traceEventSchema = z.object({
   viewportX: z.number().int().positive().optional(),
   viewportY: z.number().int().positive().optional(),
   metadata: safeMetadataSchema,
+  screenContext: screenContextSchema.optional(),
 });
 
 export const eventBatchSchema = z.object({
@@ -191,6 +239,7 @@ export const issueSchema = z.object({
   relatedUrlPath: z.string().optional(),
   relatedFeatureId: z.string().optional(),
   exampleSessionIds: z.array(z.string()).default([]),
+  representativeEvent: traceEventSchema.optional(),
   status: issueStatusSchema,
 });
 
