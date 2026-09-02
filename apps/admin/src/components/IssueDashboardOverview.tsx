@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { formatKoreanDateTime } from "../time.js";
 import { Chip, issueStatusToChip } from "../ui/Chip.js";
 import { Card } from "../ui/Card.js";
+import { ScreenContextPreview } from "./ScreenContextPreview.js";
 
 type SeverityLevel = "critical" | "warning" | "low";
 
@@ -69,6 +70,12 @@ export function IssueDashboardOverview({
   const priorityIssues = sortByPriority(issues);
   const recentIssues = sortByRecent(issues).slice(0, 5);
   const topIssue = priorityIssues[0]!;
+  const representativeEvent = topIssue.representativeEvent;
+  const screenLabel =
+    representativeEvent?.screenContext?.titleMasked ??
+    topIssue.relatedUrlPath ??
+    representativeEvent?.urlPath ??
+    "알 수 없는 화면";
   const topIssueSeverity = severityLevel(topIssue.severityScore);
   const topIssueStatus = issueStatusToChip(topIssue.status);
   const TopIssueTrendIcon = trendIcon(topIssue.trend);
@@ -84,115 +91,147 @@ export function IssueDashboardOverview({
   const maxIssueTypeCount = Math.max(...summary.issueTypeDistribution.map((item) => item.count), 1);
 
   return (
-    <Card as="section" className="dashboard-overview" aria-label="문제 한눈에 보기">
-      <div className="section-heading">
-        <h2>한눈에 보기</h2>
-        <span>최근 발견 시각은 KST</span>
-      </div>
-
-      <div className="dashboard-overview-top">
-        <button
-          type="button"
-          className={`priority-issue priority-issue-${topIssueSeverity}`}
-          aria-label={`${topIssue.title} 보기`}
-          onClick={() => onSelectIssue?.(topIssue)}
-        >
-          <span className="priority-issue-copy">
-            <span className="issue-kicker">지금 먼저 볼 문제</span>
-            <strong>{topIssue.title}</strong>
-            <span>{topIssue.summary}</span>
-            <span className="issue-path">{topIssue.relatedUrlPath ?? "-"}</span>
-          </span>
-          <span className="priority-issue-score">
-            <strong>{topIssue.severityScore}</strong>
-            <span>{SEVERITY_LABELS[topIssueSeverity]}</span>
-          </span>
-          <span className="priority-issue-meta">
-            <Chip status={topIssueStatus.status} label={topIssueStatus.label} />
-            <span className={`issue-trend issue-trend-${topIssue.trend}`}>
-              <TopIssueTrendIcon aria-hidden="true" size={14} />
-              {trendLabel(topIssue.trend)}
-            </span>
-            <span>세션 {topIssue.affectedSessionsCount}</span>
-            <span>사용자 {topIssue.affectedUsersCount}</span>
-            <span>최근 발견 {formatKoreanDateTime(topIssue.lastSeenAt)}</span>
-          </span>
-          <Eye className="priority-issue-open" aria-hidden="true" size={18} />
-        </button>
-
-        <div className="overview-card">
-          <h3>심각도 분포</h3>
-          {(["critical", "warning", "low"] as const).map((level) => (
-            <div className="overview-meter" key={level}>
-              <span>{SEVERITY_LABELS[level]}</span>
-              <strong>{severityCounts[level]}건</strong>
-              <i
-                className={`overview-meter-bar overview-meter-${level}`}
-                style={{ width: `${Math.max(8, (severityCounts[level] / issues.length) * 100)}%` }}
-              />
+    <>
+      <section className="friction-hero" aria-label="가장 먼저 볼 사용자 막힘">
+        <div className="friction-hero__preview">
+          <ScreenContextPreview
+            {...(representativeEvent?.screenContext ? { context: representativeEvent.screenContext } : {})}
+            {...(representativeEvent ? { event: representativeEvent } : {})}
+          />
+        </div>
+        <div className="friction-hero__analysis">
+          <p className="friction-hero__eyebrow">가장 먼저 볼 사용자 막힘</p>
+          <h2>
+            {screenLabel} 화면에서 {topIssue.title}
+          </h2>
+          <dl>
+            <div>
+              <dt>운영 해석</dt>
+              <dd>{topIssue.summary}</dd>
             </div>
-          ))}
+            <div>
+              <dt>근거</dt>
+              <dd>
+                세션 {topIssue.affectedSessionsCount}개, 사용자 {topIssue.affectedUsersCount}명 영향
+              </dd>
+            </div>
+            <div>
+              <dt>다음 액션</dt>
+              <dd>해당 화면의 클릭 후 반응, 성공 피드백, 오류 노출 상태를 우선 점검합니다.</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+      <Card as="section" className="dashboard-overview" aria-label="문제 한눈에 보기">
+        <div className="section-heading">
+          <h2>한눈에 보기</h2>
+          <span>최근 발견 시각은 KST</span>
         </div>
 
-        <div className="overview-card overview-mini-grid">
-          <h3>최근 흐름</h3>
-          <div>
-            <strong>{summary.newIssuesCount}</strong>
-            <span>신규</span>
+        <div className="dashboard-overview-top">
+          <button
+            type="button"
+            className={`priority-issue priority-issue-${topIssueSeverity}`}
+            aria-label={`${topIssue.title} 보기`}
+            onClick={() => onSelectIssue?.(topIssue)}
+          >
+            <span className="priority-issue-copy">
+              <span className="issue-kicker">지금 먼저 볼 문제</span>
+              <strong>{topIssue.title}</strong>
+              <span>{topIssue.summary}</span>
+              <span className="issue-path">{topIssue.relatedUrlPath ?? "-"}</span>
+            </span>
+            <span className="priority-issue-score">
+              <strong>{topIssue.severityScore}</strong>
+              <span>{SEVERITY_LABELS[topIssueSeverity]}</span>
+            </span>
+            <span className="priority-issue-meta">
+              <Chip status={topIssueStatus.status} label={topIssueStatus.label} />
+              <span className={`issue-trend issue-trend-${topIssue.trend}`}>
+                <TopIssueTrendIcon aria-hidden="true" size={14} />
+                {trendLabel(topIssue.trend)}
+              </span>
+              <span>세션 {topIssue.affectedSessionsCount}</span>
+              <span>사용자 {topIssue.affectedUsersCount}</span>
+              <span>최근 발견 {formatKoreanDateTime(topIssue.lastSeenAt)}</span>
+            </span>
+            <Eye className="priority-issue-open" aria-hidden="true" size={18} />
+          </button>
+
+          <div className="overview-card">
+            <h3>심각도 분포</h3>
+            {(["critical", "warning", "low"] as const).map((level) => (
+              <div className="overview-meter" key={level}>
+                <span>{SEVERITY_LABELS[level]}</span>
+                <strong>{severityCounts[level]}건</strong>
+                <i
+                  className={`overview-meter-bar overview-meter-${level}`}
+                  style={{ width: `${Math.max(8, (severityCounts[level] / issues.length) * 100)}%` }}
+                />
+              </div>
+            ))}
           </div>
-          <div>
-            <strong>{risingCount}</strong>
-            <span>상승</span>
-          </div>
-          <div>
-            <strong>{summary.affectedSessionsCount}</strong>
-            <span>영향 세션</span>
-          </div>
-          <div>
-            <strong>{summary.totalEventsCount}</strong>
-            <span>이벤트</span>
+
+          <div className="overview-card overview-mini-grid">
+            <h3>최근 흐름</h3>
+            <div>
+              <strong>{summary.newIssuesCount}</strong>
+              <span>신규</span>
+            </div>
+            <div>
+              <strong>{risingCount}</strong>
+              <span>상승</span>
+            </div>
+            <div>
+              <strong>{summary.affectedSessionsCount}</strong>
+              <span>영향 세션</span>
+            </div>
+            <div>
+              <strong>{summary.totalEventsCount}</strong>
+              <span>이벤트</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="dashboard-overview-panels">
-        <OverviewListPanel title="문제가 많은 화면">
-          {summary.topTargets.slice(0, 5).map((target) => (
-            <OverviewBar
-              key={target.label}
-              label={target.label}
-              value={`${target.count}건`}
-              percent={(target.count / maxTargetCount) * 100}
-            />
-          ))}
-        </OverviewListPanel>
+        <div className="dashboard-overview-panels">
+          <OverviewListPanel title="문제가 많은 화면">
+            {summary.topTargets.slice(0, 5).map((target) => (
+              <OverviewBar
+                key={target.label}
+                label={target.label}
+                value={`${target.count}건`}
+                percent={(target.count / maxTargetCount) * 100}
+              />
+            ))}
+          </OverviewListPanel>
 
-        <OverviewListPanel title="문제 원인">
-          {summary.issueTypeDistribution.slice(0, 5).map((item) => (
-            <OverviewBar
-              key={item.issueType}
-              label={ISSUE_TYPE_LABELS[item.issueType]}
-              value={`${item.count}건`}
-              percent={(item.count / maxIssueTypeCount) * 100}
-            />
-          ))}
-        </OverviewListPanel>
+          <OverviewListPanel title="문제 원인">
+            {summary.issueTypeDistribution.slice(0, 5).map((item) => (
+              <OverviewBar
+                key={item.issueType}
+                label={ISSUE_TYPE_LABELS[item.issueType]}
+                value={`${item.count}건`}
+                percent={(item.count / maxIssueTypeCount) * 100}
+              />
+            ))}
+          </OverviewListPanel>
 
-        <OverviewListPanel title="최근 발견">
-          {recentIssues.map((issue) => (
-            <button
-              type="button"
-              className="recent-issue-row"
-              key={issue.issueId}
-              onClick={() => onSelectIssue?.(issue)}
-            >
-              <span>{issue.title}</span>
-              <strong>{formatKoreanDateTime(issue.lastSeenAt)}</strong>
-            </button>
-          ))}
-        </OverviewListPanel>
-      </div>
-    </Card>
+          <OverviewListPanel title="최근 발견">
+            {recentIssues.map((issue) => (
+              <button
+                type="button"
+                className="recent-issue-row"
+                key={issue.issueId}
+                onClick={() => onSelectIssue?.(issue)}
+              >
+                <span>{issue.title}</span>
+                <strong>{formatKoreanDateTime(issue.lastSeenAt)}</strong>
+              </button>
+            ))}
+          </OverviewListPanel>
+        </div>
+      </Card>
+    </>
   );
 }
 

@@ -99,4 +99,47 @@ describe("IssueDashboardOverview", () => {
 
     expect(onSelectIssue).toHaveBeenCalledWith(expect.objectContaining({ issueId: "critical" }));
   });
+
+  it("shows a screen-first friction summary for the top issue", () => {
+    render(
+      <IssueDashboardOverview
+        summary={summary}
+        issues={[
+          issue({
+            issueId: "issue_1",
+            title: "저장 버튼 반응 없음",
+            summary: "설정 화면에서 저장 버튼 클릭 후 후속 이벤트가 없습니다.",
+            severityScore: 80,
+            relatedUrlPath: "/settings",
+            exampleSessionIds: ["sess_1"],
+            representativeEvent: {
+              eventId: "evt_1",
+              sessionId: "sess_1",
+              pageId: "page_1",
+              timestamp: "2026-09-02T01:00:00.000Z",
+              type: "click",
+              urlPath: "/settings",
+              metadata: {},
+              screenContext: {
+                titleMasked: "설정",
+                viewport: { width: 1440, height: 900 },
+                target: {
+                  tagName: "button",
+                  role: "button",
+                  textMaskedOrLimited: "저장",
+                  rect: { x: 620, y: 420, width: 96, height: 40 },
+                },
+                layoutHints: [],
+              },
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("가장 먼저 볼 사용자 막힘")).toBeInTheDocument();
+    expect(screen.getByText("설정 화면에서 저장 버튼 반응 없음")).toBeInTheDocument();
+    expect(screen.getByLabelText("화면 맥락 미리보기")).toBeInTheDocument();
+    expect(screen.getByText("다음 액션")).toBeInTheDocument();
+  });
 });

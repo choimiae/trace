@@ -2,6 +2,7 @@ import type { Issue, SessionTimelineEvent } from "@trace/shared";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getSessionTimeline } from "../api.js";
+import { ScreenContextPreview } from "../components/ScreenContextPreview.js";
 import { SessionTimeline } from "../components/SessionTimeline.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
@@ -31,6 +32,15 @@ export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () 
           <X aria-hidden="true" size={18} />
         </Button>
       </div>
+      {issue.representativeEvent?.screenContext ? (
+        <section className="issue-detail__screen-context" aria-label="대표 화면 맥락">
+          <h3>대표 화면 맥락</h3>
+          <ScreenContextPreview
+            context={issue.representativeEvent.screenContext}
+            event={issue.representativeEvent}
+          />
+        </section>
+      ) : null}
       <dl className="detail-metrics">
         <div>
           <dt>심각도</dt>

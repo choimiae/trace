@@ -1136,3 +1136,65 @@
 .screen-preview--compact .screen-preview__target {
   font-size: var(--text-xs);
 }
+
+.timeline li > div > .screen-preview {
+  margin-top: var(--space-4);
+}
+
+.friction-hero {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.2fr) minmax(280px, 0.8fr);
+  gap: var(--space-5);
+  align-items: stretch;
+  margin-bottom: var(--space-7);
+}
+
+.friction-hero__analysis {
+  display: grid;
+  gap: var(--space-6);
+  align-content: start;
+}
+
+.friction-hero__eyebrow {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.friction-hero__analysis h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-2xl);
+  line-height: 1.35;
+}
+
+.friction-hero__analysis dl {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+}
+
+.friction-hero__analysis dt {
+  color: var(--ink);
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.friction-hero__analysis dd {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+
+@media (max-width: 900px) {
+  .friction-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+.issue-detail__screen-context {
+  display: grid;
+  gap: var(--space-5);
+  margin: var(--space-6) 0 var(--space-7);
+}
