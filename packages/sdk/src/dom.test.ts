@@ -1,6 +1,12 @@
 import { screenContextSchema } from "@trace/shared";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getElementMetadata, getScreenContext } from "./dom.js";
+
+// 이전 테스트가 남긴 DOM 이 다음 테스트로 새면 rect 가 우연히 0으로 겹치는 등
+// 재현 불가능한 통과/실패가 생긴다. 매 테스트를 빈 body 에서 시작한다.
+beforeEach(() => {
+  document.body.innerHTML = "";
+});
 
 function stubRect(
   element: Element,
@@ -42,6 +48,23 @@ describe("getElementMetadata", () => {
     const input = document.querySelector("input")!;
 
     expect(getElementMetadata(input).elementTextMaskedOrLimited).toBeUndefined();
+  });
+
+  it("자손에 contenteditable 이 있으면 그 요소의 텍스트를 담지 않는다", () => {
+    // textContent 는 자손을 포함한다. isTextEntryElement 는 요소 자신과 조상만
+    // 보므로, 화이트리스트 요소 안에 편집 가능 자손이 있으면 그 안의 글자가
+    // textContent 를 통해 새어 나간다.
+    document.body.innerHTML = `<h1>고객 상세 <span contenteditable="true">김철수 010-1111-2222 메모</span></h1>`;
+    const heading = document.querySelector("h1")!;
+
+    expect(getElementMetadata(heading).elementTextMaskedOrLimited).toBeUndefined();
+  });
+
+  it("자손에 textarea 가 있으면 그 요소의 텍스트를 담지 않는다", () => {
+    document.body.innerHTML = `<a href="/x"><span>행 열기</span><textarea>서울시 성동구 어딘가</textarea></a>`;
+    const link = document.querySelector("a")!;
+
+    expect(getElementMetadata(link).elementTextMaskedOrLimited).toBeUndefined();
   });
 });
 
@@ -228,22 +251,40 @@ describe("getScreenContext", () => {
     expect(JSON.stringify(context)).not.toContain("박스 안의 긴 설명 문구");
   });
 
-  it("뷰포트 밖 요소는 힌트에서 제외한다", () => {
+  it("뷰포트 밖(아래·위·왼쪽) 요소는 힌트에서 제외하고 안의 이웃은 담는다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
     document.body.innerHTML = `
-      <main id="page"><button id="far">아래쪽</button><button id="go">저장</button></main>
+      <main id="page">
+        <button id="below">아래쪽</button>
+        <button id="above">위쪽</button>
+        <button id="left">왼쪽</button>
+        <button id="near">가까운 버튼</button>
+        <button id="go">저장</button>
+      </main>
     `;
     stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
-    stubRect(document.querySelector("#far")!, { x: 0, y: 5000, width: 100, height: 40 });
+    stubRect(document.querySelector("#below")!, { x: 0, y: 5000, width: 100, height: 40 });
+    // rectFromDomRect 는 음수 좌표를 0 으로 클램프한다. intersectsViewport 가
+    // 클램프 뒤 값을 보면 위/왼쪽으로 완전히 스크롤된 요소가 y:0·x:0 으로 접혀
+    // 뷰포트 안으로 잘못 판정된다 — 원시 DOMRect 로 판정해야 걸러진다.
+    stubRect(document.querySelector("#above")!, { x: 0, y: -800, width: 100, height: 40 });
+    stubRect(document.querySelector("#left")!, { x: -500, y: 20, width: 100, height: 40 });
+    stubRect(document.querySelector("#near")!, { x: 10, y: 60, width: 96, height: 40 });
     stubRect(document.querySelector("#go")!, { x: 10, y: 20, width: 96, height: 40 });
 
     const context = expectValidScreenContext(document.querySelector("#go")!);
+    const texts = context.layoutHints.map((hint) => hint.textMaskedOrLimited);
 
-    expect(context.layoutHints.some((hint) => hint.textMaskedOrLimited === "아래쪽")).toBe(false);
+    expect(texts).not.toContain("아래쪽");
+    expect(texts).not.toContain("위쪽");
+    expect(texts).not.toContain("왼쪽");
+    // 부재만 확인하면 layoutHints 가 통째로 [] 여도 통과한다 — 실제 이웃이
+    // 담기는지까지 확인해야 생산자가 살아있다는 증거가 된다.
+    expect(texts).toContain("가까운 버튼");
   });
 
-  it("후보가 많아도 힌트는 12개를 넘지 않는다", () => {
+  it("후보가 많아도 힌트는 정확히 12개로 잘린다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
     const buttons = Array.from({ length: 80 }, (_unused, index) => `<button id="b${index}">버튼${index}</button>`).join("");
@@ -256,10 +297,14 @@ describe("getScreenContext", () => {
 
     const context = expectValidScreenContext(document.querySelector("#go")!);
 
-    expect(context.layoutHints.length).toBeLessThanOrEqual(12);
+    // 80개의 버튼 + main 랜드마크가 모두 뷰포트 안에 있으므로 개수는 상한
+    // 12로 결정적이다. <= 12 만 보면 생산자가 조용히 힌트를 덜 채워도 통과한다.
+    expect(context.layoutHints.length).toBe(12);
   });
 
   it("랜드마크가 없는 문서에서도 안전하게 동작한다", () => {
+    // 이 문서의 유일한 후보는 타겟 자신(제외 대상)뿐이라 결과는 항상 [] 다.
+    // 이 테스트는 값을 검증하는 게 아니라 죽지 않는다는 것만 확인한다.
     window.innerWidth = 390;
     window.innerHeight = 844;
     document.body.innerHTML = `<div><button id="go">저장</button></div>`;
@@ -285,8 +330,127 @@ describe("getScreenContext", () => {
     stubRect(document.querySelector("#go")!, { x: 20, y: 260, width: 96, height: 40 });
 
     const context = expectValidScreenContext(document.querySelector("#go")!);
+    // 부재(not.toContain)만으로는 layoutHints 가 통째로 비어도 통과한다.
+    // 힌트가 실제로 담기고, masked:true 이며, 텍스트 필드 자체가 없는지까지 본다.
+    const inner = context.layoutHints.find((hint) => hint.tagName === "button");
+
+    expect(inner).toBeDefined();
+    expect(inner?.masked).toBe(true);
+    expect(inner).not.toHaveProperty("textMaskedOrLimited");
+    expect(JSON.stringify(context)).not.toContain("김철수");
+  });
+
+  it("비밀번호 입력은 마스킹하고 텍스트를 담지 않는다", () => {
+    // isTextEntryElement 는 textarea·contenteditable 만 잡고 input 은 잡지
+    // 않는다. masked 를 그것만으로 계산하면 password 입력조차 masked:false 가
+    // 되어 미리보기가 평범한 박스로 그려진다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `
+      <main id="page">
+        <input id="pw" type="password" value="secret" />
+        <button id="go">로그인</button>
+      </main>
+    `;
+    stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
+    stubRect(document.querySelector("#pw")!, { x: 20, y: 20, width: 200, height: 40 });
+    stubRect(document.querySelector("#go")!, { x: 20, y: 80, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#go")!);
+    const password = context.layoutHints.find((hint) => hint.tagName === "input");
+
+    expect(password?.masked).toBe(true);
+    expect(password).not.toHaveProperty("textMaskedOrLimited");
+  });
+
+  it("문서 앞쪽 크롬이 많아도 타겟과 가까운 이웃을 후보에서 놓치지 않는다", () => {
+    // 이전 구현은 이웃 후보를 문서 순서로 60개 자른 뒤 거리로 정렬했다.
+    // nearestContainer 가 body 로 폴백하면 문서 앞쪽 크롬이 60칸을 다 먹어
+    // 정작 타겟의 실제 이웃(형제)은 후보에도 들지 못했다. 타겟은 4단 중첩된
+    // div 안에 있어 nearestContainer 가 CONTAINER_SELECTOR 를 못 찾고 body 로
+    // 폴백한다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    const chrome = Array.from({ length: 70 }, (_unused, index) => `<button id="chrome${index}">크롬${index}</button>`).join(
+      "",
+    );
+    document.body.innerHTML = `
+      ${chrome}
+      <div><div><div><div>
+        <button id="sibling-before">이전 버튼</button>
+        <button id="go">저장</button>
+        <button id="sibling-after">다음 버튼</button>
+      </div></div></div></div>
+    `;
+    for (let index = 0; index < 70; index += 1) {
+      stubRect(document.querySelector(`#chrome${index}`)!, { x: index, y: 0, width: 40, height: 20 });
+    }
+    stubRect(document.querySelector("#sibling-before")!, { x: 10, y: 760, width: 96, height: 40 });
+    stubRect(document.querySelector("#go")!, { x: 10, y: 810, width: 96, height: 40 });
+    stubRect(document.querySelector("#sibling-after")!, { x: 10, y: 860, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#go")!);
+    const texts = context.layoutHints.map((hint) => hint.textMaskedOrLimited);
+
+    expect(texts).toContain("이전 버튼");
+    expect(texts).toContain("다음 버튼");
+  });
+
+  it("이웃 하나의 rect 조회가 던져도 화면 맥락 전체를 잃지 않는다", () => {
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `
+      <main id="page">
+        <button id="broken">깨진 버튼</button>
+        <button id="go">저장</button>
+      </main>
+    `;
+    stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
+    document.querySelector("#broken")!.getBoundingClientRect = vi.fn(() => {
+      throw new Error("layout unavailable");
+    });
+    stubRect(document.querySelector("#go")!, { x: 10, y: 20, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#go")!);
+
+    expect(context.viewport).toEqual({ width: 1440, height: 900 });
+    expect(context.target?.tagName).toBe("button");
+  });
+
+  it("제목 안에 편집 가능 자손이 있어도 그 글자는 담지 않는다", () => {
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `
+      <main id="page">
+        <h1 id="title">고객 상세 <span contenteditable="true">김철수 010-1111-2222 메모</span></h1>
+        <button id="go">저장</button>
+      </main>
+    `;
+    stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
+    stubRect(document.querySelector("#title")!, { x: 20, y: 20, width: 400, height: 40 });
+    stubRect(document.querySelector("#go")!, { x: 20, y: 80, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#go")!);
 
     expect(JSON.stringify(context)).not.toContain("김철수");
+  });
+
+  it("링크 안에 textarea 가 있어도 그 글자는 담지 않는다", () => {
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `
+      <main id="page">
+        <a id="row" href="/x"><span>행 열기</span><textarea>서울시 성동구 어딘가</textarea></a>
+        <button id="go">저장</button>
+      </main>
+    `;
+    stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
+    stubRect(document.querySelector("#row")!, { x: 20, y: 20, width: 400, height: 40 });
+    stubRect(document.querySelector("#go")!, { x: 20, y: 80, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#go")!);
+
+    expect(JSON.stringify(context)).not.toContain("서울시");
   });
 });
 

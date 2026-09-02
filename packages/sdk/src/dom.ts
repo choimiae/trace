@@ -11,8 +11,9 @@ const MAX_SCREEN_RECT = 10000;
 const MAX_VIEWPORT = 10000;
 const SAFE_TAG_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 const MAX_LAYOUT_HINTS = 12;
+// 랜드마크 몫 예약. 이웃 상한은 따로 두지 않는다 — 랜드마크가 없는 문서에서는
+// 이웃이 유일한 신호이므로 나머지 전부(MAX_LAYOUT_HINTS)를 채울 수 있어야 한다.
 const MAX_LANDMARK_HINTS = 4;
-const MAX_NEIGHBOR_HINTS = 8;
 // 클릭당 검사 후보 상한. 시간 기반 throttle 대신 작업량을 묶는다 — rage click 의
 // 2번째 이후 클릭에서 힌트가 사라지면 정작 필요한 이슈에서 화면이 빈다.
 const MAX_HINT_CANDIDATES = 60;
@@ -39,11 +40,20 @@ function isTextEntryElement(element: Element): boolean {
   return element.closest(CONTENTEDITABLE_SELECTOR) !== null;
 }
 
+// textContent 는 자손을 포함한다. isTextEntryElement 는 요소 자신과 조상만 보므로,
+// 화이트리스트 요소(예: <h1>, <a>) 안에 편집 가능 자손이나 textarea 가 있으면
+// 그 안의 글자가 textContent 를 통해 새어 나간다. 요소 전체를 건너뛰는 쪽이
+// 텍스트 노드를 걸러내는 것보다 단순하고 안전하다 — 제목 일부를 잃더라도.
+function containsTextEntrySubtree(element: Element): boolean {
+  return element.querySelector(`textarea, ${CONTENTEDITABLE_SELECTOR}`) !== null;
+}
+
 export function getElementMetadata(element: Element): ElementMetadata {
   const role = element.getAttribute("role") ?? element.tagName.toLowerCase();
   const selector = buildSelector(element);
   const sensitive =
     isTextEntryElement(element) ||
+    containsTextEntrySubtree(element) ||
     isSensitiveField({
       tagName: element.tagName,
       type: element instanceof HTMLInputElement ? element.type : "",
@@ -138,8 +148,11 @@ function buildScreenTarget(element: Element, viewport: ScreenViewport): ScreenTa
   };
 }
 
-function intersectsViewport(rect: ScreenRect, viewport: ScreenViewport): boolean {
-  return rect.x < viewport.width && rect.y < viewport.height && rect.width > 0 && rect.height > 0;
+// 원시 DOMRect 로 판정한다. rectFromDomRect 가 x/y 를 0 으로 클램프한 뒤에 보면
+// 화면 위쪽·왼쪽으로 스크롤된 요소가 y:0 으로 접혀 통과하고, 미리보기 상단에
+// 몰려 실제 화면을 왜곡한다.
+function intersectsViewport(rect: DOMRect | ClientRect, viewport: ScreenViewport): boolean {
+  return rect.right > 0 && rect.bottom > 0 && rect.left < viewport.width && rect.top < viewport.height;
 }
 
 function rectCenterDistance(left: ScreenRect, right: ScreenRect): number {
@@ -154,6 +167,21 @@ function allowsHintText(element: Element, tagName: string, role: string | undefi
   return TEXT_TAG_WHITELIST.has(tagName);
 }
 
+// masked 는 "내용을 보여주지 않는다" 는 표시다. isTextEntryElement 는 textarea 와
+// contenteditable 만 잡고 <input> 은 잡지 않으므로, 그것만으로 계산하면 password
+// 입력조차 masked:false 가 되어 미리보기가 평범한 박스로 그려지고 Task 3 의 서버
+// 집행도 무력해진다. spec 표(입력 계열 또는 isSensitiveField)대로 계산한다.
+function isMaskedHintElement(element: Element, tagName: string): boolean {
+  if (isTextEntryElement(element)) return true;
+  if (tagName === "input" || tagName === "select") return true;
+  return isSensitiveField({
+    tagName: element.tagName,
+    type: element instanceof HTMLInputElement ? element.type : "",
+    name: element instanceof HTMLInputElement ? element.name : "",
+    id: element.id,
+  });
+}
+
 function buildLayoutHint(
   element: Element,
   viewport: ScreenViewport,
@@ -161,12 +189,13 @@ function buildLayoutHint(
   const tagName = element.tagName.toLowerCase();
   if (!SAFE_TAG_NAME_PATTERN.test(tagName)) return undefined;
 
-  const rect = rectFromDomRect(element.getBoundingClientRect());
-  if (!intersectsViewport(rect, viewport)) return undefined;
+  const domRect = element.getBoundingClientRect();
+  if (!intersectsViewport(domRect, viewport)) return undefined;
+  const rect = rectFromDomRect(domRect);
 
   const metadata = getElementMetadata(element);
   const role = safeRole(metadata.elementRole);
-  const masked = isTextEntryElement(element);
+  const masked = isMaskedHintElement(element, tagName);
   const text =
     allowsHintText(element, tagName, role) && metadata.elementTextMaskedOrLimited
       ? redactScreenText(metadata.elementTextMaskedOrLimited)
@@ -190,7 +219,9 @@ function nearestContainer(target: Element): Element {
     if (current.matches(CONTAINER_SELECTOR)) return current;
     current = current.parentElement;
   }
-  return target.ownerDocument.body;
+  // body 가 없는 문서(XML 등)도 있다. 그 경우 documentElement 로, 그마저 없으면
+  // 타겟 자신으로 떨어뜨려 querySelectorAll 이 null 에서 터지지 않게 한다.
+  return target.ownerDocument.body ?? target.ownerDocument.documentElement ?? target;
 }
 
 function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLayoutHint[] {
@@ -198,9 +229,16 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   const seen = new Set<string>();
   const hints: ScreenLayoutHint[] = [];
 
+  // 힌트 하나가 던져도 화면 맥락 전체를 잃지 않는다. getScreenContext 의 바깥
+  // try/catch 에 맡기면 타겟과 뷰포트까지 날아가서 힌트를 안 걷는 것보다 나쁘다.
   const push = (element: Element): void => {
     if (element === target || hints.length >= MAX_LAYOUT_HINTS) return;
-    const built = buildLayoutHint(element, viewport);
+    let built: ReturnType<typeof buildLayoutHint>;
+    try {
+      built = buildLayoutHint(element, viewport);
+    } catch {
+      return;
+    }
     if (!built) return;
     const key = `${built.rect.x}:${built.rect.y}:${built.rect.width}:${built.rect.height}`;
     if (seen.has(key)) return;
@@ -217,14 +255,37 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
     push(landmark);
   }
 
-  const neighbors = Array.from(nearestContainer(target).querySelectorAll(NEIGHBOR_SELECTOR))
-    .slice(0, MAX_HINT_CANDIDATES)
-    .map((element) => ({ element, distance: rectCenterDistance(rectFromDomRect(element.getBoundingClientRect()), targetRect) }))
-    .sort((left, right) => left.distance - right.distance);
+  // 후보를 문서 순서로 자르면 안 된다. nearestContainer 가 body 로 폴백한 경우
+  // 문서 앞쪽의 페이지 크롬이 60칸을 다 먹고 정작 타겟 이웃은 후보에도 못 든다.
+  // 타겟의 문서 순서 위치를 중심으로 창을 잡아 rect 읽기를 묶은 뒤 거리로 정렬한다.
+  const container = nearestContainer(target);
+  const all = Array.from(container.querySelectorAll(NEIGHBOR_SELECTOR));
+  const targetIndex = all.indexOf(target);
+  const anchor = targetIndex === -1 ? 0 : targetIndex;
+  const half = Math.floor(MAX_HINT_CANDIDATES / 2);
+  const windowed = all.slice(Math.max(0, anchor - half), anchor + half);
+  // 거리 계산도 rect 를 읽는다. push 의 try/catch 는 이 시점 이후에만 걸리므로,
+  // 여기서 던지는 후보를 거르지 않으면 push 에 닿기도 전에 힌트 수집 전체가
+  // 죽는다 — 하나가 던져도 나머지를 잃지 않는다는 약속이 정렬 단계에서 깨진다.
+  const neighbors: Array<{ element: Element; distance: number }> = [];
+  for (const element of windowed) {
+    try {
+      neighbors.push({
+        element,
+        distance: rectCenterDistance(rectFromDomRect(element.getBoundingClientRect()), targetRect),
+      });
+    } catch {
+      // 이 후보는 순위를 매길 수 없다 — 건너뛴다. 어차피 push 에서도 같은 rect
+      // 읽기가 다시 던져 걸러질 대상이다.
+    }
+  }
+  neighbors.sort((left, right) => left.distance - right.distance);
 
-  const landmarkCount = hints.length;
+  // 랜드마크가 없으면 이웃이 유일한 신호다. MAX_LANDMARK_HINTS 는 랜드마크 몫을
+  // 예약하는 뜻이지 이웃의 전체 상한을 낮추라는 뜻이 아니므로, 이웃은
+  // MAX_LAYOUT_HINTS 까지 채운다.
   for (const neighbor of neighbors) {
-    if (hints.length >= landmarkCount + MAX_NEIGHBOR_HINTS) break;
+    if (hints.length >= MAX_LAYOUT_HINTS) break;
     push(neighbor.element);
   }
 
