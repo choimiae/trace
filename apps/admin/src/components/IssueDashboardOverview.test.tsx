@@ -297,6 +297,8 @@ describe("IssueDashboardOverview", () => {
     expect(within(hero).getByText("영향")).toBeInTheDocument();
     // hero 안 점수 필
     expect(within(hero).getByText("90")).toBeInTheDocument();
+    // 다음 액션의 dt/dd 는 유효한 dl 안에 있어야 한다 (dl 밖 dt/dd 는 잘못된 HTML).
+    expect(within(hero).getByText("다음 액션").closest("dl")).not.toBeNull();
   });
 
   it("오류 서명이 없으면 오류 행을 숨긴다", () => {

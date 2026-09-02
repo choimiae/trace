@@ -160,7 +160,6 @@
   flex-wrap: wrap;
   gap: var(--space-3);
   min-width: 0;
-  padding-right: 28px;
 }
 
 .priority-issue-meta > span:not(.chip):not(.issue-trend) {
@@ -197,10 +196,8 @@
 }
 
 .priority-issue-open {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  color: var(--ink-muted);
+  position: static;
+  color: var(--ink-faint);
 }
 
 .overview-card {
@@ -1167,12 +1164,6 @@
   color: var(--ink);
   font-size: var(--text-2xl);
   line-height: 1.35;
-}
-
-.friction-hero__analysis dl {
-  display: grid;
-  gap: var(--space-5);
-  margin: 0;
 }
 
 .friction-hero__analysis dt {

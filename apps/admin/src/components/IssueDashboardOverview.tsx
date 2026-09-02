@@ -151,10 +151,10 @@ export function IssueDashboardOverview({
               </dd>
             </div>
           </dl>
-          <div className="friction-hero__action">
+          <dl className="friction-hero__action">
             <dt>다음 액션</dt>
             <dd>해당 화면의 클릭 후 반응, 성공 피드백, 오류 노출 상태를 우선 점검합니다.</dd>
-          </div>
+          </dl>
         </div>
       </section>
       <Card as="section" className="dashboard-overview" aria-label="문제 한눈에 보기">
