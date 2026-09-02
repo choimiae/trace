@@ -1190,6 +1190,38 @@ function describeTraceStoreContract(
       expect(timeline[1]).not.toHaveProperty("errorName");
     });
 
+    it("이슈 오류 서명을 보존한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      await store.upsertIssues(project.projectId, [
+        {
+          issueId: "issue_err",
+          projectId: project.projectId,
+          issueType: "error_friction",
+          title: "/checkout 화면에서 오류 기반 막힘이 감지되었습니다",
+          summary: "사용자 행동 흐름 중 js_error 이벤트가 발생했습니다.",
+          affectedSessionsCount: 1,
+          affectedUsersCount: 1,
+          severityScore: 45,
+          firstSeenAt: "2026-09-02T01:00:00.000Z",
+          lastSeenAt: "2026-09-02T01:00:00.000Z",
+          trend: "flat",
+          relatedUrlPath: "/checkout",
+          exampleSessionIds: ["sess_1"],
+          status: "new",
+          relatedErrorSignature: "TypeError · /assets/checkout.js:412",
+        },
+      ]);
+
+      const issues = await store.listIssues(project.projectId);
+
+      expect(issues[0]?.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
+    });
+
     it("preserves screen context in session timeline events", async () => {
       const store = open();
       const project = await store.createProject({

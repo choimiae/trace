@@ -514,8 +514,8 @@ export class SqliteStore implements TraceStore {
       `INSERT OR REPLACE INTO issues
          (issue_id, project_id, issue_type, title, summary, affected_sessions_count, affected_users_count,
           severity_score, first_seen_at, last_seen_at, trend, related_url_path, related_feature_id,
-          example_session_ids, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          example_session_ids, status, related_error_signature)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const upsertAll = this.db.transaction((records: Issue[]) => {
@@ -537,6 +537,7 @@ export class SqliteStore implements TraceStore {
           issue.relatedFeatureId ?? null,
           JSON.stringify(issue.exampleSessionIds ?? []),
           issue.status,
+          issue.relatedErrorSignature ?? null,
         );
       }
     });
@@ -699,6 +700,7 @@ export class SqliteStore implements TraceStore {
       relatedFeatureId: row.related_feature_id as string | null,
       exampleSessionIds: JSON.parse(row.example_session_ids as string) as string[],
       status: row.status as Issue["status"],
+      relatedErrorSignature: row.related_error_signature as string | null,
     }) as Issue;
   }
 
@@ -719,6 +721,9 @@ export class SqliteStore implements TraceStore {
     }
     if (!hasColumn(this.db, "events", "error_line")) {
       this.db.exec("ALTER TABLE events ADD COLUMN error_line INTEGER");
+    }
+    if (!hasColumn(this.db, "issues", "related_error_signature")) {
+      this.db.exec("ALTER TABLE issues ADD COLUMN related_error_signature TEXT");
     }
   }
 

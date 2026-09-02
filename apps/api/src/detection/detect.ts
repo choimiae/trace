@@ -120,8 +120,18 @@ function detectErrorFriction(projectId: string, events: TraceEvent[], now: strin
         sessionIds: [event.sessionId],
         timeRange: eventTimeRange([event]),
         severityScore: scoreIssue({ base: 45, affectedSessions: 1, hasError: true }),
+        ...(errorSignature(event) === undefined ? {} : { relatedErrorSignature: errorSignature(event)! }),
       }),
     );
+}
+
+// 저장은 경로 전체로 한다. basename 으로 줄이면 같은 이름의 다른 경로를 구분할 수 없다.
+function errorSignature(event: TraceEvent): string | undefined {
+  const location = event.errorSource
+    ? `${event.errorSource}${event.errorLine === undefined ? "" : `:${event.errorLine}`}`
+    : undefined;
+  const parts = [event.errorName, location].filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? undefined : parts.join(" · ");
 }
 
 function makeIssue(input: {
@@ -134,6 +144,7 @@ function makeIssue(input: {
   sessionIds: string[];
   timeRange: { firstSeenAt: string; lastSeenAt: string };
   severityScore: number;
+  relatedErrorSignature?: string;
 }): Issue {
   return {
     issueId: `issue_${issueTargetKey({
@@ -154,6 +165,7 @@ function makeIssue(input: {
     relatedUrlPath: input.relatedUrlPath,
     exampleSessionIds: input.sessionIds.slice(0, 3),
     status: "new",
+    ...(input.relatedErrorSignature ? { relatedErrorSignature: input.relatedErrorSignature } : {}),
   };
 }
 
@@ -182,6 +194,7 @@ function dedupeIssues(issues: Issue[]): Issue[] {
       firstSeenAt: minTimestamp(existing.firstSeenAt, issue.firstSeenAt),
       lastSeenAt: maxTimestamp(existing.lastSeenAt, issue.lastSeenAt),
       exampleSessionIds,
+      relatedErrorSignature: existing.relatedErrorSignature ?? issue.relatedErrorSignature,
     });
   }
 

@@ -105,4 +105,106 @@ describe("detectIssues", () => {
 
     expect(issues.some((issue) => issue.issueType === "error_friction")).toBe(true);
   });
+
+  it("오류 이벤트에서 오류 서명을 조립한다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-02T01:00:10.000Z",
+      events: [
+        {
+          eventId: "evt_err",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          errorName: "TypeError",
+          errorSource: "/assets/checkout.js",
+          errorLine: 412,
+          metadata: {},
+        },
+      ],
+    });
+    const errorIssue = issues.find((issue) => issue.issueType === "error_friction");
+
+    expect(errorIssue?.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
+  });
+
+  it("부분 정보만 있으면 있는 값으로만 서명을 만든다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-02T01:00:10.000Z",
+      events: [
+        {
+          eventId: "evt_err",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          errorName: "RangeError",
+          metadata: {},
+        },
+      ],
+    });
+    const errorIssue = issues.find((issue) => issue.issueType === "error_friction");
+
+    expect(errorIssue?.relatedErrorSignature).toBe("RangeError");
+  });
+
+  it("오류 식별자가 없으면 서명을 넣지 않는다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-02T01:00:10.000Z",
+      events: [
+        {
+          eventId: "evt_err",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          metadata: {},
+        },
+      ],
+    });
+    const errorIssue = issues.find((issue) => issue.issueType === "error_friction");
+
+    expect(errorIssue).toBeDefined();
+    expect(errorIssue).not.toHaveProperty("relatedErrorSignature");
+  });
+
+  it("같은 이슈로 병합될 때 서명이 있는 발생 건의 서명을 보존한다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-02T01:00:10.000Z",
+      events: [
+        {
+          eventId: "evt_no_sig",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          metadata: {},
+        },
+        {
+          eventId: "evt_with_sig",
+          sessionId: "sess_2",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:01.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          errorName: "TypeError",
+          errorSource: "/assets/checkout.js",
+          errorLine: 412,
+          metadata: {},
+        },
+      ],
+    });
+    const errorIssue = issues.find((issue) => issue.issueType === "error_friction");
+
+    expect(errorIssue?.affectedSessionsCount).toBe(2);
+    expect(errorIssue?.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
+  });
 });

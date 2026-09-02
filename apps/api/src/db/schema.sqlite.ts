@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS issues (
   related_url_path TEXT,
   related_feature_id TEXT,
   example_session_ids TEXT NOT NULL DEFAULT '[]',
-  status TEXT NOT NULL
+  status TEXT NOT NULL,
+  related_error_signature TEXT
 );
 
 CREATE INDEX IF NOT EXISTS issues_project_severity ON issues (project_id, severity_score DESC);
