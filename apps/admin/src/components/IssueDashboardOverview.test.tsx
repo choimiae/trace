@@ -141,5 +141,8 @@ describe("IssueDashboardOverview", () => {
     expect(screen.getByText("설정 화면에서 저장 버튼 반응 없음")).toBeInTheDocument();
     expect(screen.getByLabelText("화면 맥락 미리보기")).toBeInTheDocument();
     expect(screen.getByText("다음 액션")).toBeInTheDocument();
+
+    const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
+    expect(within(hero).getByLabelText("클릭 위치")).toBeInTheDocument();
   });
 });

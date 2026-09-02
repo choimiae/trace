@@ -207,5 +207,8 @@ describe("DashboardPage", () => {
     expect(within(overview).getAllByText("/settings")).toHaveLength(2);
     expect(within(overview).getByText("분노 클릭")).toBeInTheDocument();
     expect(screen.getByLabelText("화면 맥락 미리보기")).toBeInTheDocument();
+
+    const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
+    expect(within(hero).getByLabelText("클릭 위치")).toBeInTheDocument();
   });
 });

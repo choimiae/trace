@@ -92,15 +92,15 @@ export function IssueDashboardOverview({
 
   return (
     <>
-      <section className="friction-hero" aria-label="가장 먼저 볼 사용자 막힘">
-        <div className="friction-hero__preview">
-          <ScreenContextPreview
-            {...(representativeEvent?.screenContext ? { context: representativeEvent.screenContext } : {})}
-            {...(representativeEvent ? { event: representativeEvent } : {})}
-          />
-        </div>
+      <section className="friction-hero" aria-labelledby="friction-hero-eyebrow">
+        <ScreenContextPreview
+          {...(representativeEvent?.screenContext ? { context: representativeEvent.screenContext } : {})}
+          {...(representativeEvent ? { event: representativeEvent } : {})}
+        />
         <div className="friction-hero__analysis">
-          <p className="friction-hero__eyebrow">가장 먼저 볼 사용자 막힘</p>
+          <p className="friction-hero__eyebrow" id="friction-hero-eyebrow">
+            가장 먼저 볼 사용자 막힘
+          </p>
           <h2>
             {screenLabel} 화면에서 {topIssue.title}
           </h2>
