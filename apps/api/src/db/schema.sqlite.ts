@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS events_project_timestamp ON events (project_id, timestamp);
 CREATE INDEX IF NOT EXISTS events_project_session ON events (project_id, session_id);
+CREATE INDEX IF NOT EXISTS events_project_session_timestamp ON events (project_id, session_id, timestamp);
 
 CREATE TABLE IF NOT EXISTS issues (
   issue_id TEXT PRIMARY KEY,

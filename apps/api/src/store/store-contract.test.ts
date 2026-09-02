@@ -1192,6 +1192,101 @@ function describeTraceStoreContract(
       });
     });
 
+    it("세션별로 시간 창·경로에 맞는 첫 화면 맥락 이벤트만 돌려준다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const screenContext = {
+        viewport: { width: 1440, height: 900 },
+        target: {
+          tagName: "button",
+          rect: { x: 620, y: 420, width: 96, height: 40 },
+        },
+        layoutHints: [],
+      };
+      const event = (
+        eventId: string,
+        sessionId: string,
+        timestamp: string,
+        type: "click" | "js_error",
+        urlPath: string,
+        withScreenContext = true,
+      ) => ({
+        eventId,
+        sessionId,
+        pageId: "page_1",
+        timestamp,
+        type,
+        urlPath,
+        metadata: {},
+        ...(withScreenContext ? { screenContext } : {}),
+      });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T03:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          event("evt_too_early", "sess_1", "2026-09-02T01:00:00.000Z", "click", "/settings"),
+          event("evt_no_context", "sess_1", "2026-09-02T02:00:00.000Z", "click", "/settings", false),
+          event("evt_first_in_window", "sess_1", "2026-09-02T02:00:05.000Z", "click", "/settings"),
+          event("evt_other_path", "sess_1", "2026-09-02T02:00:06.000Z", "click", "/billing"),
+          event("evt_later_in_window", "sess_1", "2026-09-02T02:00:07.000Z", "click", "/settings"),
+          event("evt_too_late", "sess_1", "2026-09-02T02:30:00.000Z", "click", "/settings"),
+          event("evt_other_session", "sess_2", "2026-09-02T02:00:08.000Z", "js_error", "/settings"),
+          event("evt_unrelated_session", "sess_9", "2026-09-02T02:00:09.000Z", "click", "/settings"),
+        ],
+      });
+
+      const matched = await store.findScreenContextEvents({
+        projectId: project.projectId,
+        sessionIds: ["sess_1", "sess_2", "sess_missing"],
+        urlPath: "/settings",
+        from: "2026-09-02T02:00:00.000Z",
+        to: "2026-09-02T02:00:10.000Z",
+      });
+
+      expect(matched.map((matchedEvent) => matchedEvent.eventId)).toEqual([
+        "evt_first_in_window",
+        "evt_other_session",
+      ]);
+      expect(matched[0]?.screenContext?.target?.tagName).toBe("button");
+
+      const typed = await store.findScreenContextEvents({
+        projectId: project.projectId,
+        sessionIds: ["sess_1", "sess_2"],
+        urlPath: "/settings",
+        from: "2026-09-02T02:00:00.000Z",
+        to: "2026-09-02T02:00:10.000Z",
+        types: ["js_error"],
+      });
+
+      expect(typed.map((matchedEvent) => matchedEvent.eventId)).toEqual(["evt_other_session"]);
+
+      const anyPath = await store.findScreenContextEvents({
+        projectId: project.projectId,
+        sessionIds: ["sess_1"],
+        from: "2026-09-02T02:00:06.000Z",
+        to: "2026-09-02T02:00:06.000Z",
+      });
+
+      expect(anyPath.map((matchedEvent) => matchedEvent.eventId)).toEqual(["evt_other_path"]);
+
+      await expect(
+        store.findScreenContextEvents({
+          projectId: project.projectId,
+          sessionIds: [],
+          from: "2026-09-02T02:00:00.000Z",
+          to: "2026-09-02T02:00:10.000Z",
+        }),
+      ).resolves.toEqual([]);
+    });
+
     it("cutoff 이전 이벤트만 삭제한다", async () => {
       const store = open();
       const project = await store.createProject({

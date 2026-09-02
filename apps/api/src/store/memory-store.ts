@@ -14,6 +14,7 @@ import type {
   ProjectMembershipRecord,
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
+  ScreenContextEventQuery,
   TraceStore,
   UpdateProjectInput,
   UpsertAdminUserFromGoogleInput,
@@ -314,6 +315,26 @@ export class MemoryStore implements TraceStore {
 
   async getSessionTimeline(projectId: string, sessionId: string): Promise<TraceEvent[]> {
     return (await this.listEvents(projectId)).filter((event) => event.sessionId === sessionId);
+  }
+
+  async findScreenContextEvents(query: ScreenContextEventQuery): Promise<TraceEvent[]> {
+    const events = await this.listEvents(query.projectId);
+    const matched: TraceEvent[] = [];
+
+    for (const sessionId of query.sessionIds) {
+      const match = events.find(
+        (event) =>
+          event.sessionId === sessionId &&
+          event.screenContext !== undefined &&
+          (query.urlPath === undefined || event.urlPath === query.urlPath) &&
+          event.timestamp >= query.from &&
+          event.timestamp <= query.to &&
+          (query.types === undefined || query.types.length === 0 || query.types.includes(event.type)),
+      );
+      if (match) matched.push(match);
+    }
+
+    return matched;
   }
 
   async getDashboardSummary(projectId: string): Promise<DashboardSummary> {

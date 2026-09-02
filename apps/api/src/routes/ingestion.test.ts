@@ -188,7 +188,7 @@ describe("ingestion routes", () => {
     expect(timeline[0]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
   });
 
-  it("rejects invalid screen context payloads", async () => {
+  it("마스킹되지 않은 화면 맥락 텍스트는 배치를 거절하지 않고 다시 마스킹한다", async () => {
     const store = new MemoryStore();
     const project = await store.createProject({
       name: "Demo",
@@ -231,7 +231,159 @@ describe("ingestion routes", () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(202);
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(timeline[0]?.screenContext?.target?.textMaskedOrLimited).toBe("[redacted]");
+  });
+
+  it("일상적인 고객 DOM 에서 온 화면 맥락을 거절하지 않고 정리해서 저장한다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+    // redactText 를 1회만 적용한 제목. 자체 slice(0, 120) 경계 때문에 아직
+    // 마스킹 대상이 남아 있어 screenContextSchema 를 그대로는 통과하지 못한다.
+    const onceRedactedTitle = `${"가".repeat(107)}1234567890123`;
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_hostile",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: {
+              titleMasked: onceRedactedTitle,
+              viewport: { width: 1440.4, height: 900 },
+              target: {
+                tagName: "DIV",
+                role: "none presentation",
+                selectorHash: "not a hash",
+                rect: { x: -20, y: 0, width: 12000, height: 30000 },
+              },
+              layoutHints: Array.from({ length: 20 }, (_unused, index) => ({
+                tagName: "section",
+                masked: true,
+                rect: { x: index, y: index, width: 40, height: 40 },
+              })),
+            },
+          },
+          {
+            eventId: "evt_ok",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:01.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: {
+              titleMasked: "설정",
+              viewport: { width: 1440, height: 900 },
+              target: {
+                tagName: "button",
+                role: "button",
+                textMaskedOrLimited: "저장",
+                rect: { x: 620, y: 420, width: 96, height: 40 },
+              },
+              layoutHints: [],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: 2 });
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(timeline.map((event) => event.eventId)).toEqual(["evt_hostile", "evt_ok"]);
+    expect(timeline[0]?.screenContext).toMatchObject({
+      titleMasked: `${"가".repeat(107)}[redacted]`,
+      viewport: { width: 1440, height: 900 },
+      target: {
+        tagName: "div",
+        rect: { x: 0, y: 0, width: 10000, height: 10000 },
+      },
+    });
+    expect(timeline[0]?.screenContext?.target).not.toHaveProperty("role");
+    expect(timeline[0]?.screenContext?.target).not.toHaveProperty("selectorHash");
+    expect(timeline[0]?.screenContext?.layoutHints).toHaveLength(12);
+    expect(timeline[1]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
+  });
+
+  it("복구할 수 없는 화면 맥락은 필드만 버리고 같은 배치의 다른 이벤트를 저장한다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_broken",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: "화면 맥락 아님",
+          },
+          {
+            eventId: "evt_ok",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:01.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: {
+              viewport: { width: 1440, height: 900 },
+              target: {
+                tagName: "button",
+                role: "button",
+                textMaskedOrLimited: "저장",
+                rect: { x: 620, y: 420, width: 96, height: 40 },
+              },
+              layoutHints: [],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: 2 });
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).not.toHaveProperty("screenContext");
+    expect(timeline[1]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
   });
 
   it("rejects events from a disallowed domain", async () => {

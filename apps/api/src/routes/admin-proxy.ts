@@ -508,24 +508,52 @@ async function attachRepresentativeEvents(
   );
 }
 
+// 이슈 성격에 맞는 이벤트 타입. 같은 화면의 아무 클릭이 아니라 문제를 만든 행동을
+// 대표 화면으로 보여줘야 운영자가 클릭 지점을 오해하지 않는다.
+const REPRESENTATIVE_EVENT_TYPES: Record<Issue["issueType"], TraceEvent["type"][]> = {
+  dead_click_cluster: ["dead_click", "click"],
+  rage_click: ["rage_click", "click"],
+  long_pause: ["idle", "click"],
+  scroll_friction: ["scroll", "click"],
+  error_friction: ["js_error", "api_error", "click"],
+  form_friction: ["form_abandon", "form_submit", "form_start", "field_blur"],
+};
+
+// long_pause·error_friction 이슈는 firstSeenAt 과 lastSeenAt 이 같은 한 시점이고,
+// 화면 맥락은 그 직전 클릭에 실린다. 창을 그 시점으로만 잡으면 대표 화면이 사라지므로
+// 30초 앞까지만 열어 둔다. 그보다 먼 클릭은 그 문제가 난 화면이라고 볼 수 없다.
+const REPRESENTATIVE_LEAD_IN_MS = 30_000;
+
 async function findRepresentativeEvent(
   store: TraceStore,
   projectId: string,
   issue: Issue,
 ): Promise<TraceEvent | undefined> {
-  for (const sessionId of issue.exampleSessionIds.slice(0, 3)) {
-    const timeline = await store.getSessionTimeline(projectId, sessionId);
-    const matchingEvent = timeline.find((event) => {
-      const samePath = issue.relatedUrlPath ? event.urlPath === issue.relatedUrlPath : true;
-      return samePath && Boolean(event.screenContext);
-    });
+  const sessionIds = issue.exampleSessionIds.slice(0, 3);
+  if (sessionIds.length === 0) return undefined;
 
-    if (matchingEvent) {
-      return matchingEvent;
-    }
-  }
+  const query = {
+    projectId,
+    sessionIds,
+    ...(issue.relatedUrlPath === undefined ? {} : { urlPath: issue.relatedUrlPath }),
+    from: representativeWindowStart(issue.firstSeenAt),
+    to: issue.lastSeenAt,
+  };
 
-  return undefined;
+  const preferred = await store.findScreenContextEvents({
+    ...query,
+    types: REPRESENTATIVE_EVENT_TYPES[issue.issueType],
+  });
+  if (preferred[0]) return preferred[0];
+
+  const withinWindow = await store.findScreenContextEvents(query);
+  return withinWindow[0];
+}
+
+function representativeWindowStart(firstSeenAt: string): string {
+  const firstSeenMs = Date.parse(firstSeenAt);
+  if (Number.isNaN(firstSeenMs)) return firstSeenAt;
+  return new Date(firstSeenMs - REPRESENTATIVE_LEAD_IN_MS).toISOString();
 }
 
 type ProjectAccess = {

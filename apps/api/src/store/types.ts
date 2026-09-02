@@ -90,6 +90,15 @@ export interface CreateAuditLogInput {
 
 export type ProjectMembershipAuditLogFactory = (current: ProjectMembershipRecord) => CreateAuditLogInput;
 
+export interface ScreenContextEventQuery {
+  projectId: string;
+  sessionIds: string[];
+  urlPath?: string;
+  from: string;
+  to: string;
+  types?: TraceEvent["type"][];
+}
+
 export interface StoredSession {
   sessionId: string;
   projectId: string;
@@ -146,6 +155,13 @@ export interface TraceStore {
   listIssues(projectId: string): Promise<Issue[]>;
   getIssue(issueId: string): Promise<Issue | undefined>;
   getSessionTimeline(projectId: string, sessionId: string): Promise<TraceEvent[]>;
+  /**
+   * 세션마다 조건(화면 맥락 보유, urlPath, 시간 창, 이벤트 타입)에 맞는 가장 이른
+   * 이벤트를 하나씩 돌려준다. 입력한 sessionIds 순서를 유지하고 일치가 없는 세션은
+   * 결과에서 빠진다. 대시보드 첫 화면이 이슈마다 세션 타임라인 전체를 읽지 않게 하려고
+   * 인덱스 질의 하나로 대표 이벤트만 가져오는 용도다.
+   */
+  findScreenContextEvents(query: ScreenContextEventQuery): Promise<TraceEvent[]>;
   getDashboardSummary(projectId: string): Promise<DashboardSummary>;
 }
 

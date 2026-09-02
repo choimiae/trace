@@ -17,6 +17,7 @@ import type {
   ProjectMembershipRecord,
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
+  ScreenContextEventQuery,
   TraceStore,
   UpdateProjectInput,
   UpsertAdminUserFromGoogleInput,
@@ -556,6 +557,42 @@ export class SqliteStore implements TraceStore {
       .all(projectId, sessionId) as Row[];
 
     return rows.map((row) => this.toEvent(row));
+  }
+
+  async findScreenContextEvents(query: ScreenContextEventQuery): Promise<TraceEvent[]> {
+    if (query.sessionIds.length === 0) return [];
+
+    const pathFilter = query.urlPath === undefined ? "" : " AND url_path = ?";
+    const typeFilter =
+      query.types === undefined || query.types.length === 0
+        ? ""
+        : ` AND type IN (${query.types.map(() => "?").join(", ")})`;
+    // (project_id, session_id, timestamp) 인덱스로 세션마다 한 행만 읽는다.
+    const statement = this.db.prepare(
+      `SELECT * FROM events
+       WHERE project_id = ? AND session_id = ? AND screen_context IS NOT NULL${pathFilter}
+         AND timestamp BETWEEN ? AND ?${typeFilter}
+       ORDER BY timestamp
+       LIMIT 1`,
+    );
+    const matched: TraceEvent[] = [];
+
+    for (const sessionId of query.sessionIds) {
+      const row = statement.get(
+        query.projectId,
+        sessionId,
+        ...(query.urlPath === undefined ? [] : [query.urlPath]),
+        query.from,
+        query.to,
+        ...(query.types ?? []),
+      ) as Row | undefined;
+      if (!row) continue;
+
+      const event = this.toEvent(row);
+      if (event.screenContext !== undefined) matched.push(event);
+    }
+
+    return matched;
   }
 
   async getDashboardSummary(projectId: string): Promise<DashboardSummary> {

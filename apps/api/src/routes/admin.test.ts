@@ -2117,6 +2117,151 @@ describe("admin bff routes", () => {
     });
   });
 
+  it("이슈 시간 창에서 멀리 떨어진 클릭은 대표 화면으로 쓰지 않는다", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    });
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-02T03:00:01.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [
+        {
+          eventId: "evt_unrelated_click",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "click",
+          urlPath: "/settings",
+          metadata: {},
+          screenContext: {
+            titleMasked: "설정",
+            viewport: { width: 1440, height: 900 },
+            target: {
+              tagName: "button",
+              role: "button",
+              textMaskedOrLimited: "저장",
+              rect: { x: 620, y: 420, width: 96, height: 40 },
+            },
+            layoutHints: [],
+          },
+        },
+      ],
+    });
+    await store.upsertIssues(project.projectId, [{
+      issueId: "issue_error",
+      projectId: project.projectId,
+      issueType: "error_friction",
+      title: "/settings 화면에서 오류 기반 막힘이 감지되었습니다",
+      summary: "사용자 행동 흐름 중 js_error 이벤트가 발생했습니다.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 60,
+      firstSeenAt: "2026-09-02T03:00:00.000Z",
+      lastSeenAt: "2026-09-02T03:00:00.000Z",
+      trend: "flat",
+      relatedUrlPath: "/settings",
+      exampleSessionIds: ["sess_1"],
+      status: "new",
+    }]);
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/issues`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()[0]).not.toHaveProperty("representativeEvent");
+  });
+
+  it("이슈 성격에 맞는 타입의 이벤트를 대표 화면으로 고른다", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    });
+    const screenContext = {
+      titleMasked: "설정",
+      viewport: { width: 1440, height: 900 },
+      target: {
+        tagName: "button",
+        role: "button",
+        textMaskedOrLimited: "저장",
+        rect: { x: 620, y: 420, width: 96, height: 40 },
+      },
+      layoutHints: [],
+    };
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-02T01:00:03.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [
+        {
+          eventId: "evt_page_view",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "page_view",
+          urlPath: "/settings",
+          metadata: {},
+          screenContext,
+        },
+        {
+          eventId: "evt_click",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:01.000Z",
+          type: "click",
+          urlPath: "/settings",
+          metadata: {},
+          screenContext,
+        },
+      ],
+    });
+    await store.upsertIssues(project.projectId, [{
+      issueId: "issue_rage",
+      projectId: project.projectId,
+      issueType: "rage_click",
+      title: "/settings 화면에서 반복 클릭이 감지되었습니다",
+      summary: "3회 클릭이 3초 안에 같은 요소에서 발생했습니다.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 70,
+      firstSeenAt: "2026-09-02T01:00:01.000Z",
+      lastSeenAt: "2026-09-02T01:00:01.000Z",
+      trend: "flat",
+      relatedUrlPath: "/settings",
+      exampleSessionIds: ["sess_1"],
+      status: "new",
+    }]);
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/issues`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()[0].representativeEvent).toMatchObject({ eventId: "evt_click", type: "click" });
+  });
+
   it("omits representativeEvent when no matching evidence exists", async () => {
     const { store, user, cookie } = await signedInStore();
     const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });

@@ -101,6 +101,45 @@ describe("TraceClient", () => {
     });
   });
 
+  it("영구 실패(4xx) 배치는 버려서 큐가 막히지 않게 한다", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 400 });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://trace.example.com/v1/events/batch",
+      fetcher,
+      consent: "granted",
+    });
+
+    client.track("report_export_clicked");
+    await client.flush();
+
+    expect(client.queueLength).toBe(0);
+
+    await client.flush();
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("일시 실패(5xx) 배치는 큐에 되돌려 재시도한다", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce({ ok: false, status: 503 }).mockResolvedValueOnce({ ok: true });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://trace.example.com/v1/events/batch",
+      fetcher,
+      consent: "granted",
+    });
+
+    client.track("report_export_clicked");
+    await client.flush();
+
+    expect(client.queueLength).toBe(1);
+
+    await client.flush();
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(client.queueLength).toBe(0);
+  });
+
   it("does not expose network failures and retries queued events", async () => {
     const fetcher = vi.fn().mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({ ok: true });
     const client = new TraceClient({

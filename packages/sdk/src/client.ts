@@ -3,7 +3,13 @@ import type { EventBatch, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
 import type { Consent } from "./install.js";
 
-type Fetcher = (input: string, init?: RequestInit) => Promise<{ ok: boolean }>;
+type Fetcher = (input: string, init?: RequestInit) => Promise<{ ok: boolean; status?: number }>;
+
+// 4xx 는 같은 배치를 다시 보내도 같은 응답이 온다. 큐 앞으로 되돌리면 이후 이벤트가
+// 영구히 막히고(head-of-line blocking) 클릭마다 POST 가 나가므로 그냥 버린다.
+function isPermanentFailure(status: number | undefined): boolean {
+  return status !== undefined && status >= 400 && status < 500;
+}
 
 export interface TraceClientOptions {
   projectId: string;
@@ -107,7 +113,7 @@ export class TraceClient {
         keepalive: true,
       });
 
-      if (!response.ok) this.queue.unshift(...batch.events);
+      if (!response.ok && !isPermanentFailure(response.status)) this.queue.unshift(...batch.events);
     } catch {
       // 네트워크 실패가 고객 사이트 사용자 경험에 영향을 주지 않아야 한다.
       this.queue.unshift(...batch.events);
