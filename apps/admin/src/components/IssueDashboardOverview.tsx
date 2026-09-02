@@ -71,11 +71,11 @@ export function IssueDashboardOverview({
   const recentIssues = sortByRecent(issues).slice(0, 5);
   const topIssue = priorityIssues[0]!;
   const representativeEvent = topIssue.representativeEvent;
-  const screenLabel =
-    representativeEvent?.screenContext?.titleMasked ??
-    topIssue.relatedUrlPath ??
-    representativeEvent?.urlPath ??
-    "알 수 없는 화면";
+  const titleMasked = representativeEvent?.screenContext?.titleMasked;
+  const heroTitle =
+    topIssue.relatedUrlPath && titleMasked
+      ? topIssue.title.replace(topIssue.relatedUrlPath, titleMasked)
+      : topIssue.title;
   const topIssueSeverity = severityLevel(topIssue.severityScore);
   const topIssueStatus = issueStatusToChip(topIssue.status);
   const TopIssueTrendIcon = trendIcon(topIssue.trend);
@@ -101,9 +101,7 @@ export function IssueDashboardOverview({
           <p className="friction-hero__eyebrow" id="friction-hero-eyebrow">
             가장 먼저 볼 사용자 막힘
           </p>
-          <h2>
-            {screenLabel} 화면에서 {topIssue.title}
-          </h2>
+          <h2>{heroTitle}</h2>
           <dl>
             <div>
               <dt>운영 해석</dt>

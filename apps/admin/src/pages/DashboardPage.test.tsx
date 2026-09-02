@@ -159,7 +159,7 @@ describe("DashboardPage", () => {
         issues={[
           issue({
             issueId: "issue_critical",
-            title: "설정 저장 버튼 반복 클릭",
+            title: "/settings 화면에서 반복 클릭이 감지되었습니다",
             summary: "저장 버튼에서 rage click이 반복됩니다.",
             severityScore: 92,
             affectedSessionsCount: 18,
@@ -202,7 +202,7 @@ describe("DashboardPage", () => {
 
     const overview = screen.getByRole("region", { name: "문제 한눈에 보기" });
     expect(overview).toBeInTheDocument();
-    expect(within(overview).getAllByText("설정 저장 버튼 반복 클릭")).toHaveLength(2);
+    expect(within(overview).getAllByText("/settings 화면에서 반복 클릭이 감지되었습니다")).toHaveLength(2);
     expect(within(overview).getByText("최근 발견 2026-09-01 15:00:00")).toBeInTheDocument();
     expect(within(overview).getAllByText("/settings")).toHaveLength(2);
     expect(within(overview).getByText("분노 클릭")).toBeInTheDocument();
@@ -210,5 +210,9 @@ describe("DashboardPage", () => {
 
     const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
     expect(within(hero).getByLabelText("클릭 위치")).toBeInTheDocument();
+
+    const heroHeading = screen.getByText("설정 화면에서 반복 클릭이 감지되었습니다");
+    expect(heroHeading).toBeInTheDocument();
+    expect(heroHeading).not.toHaveTextContent("/settings");
   });
 });

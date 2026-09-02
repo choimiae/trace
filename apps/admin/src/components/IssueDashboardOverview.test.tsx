@@ -100,14 +100,14 @@ describe("IssueDashboardOverview", () => {
     expect(onSelectIssue).toHaveBeenCalledWith(expect.objectContaining({ issueId: "critical" }));
   });
 
-  it("shows a screen-first friction summary for the top issue", () => {
+  it("shows a screen-first friction summary for the top issue without duplicating the screen name", () => {
     render(
       <IssueDashboardOverview
         summary={summary}
         issues={[
           issue({
             issueId: "issue_1",
-            title: "저장 버튼 반응 없음",
+            title: "/settings 화면에서 반복 클릭이 감지되었습니다",
             summary: "설정 화면에서 저장 버튼 클릭 후 후속 이벤트가 없습니다.",
             severityScore: 80,
             relatedUrlPath: "/settings",
@@ -138,11 +138,45 @@ describe("IssueDashboardOverview", () => {
     );
 
     expect(screen.getByText("가장 먼저 볼 사용자 막힘")).toBeInTheDocument();
-    expect(screen.getByText("설정 화면에서 저장 버튼 반응 없음")).toBeInTheDocument();
+    const heading = screen.getByText("설정 화면에서 반복 클릭이 감지되었습니다");
+    expect(heading).toBeInTheDocument();
+    expect(heading).not.toHaveTextContent("/settings");
     expect(screen.getByLabelText("화면 맥락 미리보기")).toBeInTheDocument();
     expect(screen.getByText("다음 액션")).toBeInTheDocument();
 
     const hero = screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" });
     expect(within(hero).getByLabelText("클릭 위치")).toBeInTheDocument();
+  });
+
+  it("renders the issue title unchanged when the representative event has no masked screen name", () => {
+    render(
+      <IssueDashboardOverview
+        summary={summary}
+        issues={[
+          issue({
+            issueId: "issue_2",
+            title: "/reports 화면에서 오류 기반 막힘이 감지되었습니다",
+            relatedUrlPath: "/reports",
+            representativeEvent: {
+              eventId: "evt_2",
+              sessionId: "sess_2",
+              pageId: "page_2",
+              timestamp: "2026-09-02T01:00:00.000Z",
+              type: "js_error",
+              urlPath: "/reports",
+              metadata: {},
+              screenContext: {
+                viewport: { width: 1280, height: 800 },
+                layoutHints: [],
+              },
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "/reports 화면에서 오류 기반 막힘이 감지되었습니다" }),
+    ).toBeInTheDocument();
   });
 });
