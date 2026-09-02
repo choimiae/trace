@@ -215,4 +215,58 @@ describe("TraceClient", () => {
     const payload = JSON.parse(String(retryInit.body));
     expect(payload.events[0].metadata).toEqual({ eventName: "report_export_clicked" });
   });
+
+  it("오류 이벤트에 종류·스크립트 경로·라인을 싣는다", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://trace.example.com/v1/events/batch",
+      fetcher,
+      consent: "granted",
+    });
+
+    installCollectors(client);
+    window.dispatchEvent(
+      new ErrorEvent("error", {
+        error: new TypeError("Cannot read property 'id' of undefined"),
+        filename: "https://app.example.com/assets/checkout.js?v=2",
+        lineno: 412,
+        message: "Cannot read property 'id' of undefined",
+      }),
+    );
+    await client.flush();
+
+    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body)) as { events: Array<Record<string, unknown>> };
+    const error = payload.events.find((event) => event.type === "js_error");
+
+    expect(error?.errorName).toBe("TypeError");
+    expect(error?.errorSource).toBe("/assets/checkout.js");
+    expect(error?.errorLine).toBe(412);
+    // 메시지와 스택은 어디에도 실리지 않는다.
+    expect(JSON.stringify(payload)).not.toContain("Cannot read property");
+  });
+
+  it("cross-origin 오류(error 가 없고 filename 이 빈 값)에서도 이벤트를 보낸다", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://trace.example.com/v1/events/batch",
+      fetcher,
+      consent: "granted",
+    });
+
+    installCollectors(client);
+    window.dispatchEvent(new ErrorEvent("error", { message: "Script error.", filename: "", lineno: 0 }));
+    await client.flush();
+
+    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body)) as { events: Array<Record<string, unknown>> };
+    const error = payload.events.find((event) => event.type === "js_error");
+
+    expect(error).toBeDefined();
+    expect(error).not.toHaveProperty("errorName");
+    expect(error).not.toHaveProperty("errorSource");
+    expect(error).not.toHaveProperty("errorLine");
+  });
 });
