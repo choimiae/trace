@@ -1967,4 +1967,197 @@ describe("admin bff routes", () => {
     expect(issueResponse.statusCode).toBe(404);
     expect(timelineResponse.statusCode).toBe(403);
   });
+
+  it("adds representative screen context events to issue list responses", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    });
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-02T01:00:01.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [
+        {
+          eventId: "evt_1",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "click",
+          urlPath: "/settings",
+          metadata: {},
+          screenContext: {
+            viewport: { width: 1440, height: 900 },
+            target: {
+              tagName: "button",
+              role: "button",
+              textMaskedOrLimited: "저장",
+              rect: { x: 620, y: 420, width: 96, height: 40 },
+            },
+            layoutHints: [],
+          },
+        },
+      ],
+    });
+    await store.upsertIssues(project.projectId, [{
+      issueId: "issue_1",
+      projectId: project.projectId,
+      issueType: "dead_click_cluster",
+      title: "저장 버튼 반응 없음",
+      summary: "설정 화면에서 저장 버튼 클릭 후 후속 이벤트가 없습니다.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 60,
+      firstSeenAt: "2026-09-02T01:00:00.000Z",
+      lastSeenAt: "2026-09-02T01:00:00.000Z",
+      trend: "flat",
+      relatedUrlPath: "/settings",
+      exampleSessionIds: ["sess_1"],
+      status: "new",
+    }]);
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/issues`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const issues = response.json();
+    expect(issues[0].representativeEvent).toMatchObject({
+      eventId: "evt_1",
+      type: "click",
+      screenContext: {
+        target: {
+          textMaskedOrLimited: "저장",
+        },
+      },
+    });
+  });
+
+  it("adds a representative screen context event to the issue detail response", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    });
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-02T01:00:01.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [
+        {
+          eventId: "evt_1",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "click",
+          urlPath: "/settings",
+          metadata: {},
+          screenContext: {
+            viewport: { width: 1440, height: 900 },
+            target: {
+              tagName: "button",
+              role: "button",
+              textMaskedOrLimited: "저장",
+              rect: { x: 620, y: 420, width: 96, height: 40 },
+            },
+            layoutHints: [],
+          },
+        },
+      ],
+    });
+    await store.upsertIssues(project.projectId, [{
+      issueId: "issue_1",
+      projectId: project.projectId,
+      issueType: "dead_click_cluster",
+      title: "저장 버튼 반응 없음",
+      summary: "설정 화면에서 저장 버튼 클릭 후 후속 이벤트가 없습니다.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 60,
+      firstSeenAt: "2026-09-02T01:00:00.000Z",
+      lastSeenAt: "2026-09-02T01:00:00.000Z",
+      trend: "flat",
+      relatedUrlPath: "/settings",
+      exampleSessionIds: ["sess_1"],
+      status: "new",
+    }]);
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/issues/issue_1?projectId=${project.projectId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().representativeEvent).toMatchObject({
+      eventId: "evt_1",
+      type: "click",
+      screenContext: {
+        target: {
+          textMaskedOrLimited: "저장",
+        },
+      },
+    });
+  });
+
+  it("omits representativeEvent when no matching evidence exists", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    });
+    await store.upsertIssues(project.projectId, [{
+      issueId: "issue_no_evidence",
+      projectId: project.projectId,
+      issueType: "dead_click_cluster",
+      title: "증거 없는 이슈",
+      summary: "일치하는 세션 이벤트가 없습니다.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 40,
+      firstSeenAt: "2026-09-02T01:00:00.000Z",
+      lastSeenAt: "2026-09-02T01:00:00.000Z",
+      trend: "flat",
+      relatedUrlPath: "/settings",
+      exampleSessionIds: ["sess_missing"],
+      status: "new",
+    }]);
+    const app = createApp({ store, authConfig });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/issues`,
+      headers: { cookie },
+    });
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: `/admin/api/issues/issue_no_evidence?projectId=${project.projectId}`,
+      headers: { cookie },
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()[0]).not.toHaveProperty("representativeEvent");
+    expect(detailResponse.statusCode).toBe(200);
+    expect(detailResponse.json()).not.toHaveProperty("representativeEvent");
+  });
 });

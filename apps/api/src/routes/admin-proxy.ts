@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import type { Issue, TraceEvent } from "@trace/shared";
 import type { AdminAuthConfig } from "../auth/config.js";
 import { parseCookieHeader } from "../auth/cookies.js";
 import { verifyCsrfRequest } from "../auth/csrf.js";
@@ -424,7 +425,8 @@ export async function registerAdminProxyRoutes(
       return reply.code(access.statusCode).send({ error: access.error });
     }
 
-    return options.store.listIssues(projectId);
+    const issues = await options.store.listIssues(projectId);
+    return attachRepresentativeEvents(options.store, projectId, issues);
   });
 
   app.get("/admin/api/issues/:issueId", async (request, reply) => {
@@ -445,7 +447,8 @@ export async function registerAdminProxyRoutes(
       return reply.code(403).send({ error: "project_access_denied" });
     }
 
-    return issue;
+    const [enrichedIssue] = await attachRepresentativeEvents(options.store, issue.projectId, [issue]);
+    return enrichedIssue;
   });
 
   app.get("/admin/api/sessions/:sessionId/timeline", async (request, reply) => {
@@ -490,6 +493,39 @@ async function getProjectAccess(
   }
 
   return { project, membership };
+}
+
+async function attachRepresentativeEvents(
+  store: TraceStore,
+  projectId: string,
+  issues: Issue[],
+): Promise<Issue[]> {
+  return Promise.all(
+    issues.map(async (issue) => {
+      const representativeEvent = await findRepresentativeEvent(store, projectId, issue);
+      return representativeEvent === undefined ? issue : { ...issue, representativeEvent };
+    }),
+  );
+}
+
+async function findRepresentativeEvent(
+  store: TraceStore,
+  projectId: string,
+  issue: Issue,
+): Promise<TraceEvent | undefined> {
+  for (const sessionId of issue.exampleSessionIds.slice(0, 3)) {
+    const timeline = await store.getSessionTimeline(projectId, sessionId);
+    const matchingEvent = timeline.find((event) => {
+      const samePath = issue.relatedUrlPath ? event.urlPath === issue.relatedUrlPath : true;
+      return samePath && Boolean(event.screenContext);
+    });
+
+    if (matchingEvent) {
+      return matchingEvent;
+    }
+  }
+
+  return undefined;
 }
 
 type ProjectAccess = {
