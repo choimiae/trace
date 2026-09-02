@@ -557,6 +557,15 @@ describe("오류 식별자 계약", () => {
     });
 
     expect(parsed.errorSource).toBe("/assets/vendor/checkout.js");
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "/a//b.js" }).success).toBe(true);
+  });
+
+  it("선행 이중 슬래시는 의도적으로 거절한다 — 수집 단계가 접어서 넘긴다", () => {
+    // 정상 경로도 이 모양이 될 수 있다(new URL("https://h//a.js").pathname === "//a.js").
+    // 모양만으로 원시 protocol-relative filename 과 구분할 수 없으므로 계약은 거절하고,
+    // sanitizeErrorSource 가 "/vendor/lib.js" 로 접어서 넘기는 것이 정상 경로다.
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "//vendor/lib.js" }).success).toBe(false);
+    expect(traceEventSchema.safeParse({ ...baseEvent, errorSource: "/vendor/lib.js" }).success).toBe(true);
   });
 
   it("오류 필드가 없어도 통과한다", () => {

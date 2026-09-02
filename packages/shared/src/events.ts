@@ -147,7 +147,13 @@ const errorNameSchema = z
   .regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/);
 
 // redactUrl(...).urlPath 결과 형태만 받는다. origin·쿼리·해시가 붙은 값은 거절해서
-// 토큰이 실린 filename 이 그대로 저장되는 경로를 계약에서 막는다.
+// 원시 filename 이 그대로 저장되는 경로를 계약에서 막는다.
+//
+// 선행 "//" 도 fail-closed 로 거절한다. new URL("https://h//a.js").pathname 은
+// "//a.js" 이고 normalizePath 가 빈 세그먼트를 보존하므로 정상 경로도 이 형태가 될
+// 수 있지만, 그 모양만으로는 원시 protocol-relative filename 과 구분할 수 없다.
+// 그래서 수집 단계(sanitizeErrorSource)가 선행 "//" 를 "/" 로 접어서 넘기고,
+// 이 계약은 접히지 않은 값을 거절하는 2차 방어로 남는다. 느슨하게 바꾸지 말 것.
 const errorSourceSchema = z
   .string()
   .trim()
