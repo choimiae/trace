@@ -1096,7 +1096,8 @@
 }
 
 .screen-preview__hint--masked {
-  background: repeating-linear-gradient(135deg, var(--border), var(--border) 6px, var(--surface-sunk) 6px, var(--surface-sunk) 12px);
+  border-color: rgb(148 163 184 / 55%);
+  background: repeating-linear-gradient(135deg, var(--ink-faint), var(--ink-faint) 6px, var(--surface-sunk) 6px, var(--surface-sunk) 12px);
 }
 
 .screen-preview__target {
@@ -1116,4 +1117,22 @@
   border: 3px solid var(--status-crit);
   border-radius: var(--radius-pill);
   background: var(--surface);
+}
+
+.screen-preview--compact .screen-preview__bar {
+  min-height: 24px;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+}
+
+.screen-preview--compact .screen-preview__bar strong {
+  font-size: var(--text-xs);
+}
+
+.screen-preview--compact .screen-preview__canvas {
+  min-height: 96px;
+}
+
+.screen-preview--compact .screen-preview__target {
+  font-size: var(--text-xs);
 }

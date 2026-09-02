@@ -44,4 +44,41 @@ describe("ScreenContextPreview", () => {
     expect(screen.getByText("화면 맥락 없음")).toBeInTheDocument();
     expect(screen.getByText("이 이벤트에는 안전한 화면 재구성 정보가 없습니다.")).toBeInTheDocument();
   });
+
+  it("renders the canvas without a click marker when the target is omitted", () => {
+    render(
+      <ScreenContextPreview
+        context={{
+          titleMasked: "목록",
+          viewport: { width: 1280, height: 800 },
+          layoutHints: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "화면 맥락 미리보기" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("클릭 위치")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the event's urlPath for the title when titleMasked is missing", () => {
+    render(
+      <ScreenContextPreview
+        context={{
+          viewport: { width: 1280, height: 800 },
+          layoutHints: [],
+        }}
+        event={{
+          eventId: "evt_1",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-01T06:00:00.000Z",
+          type: "click",
+          urlPath: "/reports/monthly",
+          metadata: {},
+        }}
+      />,
+    );
+
+    expect(screen.getByText("/reports/monthly")).toBeInTheDocument();
+  });
 });

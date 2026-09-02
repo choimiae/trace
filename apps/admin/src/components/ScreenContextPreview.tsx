@@ -30,9 +30,6 @@ export function ScreenContextPreview({ context, event, compact = false }: Screen
     );
   }
 
-  const targetLabel =
-    context.target?.textMaskedOrLimited ?? context.target?.role ?? context.target?.tagName ?? event?.type ?? "이벤트";
-
   return (
     <section className={`screen-preview${compact ? " screen-preview--compact" : ""}`} aria-label="화면 맥락 미리보기">
       <header className="screen-preview__bar">
@@ -53,8 +50,10 @@ export function ScreenContextPreview({ context, event, compact = false }: Screen
         ))}
         {context.target ? (
           <div className="screen-preview__target" style={rectStyle(context, context.target.rect)}>
-            <span>{targetLabel}</span>
-            <i aria-label="클릭 위치" />
+            <span>
+              {context.target.textMaskedOrLimited ?? context.target.role ?? context.target.tagName ?? event?.type ?? "이벤트"}
+            </span>
+            <i role="img" aria-label="클릭 위치" />
           </div>
         ) : null}
       </div>
