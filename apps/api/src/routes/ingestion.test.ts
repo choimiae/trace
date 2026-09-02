@@ -325,6 +325,69 @@ describe("ingestion routes", () => {
     expect(timeline[1]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
   });
 
+  it("masked 힌트가 텍스트를 실어 보내도 서버가 텍스트를 지운다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: {
+              viewport: { width: 1440, height: 900 },
+              target: { tagName: "button", rect: { x: 10, y: 10, width: 90, height: 40 } },
+              layoutHints: [
+                {
+                  tagName: "textarea",
+                  masked: true,
+                  textMaskedOrLimited: "고객 메모 원문",
+                  rect: { x: 20, y: 60, width: 400, height: 120 },
+                },
+                {
+                  tagName: "a",
+                  masked: false,
+                  textMaskedOrLimited: "도움말",
+                  rect: { x: 20, y: 200, width: 80, height: 24 },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    const hints = timeline[0]?.screenContext?.layoutHints ?? [];
+    const masked = hints.find((hint) => hint.tagName === "textarea");
+    const link = hints.find((hint) => hint.tagName === "a");
+
+    expect(masked?.masked).toBe(true);
+    expect(masked).not.toHaveProperty("textMaskedOrLimited");
+    expect(link?.textMaskedOrLimited).toBe("도움말");
+    expect(JSON.stringify(timeline)).not.toContain("고객 메모 원문");
+  });
+
   it("복구할 수 없는 화면 맥락은 필드만 버리고 같은 배치의 다른 이벤트를 저장한다", async () => {
     const store = new MemoryStore();
     const project = await store.createProject({

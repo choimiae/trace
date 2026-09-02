@@ -186,7 +186,14 @@ function sanitizeScreenContext(value: unknown): ScreenContext | undefined {
     .slice(0, MAX_LAYOUT_HINTS)
     .map((hint) => {
       const sanitized = sanitizeScreenElement(hint);
-      return sanitized === undefined ? undefined : { ...sanitized, masked: hint.masked };
+      if (sanitized === undefined) return undefined;
+      // masked 는 "내용을 보여주지 않는다" 는 뜻이다. SDK 를 신뢰하지 않고 경계에서
+      // 텍스트를 지운다.
+      if (hint.masked) {
+        const { textMaskedOrLimited: _masked, ...withoutText } = sanitized;
+        return { ...withoutText, masked: true };
+      }
+      return { ...sanitized, masked: false };
     })
     .filter((hint): hint is NonNullable<typeof hint> => hint !== undefined);
 
