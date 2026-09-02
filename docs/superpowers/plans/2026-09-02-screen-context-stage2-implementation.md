@@ -1693,7 +1693,23 @@ Expected: FAIL — `화면`/`클릭`/`패턴` 라벨이 없다.
 }
 ```
 
-`.priority-issue-meta` 의 `padding-right: 28px` 는 눈 아이콘 자리이므로 유지한다.
+여기서 끝내면 void 가 남는다. `.priority-issue-open`(눈 아이콘)이 `position: absolute`
+라서 그리드 아이템이 아니고, 세 번째 `auto` 트랙은 내용이 없어 0 으로 붕괴한다.
+`.priority-issue-meta` 는 flex 이고 `justify-content` 가 기본값이라 열은 채우지만
+내용이 좌측 정렬돼 오른쪽에 빈 공간이 남는다 — 그게 그 void 다.
+
+아이콘을 흐름 안으로 들여 세 번째 트랙을 차지하게 한다. 그러면 `padding-right`
+로 자리를 비워둘 이유도 없어진다.
+
+```css
+.priority-issue-open {
+  position: static;
+  color: var(--ink-faint);
+}
+```
+
+`.priority-issue-meta` 에서 `padding-right: 28px` 를 제거한다 — 절대 위치 아이콘의
+자리를 예약하던 값이다.
 
 - [ ] **Step 6: 대시보드 페이지 테스트 갱신**
 
