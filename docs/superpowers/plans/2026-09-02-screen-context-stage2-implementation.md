@@ -389,7 +389,27 @@ Run: `PATH=/Users/choimiae/.nvm/versions/node/v22.17.0/bin:$PATH npm run test --
 
 Expected: FAIL — `layoutHints` 가 항상 `[]` 이므로 `toContain("header")` 등이 실패한다.
 
-- [ ] **Step 3: 상수와 헬퍼 추가**
+- [ ] **Step 3: contenteditable 조상까지 보게 만든다**
+
+현재 `isTextEntryElement`(`dom.ts:15-21`)는 요소 **자신**의 `contenteditable` 속성과 `element.isContentEditable` 만 본다. jsdom 은 `isContentEditable` 를 상속하지 않으므로 `<div contenteditable><button>고객 김철수</button></div>` 의 버튼이 걸러지지 않고, 실제 브라우저에서도 `instanceof HTMLElement` 가 아닌 SVG 자손은 빠진다. 힌트는 클릭 대상 주변을 최대 12개까지 걷으므로 이 구멍이 12배로 커진다.
+
+조상을 함께 보도록 바꾼다.
+
+```ts
+const CONTENTEDITABLE_SELECTOR = '[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
+
+function isTextEntryElement(element: Element): boolean {
+  if (element.tagName.toLowerCase() === "textarea") return true;
+  if (element instanceof HTMLElement && element.isContentEditable) return true;
+  // jsdom 은 isContentEditable 을 상속하지 않고, SVG 자손은 HTMLElement 도 아니다.
+  // 편집 영역 안의 텍스트는 어느 자손이 담고 있어도 사용자가 쓴 내용이므로 조상을 본다.
+  return element.closest(CONTENTEDITABLE_SELECTOR) !== null;
+}
+```
+
+이 함수는 `getElementMetadata` 도 쓰므로(1단계 I7 수정) 최상위 `elementTextMaskedOrLimited` 의 억제 범위도 함께 넓어진다. 개인정보 방향으로만 넓어지는 변경이고, 1단계 리뷰가 남긴 미해결 구멍을 닫는다.
+
+- [ ] **Step 4: 상수와 헬퍼 추가**
 
 `packages/sdk/src/dom.ts` 의 기존 상수 블록(`SAFE_TAG_NAME_PATTERN` 아래)에 추가한다.
 
@@ -467,7 +487,7 @@ function buildLayoutHint(
 
 `masked` 는 입력 계열일 때만 `true` 다. `allowsHintText` 가 이미 `isTextEntryElement` 를 먼저 걸러내므로 텍스트 조건에서 중복 검사하지 않는다.
 
-- [ ] **Step 4: 수집 함수 추가**
+- [ ] **Step 5: 수집 함수 추가**
 
 같은 파일에 추가한다.
 
@@ -522,7 +542,7 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
 
 정렬은 거리 오름차순이고 `Array.prototype.sort` 는 안정 정렬이므로 같은 거리면 문서 순서가 유지된다.
 
-- [ ] **Step 5: getScreenContext 에 연결**
+- [ ] **Step 6: getScreenContext 에 연결**
 
 `getScreenContext` 의 `layoutHints: []` 를 바꾼다.
 
@@ -530,19 +550,19 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
       layoutHints: collectLayoutHints(element, viewport),
 ```
 
-- [ ] **Step 6: 테스트 통과 확인**
+- [ ] **Step 7: 테스트 통과 확인**
 
 Run: `PATH=/Users/choimiae/.nvm/versions/node/v22.17.0/bin:$PATH npm run test --workspace @trace/sdk -- src/dom.test.ts`
 
 Expected: PASS. `expectValidScreenContext` 가 매 케이스에서 `screenContextSchema.safeParse` 를 통과시키므로 생산자↔소비자 왕복이 함께 검증된다.
 
-- [ ] **Step 7: 번들 예산 확인**
+- [ ] **Step 8: 번들 예산 확인**
 
 Run: `PATH=/Users/choimiae/.nvm/versions/node/v22.17.0/bin:$PATH npm run test --workspace @trace/sdk`
 
 Expected: PASS. `bundle-size.test.ts` 가 gzip 10KB 예산을 지킨다. 초과하면 멈추고 보고한다 — 예산을 올리지 않는다.
 
-- [ ] **Step 8: 커밋**
+- [ ] **Step 9: 커밋**
 
 ```bash
 git add packages/sdk/src/dom.ts packages/sdk/src/dom.test.ts
@@ -949,6 +969,50 @@ it("잘못된 오류 식별자는 배치를 거절하지 않고 필드만 버린
   expect(JSON.stringify(timeline)).not.toContain("김철수");
   expect(JSON.stringify(timeline)).not.toContain("token=abc");
 });
+
+it("선행 이중 슬래시 경로를 버리지 않고 접어서 저장한다", async () => {
+  // new URL("https://cdn.example.com//vendor/lib.js").pathname 은 "//vendor/lib.js" 다.
+  // 계약이 선행 "//" 를 거절하므로 sanitize 단계에서 접어야 멀쩡한 경로가 살아남는다.
+  const store = new MemoryStore();
+  const project = await store.createProject({
+    name: "Demo",
+    allowedDomains: ["https://demo.example.com"],
+  });
+  const app = createApp({ store });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/events/batch",
+    headers: { origin: "https://demo.example.com" },
+    payload: {
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-02T01:00:02.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://demo.example.com/checkout",
+      events: [
+        {
+          eventId: "evt_double",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          errorName: "TypeError",
+          errorSource: "//vendor/lib.js",
+          errorLine: 7,
+          metadata: {},
+        },
+      ],
+    },
+  });
+
+  expect(response.statusCode).toBe(202);
+  const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+
+  expect(timeline[0]?.errorSource).toBe("/vendor/lib.js");
+});
 ```
 
 - [ ] **Step 3: 테스트 실패 확인**
@@ -980,11 +1044,16 @@ function sanitizeErrorName(value: unknown): string | undefined {
   return SAFE_ERROR_NAME_PATTERN.test(name) ? name : undefined;
 }
 
+// 선행 "//" 를 "/" 로 접는다. new URL("https://h//a.js").pathname 이 "//a.js" 이고
+// normalizePath 가 빈 세그먼트를 보존하므로, redactUrl(...).urlPath 는 정상적으로
+// 선행 "//" 를 낼 수 있다. 계약은 선행 "//" 를 fail-closed 로 거절하므로(원시
+// protocol-relative filename 이 우회로로 들어오는 것을 막는 2차 방어), 여기서 접지
+// 않으면 멀쩡한 경로가 조용히 버려진다.
 function sanitizeErrorSource(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  const source = value.trim();
-  if (source.length > MAX_ERROR_SOURCE) return undefined;
-  return SAFE_ERROR_SOURCE_PATTERN.test(source) ? source : undefined;
+  const collapsed = value.trim().replace(/^\/{2,}/, "/");
+  if (collapsed.length > MAX_ERROR_SOURCE) return undefined;
+  return SAFE_ERROR_SOURCE_PATTERN.test(collapsed) ? collapsed : undefined;
 }
 
 function sanitizeErrorLine(value: unknown): number | undefined {
