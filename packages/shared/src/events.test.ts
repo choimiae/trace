@@ -416,6 +416,49 @@ describe("screenContextSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects raw selector values in screen context selector hashes", () => {
+    const baseEvent = {
+      eventId: "evt_4",
+      sessionId: "sess_1",
+      pageId: "page_1",
+      timestamp: "2026-09-02T01:00:00.000Z",
+      type: "click",
+      urlPath: "/settings",
+    };
+
+    const targetResult = traceEventSchema.safeParse({
+      ...baseEvent,
+      screenContext: {
+        viewport: { width: 1440, height: 900 },
+        target: {
+          tagName: "button",
+          selectorHash: "button[data-email='user@example.com']",
+          rect: { x: 16, y: 720, width: 180, height: 44 },
+        },
+        layoutHints: [],
+      },
+    });
+
+    const layoutHintResult = traceEventSchema.safeParse({
+      ...baseEvent,
+      eventId: "evt_5",
+      screenContext: {
+        viewport: { width: 1440, height: 900 },
+        layoutHints: [
+          {
+            tagName: "a",
+            selectorHash: "a[href='mailto:user@example.com']",
+            rect: { x: 24, y: 120, width: 240, height: 32 },
+            masked: false,
+          },
+        ],
+      },
+    });
+
+    expect(targetResult.success).toBe(false);
+    expect(layoutHintResult.success).toBe(false);
+  });
+
   it("limits layout hints to keep payloads small", () => {
     const layoutHints = Array.from({ length: 13 }, (_, index) => ({
       tagName: "button",

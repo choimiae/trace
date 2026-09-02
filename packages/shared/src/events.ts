@@ -152,7 +152,7 @@ const screenElementSchema = z.object({
   tagName: tagNameSchema,
   role: z.string().trim().max(64).refine(isSafeElementRole).optional(),
   textMaskedOrLimited: safeScreenTextSchema.optional(),
-  selectorHash: z.string().trim().max(128).optional(),
+  selectorHash: z.string().trim().refine(isSafeElementSelectorHash).optional(),
   rect: screenRectSchema,
 });
 
