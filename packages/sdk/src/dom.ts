@@ -47,8 +47,10 @@ function isTextEntryElement(element: Element): boolean {
 // 화이트리스트 요소(예: <h1>, <a>) 안에 편집 가능 자손이나 textarea·select 가
 // 있으면 그 안의 글자가 textContent 를 통해 새어 나간다. 요소 전체를 건너뛰는
 // 쪽이 텍스트 노드를 걸러내는 것보다 단순하고 안전하다 — 제목 일부를 잃더라도.
+// 자신과 자손을 모두 본다. querySelector 는 자신을 매칭하지 않으므로, 이걸
+// 자손만으로 두면 <select> 를 직접 클릭했을 때 option 라벨이 타겟 경로로 새어나간다.
 function containsTextEntrySubtree(element: Element): boolean {
-  return element.querySelector(TEXT_ENTRY_SUBTREE_SELECTOR) !== null;
+  return element.matches(TEXT_ENTRY_SUBTREE_SELECTOR) || element.querySelector(TEXT_ENTRY_SUBTREE_SELECTOR) !== null;
 }
 
 export function getElementMetadata(element: Element): ElementMetadata {
@@ -264,13 +266,16 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   // 타겟의 문서 순서 위치를 중심으로 창을 잡아 rect 읽기를 묶은 뒤 거리로 정렬한다.
   const container = nearestContainer(target);
   const all = Array.from(container.querySelectorAll(NEIGHBOR_SELECTOR));
-  // 클릭은 버튼 안의 아이콘·span, 테이블 셀, 평범한 div 에 자주 떨어진다. 그런
-  // 요소는 all 에 없어서 indexOf 가 -1 이고, anchor 를 0 으로 떨어뜨리면 창이
-  // 문서 앞쪽으로 붕괴해 페이지 크롬이 12칸을 다 먹는다. 가장 가까운 후보를
-  // 기준으로 삼는다. 타겟 자체는 바꾸지 않는다 — 클릭 마커는 실제 클릭 요소를 쓴다.
-  const anchorElement = target.closest(NEIGHBOR_SELECTOR) ?? target;
-  const targetIndex = all.indexOf(anchorElement);
-  const anchor = targetIndex === -1 ? 0 : targetIndex;
+  // 신원(indexOf)이 아니라 문서 위치로 기준점을 잡는다. closest 로 상호작용 조상을
+  // 찾아도 그 조상이 nearestContainer 밖에 있으면 all 에 없어서 다시 -1 이 되고,
+  // 상호작용 조상이 아예 없는 클릭(맨 div)도 -1 이다. 두 경우 모두 anchor 가 0 으로
+  // 붕괴해 창이 문서 앞쪽으로 쏠린다. 타겟 뒤에 오는 첫 후보의 위치를 삽입점으로
+  // 쓰면 타겟이 all 에 있든 없든 항상 타겟 주변이 잡힌다. 타겟 자체는 바꾸지
+  // 않는다 — 클릭 마커는 실제 클릭 요소를 쓴다.
+  let anchor = all.findIndex(
+    (candidate) => (target.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+  );
+  if (anchor === -1) anchor = all.length;
   const half = Math.floor(MAX_HINT_CANDIDATES / 2);
   const windowed = all.slice(Math.max(0, anchor - half), anchor + half);
   // 거리 계산도 rect 를 읽는다. push 의 try/catch 는 이 시점 이후에만 걸리므로,

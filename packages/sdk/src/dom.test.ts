@@ -436,6 +436,71 @@ describe("getScreenContext", () => {
     expect(texts).toContain("다음 버튼");
   });
 
+  it("상호작용 조상이 컨테이너 밖에 있어도 이웃 창이 붕괴하지 않는다", () => {
+    // closest(NEIGHBOR_SELECTOR) 로 찾은 상호작용 조상이 nearestContainer 범위
+    // 밖에 있으면(여기선 section 을 감싸는 바깥 <a>) all 에 없어 indexOf 가
+    // 다시 -1 이 된다. 문서 위치 기준 삽입점(compareDocumentPosition)을 써야
+    // target 이 all 에 있든 없든 항상 타겟 주변이 잡힌다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    const fillers = Array.from(
+      { length: 70 },
+      (_unused, index) => `<button id="filler${index}">필러${index}</button>`,
+    ).join("");
+    document.body.innerHTML = `
+      <a href="/x">
+        <section id="section">
+          ${fillers}
+          <button id="sibling-before">이전</button>
+          <div><span id="label"></span></div>
+          <button id="sibling-after">다음</button>
+        </section>
+      </a>
+    `;
+    for (let index = 0; index < 70; index += 1) {
+      stubRect(document.querySelector(`#filler${index}`)!, { x: index, y: 0, width: 40, height: 20 });
+    }
+    stubRect(document.querySelector("#sibling-before")!, { x: 10, y: 760, width: 96, height: 40 });
+    stubRect(document.querySelector("#label")!, { x: 10, y: 810, width: 60, height: 20 });
+    stubRect(document.querySelector("#sibling-after")!, { x: 10, y: 860, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#label")!);
+    const texts = context.layoutHints.map((hint) => hint.textMaskedOrLimited);
+
+    expect(texts).toContain("이전");
+    expect(texts).toContain("다음");
+  });
+
+  it("상호작용 조상이 아예 없는 클릭(맨 div)도 이웃 창이 붕괴하지 않는다", () => {
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    const fillers = Array.from(
+      { length: 70 },
+      (_unused, index) => `<button id="filler${index}">필러${index}</button>`,
+    ).join("");
+    document.body.innerHTML = `
+      <main id="page">
+        ${fillers}
+        <button id="sibling-before">이전</button>
+        <div id="plain">평범한 영역</div>
+        <button id="sibling-after">다음</button>
+      </main>
+    `;
+    stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
+    for (let index = 0; index < 70; index += 1) {
+      stubRect(document.querySelector(`#filler${index}`)!, { x: index, y: 0, width: 40, height: 20 });
+    }
+    stubRect(document.querySelector("#sibling-before")!, { x: 10, y: 760, width: 96, height: 40 });
+    stubRect(document.querySelector("#plain")!, { x: 10, y: 810, width: 200, height: 40 });
+    stubRect(document.querySelector("#sibling-after")!, { x: 10, y: 860, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#plain")!);
+    const texts = context.layoutHints.map((hint) => hint.textMaskedOrLimited);
+
+    expect(texts).toContain("이전");
+    expect(texts).toContain("다음");
+  });
+
   it("이웃 하나의 rect 조회가 던져도 화면 맥락 전체를 잃지 않는다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
@@ -525,6 +590,21 @@ describe("getScreenContext", () => {
     const context = expectValidScreenContext(document.querySelector("#row")!);
 
     expect(JSON.stringify(context)).not.toContain("김철수");
+  });
+
+  it("select 를 직접 클릭해도 옵션 라벨을 담지 않는다", () => {
+    // containsTextEntrySubtree 가 자손만 보면 <select> 자신을 클릭했을 때는
+    // querySelector 가 자신을 매칭하지 않아 걸러지지 않는다 — 자신도 봐야 한다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `<select id="picker"><option>김철수</option></select>`;
+    stubRect(document.querySelector("#picker")!, { x: 20, y: 20, width: 200, height: 32 });
+
+    const context = expectValidScreenContext(document.querySelector("#picker")!);
+
+    expect(JSON.stringify(context)).not.toContain("김철수");
+    expect(context.target?.tagName).toBe("select");
+    expect(context.target?.rect).toEqual({ x: 20, y: 20, width: 200, height: 32 });
   });
 });
 
