@@ -25,10 +25,24 @@ function safeErrorName(error: unknown): string | undefined {
 // filename 은 "https://app.example.com/assets/checkout.js?v=2" 같은 전체 URL 이고
 // 쿼리에 토큰이 실릴 수 있다. redactUrl 은 new URL 을 쓰므로 빈 값·비 URL 에서
 // throw 한다 — cross-origin 오류의 filename 이 "" 이라 가드가 필수다.
+//
+// redactUrl 이 던지지 않고 돌려주는 값도 계약(errorSourceSchema)을 만족한다는
+// 보장은 없다 — "data:text/javascript,..." 나 "about:blank" 같은 filename 은
+// 선행 "/" 없는 urlPath 를 내고, 아주 긴 경로는 256 자 상한을 넘는다. 그런 값이
+// 그대로 나가면 Task 5 도입 후 서버가 400 을 내고, client.ts 는 4xx 를 영구
+// 실패로 보고 배치 전체(무관한 click·page_view 포함)를 버린다. 그래서 여기서
+// 모양을 확인하되 정규화(자르기·접기)는 하지 않는다 — 잘린 경로는 다른 파일을
+// 가리키게 되므로 자르는 대신 생략한다. 선행 "//" 는 의도적으로 허용한다
+// (`//vendor/lib.js` 같은 정상 경로일 수 있고, 접는 일은 Task 5 서버의 몫이다).
+const SAFE_ERROR_SOURCE_SHAPE = /^\/[^\s?#]*$/;
+const MAX_ERROR_SOURCE_LENGTH = 256;
+
 function safeErrorSource(filename: string | undefined): string | undefined {
   if (!filename) return undefined;
   try {
-    return redactUrl(filename).urlPath;
+    const path = redactUrl(filename).urlPath;
+    if (path.length > MAX_ERROR_SOURCE_LENGTH) return undefined;
+    return SAFE_ERROR_SOURCE_SHAPE.test(path) ? path : undefined;
   } catch {
     return undefined;
   }

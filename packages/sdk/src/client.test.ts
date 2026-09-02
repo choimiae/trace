@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { traceEventSchema } from "@trace/shared";
 import { installCollectors } from "./collectors.js";
 import { TraceClient } from "./client.js";
 
@@ -247,7 +248,7 @@ describe("TraceClient", () => {
     expect(JSON.stringify(payload)).not.toContain("Cannot read property");
   });
 
-  it("cross-origin 오류(error 가 없고 filename 이 빈 값)에서도 이벤트를 보낸다", async () => {
+  it("정상 오류는 세 필드를 모두 담고, cross-origin 오류(error 없음, filename 빈 값)는 모두 생략한다", async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: true });
     const client = new TraceClient({
       projectId: "proj_1",
@@ -257,16 +258,72 @@ describe("TraceClient", () => {
     });
 
     installCollectors(client);
+    // 양성 대조군: 정상적인 오류는 세 필드가 반드시 실려야 한다.
+    window.dispatchEvent(
+      new ErrorEvent("error", {
+        error: new TypeError("Cannot read property 'id' of undefined"),
+        filename: "https://app.example.com/assets/checkout.js?v=2",
+        lineno: 412,
+        message: "Cannot read property 'id' of undefined",
+      }),
+    );
+    // 음성 대조군: cross-origin 오류는 세 필드가 모두 생략되어야 한다.
     window.dispatchEvent(new ErrorEvent("error", { message: "Script error.", filename: "", lineno: 0 }));
     await client.flush();
 
     const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body)) as { events: Array<Record<string, unknown>> };
-    const error = payload.events.find((event) => event.type === "js_error");
+    const errors = payload.events.filter((event) => event.type === "js_error");
+    expect(errors).toHaveLength(2);
 
-    expect(error).toBeDefined();
-    expect(error).not.toHaveProperty("errorName");
-    expect(error).not.toHaveProperty("errorSource");
-    expect(error).not.toHaveProperty("errorLine");
+    const [wellFormed, crossOrigin] = errors;
+    expect(wellFormed?.errorName).toBe("TypeError");
+    expect(wellFormed?.errorSource).toBe("/assets/checkout.js");
+    expect(wellFormed?.errorLine).toBe(412);
+
+    expect(crossOrigin).not.toHaveProperty("errorName");
+    expect(crossOrigin).not.toHaveProperty("errorSource");
+    expect(crossOrigin).not.toHaveProperty("errorLine");
+  });
+
+  it("errorSource 는 계약을 어길 수 있는 산출물(과도한 길이·선행 슬래시 없는 경로)을 생략한다 — traceEventSchema 로 왕복 검증", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true });
+    const client = new TraceClient({
+      projectId: "proj_1",
+      endpoint: "https://trace.example.com/v1/events/batch",
+      fetcher,
+      consent: "granted",
+    });
+
+    installCollectors(client);
+
+    const cases: Array<{ filename: string; expectSource: string | undefined }> = [
+      { filename: "https://app.example.com/assets/checkout.js?v=2", expectSource: "/assets/checkout.js" },
+      { filename: `https://app.example.com/${"a".repeat(300)}.js`, expectSource: undefined },
+      { filename: "data:text/javascript,alert(1)", expectSource: undefined },
+      { filename: "about:blank", expectSource: undefined },
+    ];
+
+    for (const { filename } of cases) {
+      window.dispatchEvent(new ErrorEvent("error", { error: new TypeError("x"), filename, lineno: 10 }));
+    }
+    await client.flush();
+
+    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body)) as { events: Array<Record<string, unknown>> };
+    const errors = payload.events.filter((event) => event.type === "js_error");
+    expect(errors).toHaveLength(cases.length);
+
+    errors.forEach((event, index) => {
+      const expectSource = cases[index]?.expectSource;
+      if (expectSource === undefined) {
+        expect(event).not.toHaveProperty("errorSource");
+      } else {
+        expect(event.errorSource).toBe(expectSource);
+      }
+      // 산출물이 서버 계약을 실제로 만족하는지 왕복 검증한다 — 이 체크가 없었던
+      // 것이 safeErrorSource 가 계약 위반 값을 그대로 흘려보내는 결함을 놓친 원인이었다.
+      expect(traceEventSchema.safeParse(event).success).toBe(true);
+    });
   });
 });
