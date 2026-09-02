@@ -388,6 +388,154 @@ describe("ingestion routes", () => {
     expect(JSON.stringify(timeline)).not.toContain("고객 메모 원문");
   });
 
+  it("구식 SDK 가 masked:false 로 보낸 입력 계열·컨테이너 텍스트도 서버가 태그·역할로 직접 판정해 지운다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: {
+              viewport: { width: 1440, height: 900 },
+              target: { tagName: "button", rect: { x: 10, y: 10, width: 90, height: 40 } },
+              layoutHints: [
+                {
+                  tagName: "input",
+                  masked: false,
+                  textMaskedOrLimited: "hunter2Password",
+                  rect: { x: 20, y: 60, width: 200, height: 32 },
+                },
+                {
+                  tagName: "select",
+                  masked: false,
+                  textMaskedOrLimited: "선택된 옵션 라벨",
+                  rect: { x: 20, y: 100, width: 200, height: 32 },
+                },
+                {
+                  tagName: "main",
+                  masked: false,
+                  textMaskedOrLimited: "김철수 고객 상세 화면",
+                  rect: { x: 0, y: 0, width: 1440, height: 900 },
+                },
+                {
+                  tagName: "a",
+                  masked: false,
+                  textMaskedOrLimited: "도움말",
+                  rect: { x: 20, y: 200, width: 80, height: 24 },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    const hints = timeline[0]?.screenContext?.layoutHints ?? [];
+    const input = hints.find((hint) => hint.tagName === "input");
+    const select = hints.find((hint) => hint.tagName === "select");
+    const main = hints.find((hint) => hint.tagName === "main");
+    const link = hints.find((hint) => hint.tagName === "a");
+    const serialized = JSON.stringify(timeline);
+
+    expect(input?.masked).toBe(true);
+    expect(input).not.toHaveProperty("textMaskedOrLimited");
+    expect(select?.masked).toBe(true);
+    expect(select).not.toHaveProperty("textMaskedOrLimited");
+    expect(main?.masked).toBe(false);
+    expect(main).not.toHaveProperty("textMaskedOrLimited");
+    expect(link?.masked).toBe(false);
+    expect(link?.textMaskedOrLimited).toBe("도움말");
+    expect(serialized).not.toContain("hunter2Password");
+    expect(serialized).not.toContain("선택된 옵션 라벨");
+    expect(serialized).not.toContain("김철수 고객 상세 화면");
+    expect(serialized).toContain("도움말");
+  });
+
+  it("힌트의 masked 가 불린이 아니면 화면 맥락 전체를 버리고도 배치는 받는다 (fail-closed 회귀 고정)", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const makeEvent = (eventId: string, layoutHint: Record<string, unknown>) => ({
+      eventId,
+      sessionId: "sess_1",
+      pageId: "page_1",
+      timestamp: "2026-09-02T01:00:00.000Z",
+      type: "click",
+      urlPath: "/settings",
+      metadata: {},
+      screenContext: {
+        viewport: { width: 1440, height: 900 },
+        layoutHints: [layoutHint],
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          makeEvent("evt_masked_missing", { tagName: "div", rect: { x: 0, y: 0, width: 10, height: 10 } }),
+          makeEvent("evt_masked_string", {
+            tagName: "div",
+            masked: "true",
+            rect: { x: 0, y: 0, width: 10, height: 10 },
+          }),
+          makeEvent("evt_masked_null", {
+            tagName: "div",
+            masked: null,
+            rect: { x: 0, y: 0, width: 10, height: 10 },
+          }),
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: 3 });
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(timeline.map((event) => event.eventId)).toEqual([
+      "evt_masked_missing",
+      "evt_masked_string",
+      "evt_masked_null",
+    ]);
+    expect(timeline[0]?.screenContext).toBeUndefined();
+    expect(timeline[1]?.screenContext).toBeUndefined();
+    expect(timeline[2]?.screenContext).toBeUndefined();
+  });
+
   it("복구할 수 없는 화면 맥락은 필드만 버리고 같은 배치의 다른 이벤트를 저장한다", async () => {
     const store = new MemoryStore();
     const project = await store.createProject({

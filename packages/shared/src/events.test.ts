@@ -483,6 +483,78 @@ describe("screenContextSchema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("masked 와 textMaskedOrLimited 를 동시에 실은 힌트를 거절한다", () => {
+    const baseEvent = {
+      eventId: "evt_masked_text",
+      sessionId: "sess_1",
+      pageId: "page_1",
+      timestamp: "2026-09-02T01:00:00.000Z",
+      type: "click" as const,
+      urlPath: "/settings",
+    };
+
+    const bothResult = traceEventSchema.safeParse({
+      ...baseEvent,
+      screenContext: {
+        viewport: { width: 1440, height: 900 },
+        layoutHints: [
+          {
+            tagName: "textarea",
+            masked: true,
+            textMaskedOrLimited: "고객 메모 원문",
+            rect: { x: 20, y: 60, width: 400, height: 120 },
+          },
+        ],
+      },
+    });
+
+    expect(bothResult.success).toBe(false);
+  });
+
+  it("masked 단독 또는 텍스트 단독은 그대로 통과시킨다", () => {
+    const baseEvent = {
+      eventId: "evt_masked_only",
+      sessionId: "sess_1",
+      pageId: "page_1",
+      timestamp: "2026-09-02T01:00:00.000Z",
+      type: "click" as const,
+      urlPath: "/settings",
+    };
+
+    const maskedOnlyResult = traceEventSchema.safeParse({
+      ...baseEvent,
+      screenContext: {
+        viewport: { width: 1440, height: 900 },
+        layoutHints: [
+          {
+            tagName: "textarea",
+            masked: true,
+            rect: { x: 20, y: 60, width: 400, height: 120 },
+          },
+        ],
+      },
+    });
+
+    const textOnlyResult = traceEventSchema.safeParse({
+      ...baseEvent,
+      eventId: "evt_text_only",
+      screenContext: {
+        viewport: { width: 1440, height: 900 },
+        layoutHints: [
+          {
+            tagName: "a",
+            masked: false,
+            textMaskedOrLimited: "도움말",
+            rect: { x: 20, y: 200, width: 80, height: 24 },
+          },
+        ],
+      },
+    });
+
+    expect(maskedOnlyResult.success).toBe(true);
+    expect(textOnlyResult.success).toBe(true);
+  });
 });
 
 describe("issue representative event", () => {

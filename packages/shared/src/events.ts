@@ -175,6 +175,18 @@ const screenElementSchema = z.object({
   rect: screenRectSchema,
 });
 
+// masked 와 textMaskedOrLimited 를 동시에 가진 힌트는 정제 파이프라인이 절대
+// 만들면 안 되는 상태다. 정상 경로는 이 refine 에 절대 걸리지 않는다 —
+// sanitizeScreenContext 가 masked 힌트의 텍스트를 먼저 지우기 때문이다. 그래도
+// 걸린다면 그 정제 로직의 회귀를 뜻하므로, 조용히 저장하는 대신 파싱을 실패시켜
+// 크게 알린다 (eventBatchSchema.parse 가 400 을 낸다).
+const screenLayoutHintSchema = screenElementSchema
+  .extend({ masked: z.boolean() })
+  .refine((hint) => !(hint.masked && hint.textMaskedOrLimited !== undefined), {
+    message: "masked layout hints must not carry text",
+    path: ["textMaskedOrLimited"],
+  });
+
 export const screenContextSchema = z.object({
   titleMasked: safeScreenTextSchema.optional(),
   viewport: z.object({
@@ -182,11 +194,7 @@ export const screenContextSchema = z.object({
     height: z.number().int().min(1).max(10000),
   }),
   target: screenElementSchema.optional(),
-  layoutHints: screenElementSchema
-    .extend({ masked: z.boolean() })
-    .array()
-    .max(12)
-    .default([]),
+  layoutHints: screenLayoutHintSchema.array().max(12).default([]),
 });
 
 export type ScreenContext = z.infer<typeof screenContextSchema>;

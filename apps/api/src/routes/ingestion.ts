@@ -25,6 +25,14 @@ const MAX_LAYOUT_HINTS = 12;
 const MAX_SCREEN_TEXT = 120;
 const SAFE_TAG_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
+// 힌트의 masked 는 SDK 가 매긴 값이라 신뢰하지 않는다. 구식 SDK 는 input/select 에도
+// masked:false 를 실어 보낼 수 있으므로, 서버가 태그·role 로 직접 재판정한다.
+// target(클릭된 요소)에는 적용하지 않는다 — 그 라벨을 보여주는 것이 기능의 목적이고,
+// 클릭은 <div> 같은 컨테이너에도 정당하게 떨어질 수 있다.
+const SERVER_MASKED_TAGS = new Set(["input", "select", "textarea"]);
+const SERVER_TEXT_TAGS = new Set(["button", "a", "h1", "h2", "h3"]);
+const SERVER_TEXT_ROLES = new Set(["button", "link", "tab", "heading"]);
+
 // 화면 맥락은 다른 필드와 같이 "느슨하게 받고 정제한다". 고객 사이트의 평범한 DOM
 // (대문자 role, 토큰 목록 role, 뷰포트보다 긴 래퍼 등) 때문에 배치 전체가 400 이 되면
 // SDK 큐가 영구히 막힌다. 정제 불가한 값은 필드만 버린다.
@@ -188,12 +196,15 @@ function sanitizeScreenContext(value: unknown): ScreenContext | undefined {
       const sanitized = sanitizeScreenElement(hint);
       if (sanitized === undefined) return undefined;
       // masked 는 "내용을 보여주지 않는다" 는 뜻이다. SDK 를 신뢰하지 않고 경계에서
-      // 텍스트를 지운다.
-      if (hint.masked) {
-        const { textMaskedOrLimited: _masked, ...withoutText } = sanitized;
-        return { ...withoutText, masked: true };
-      }
-      return { ...sanitized, masked: false };
+      // 태그·role 로 직접 재판정한 뒤 텍스트를 지운다.
+      const masked = hint.masked || SERVER_MASKED_TAGS.has(sanitized.tagName);
+      const allowsText =
+        !masked &&
+        (SERVER_TEXT_TAGS.has(sanitized.tagName) ||
+          (sanitized.role !== undefined && SERVER_TEXT_ROLES.has(sanitized.role)));
+      if (allowsText) return { ...sanitized, masked };
+      const { textMaskedOrLimited: _dropped, ...withoutText } = sanitized;
+      return { ...withoutText, masked };
     })
     .filter((hint): hint is NonNullable<typeof hint> => hint !== undefined);
 
