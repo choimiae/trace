@@ -251,7 +251,7 @@ describe("getScreenContext", () => {
     expect(JSON.stringify(context)).not.toContain("박스 안의 긴 설명 문구");
   });
 
-  it("뷰포트 밖(아래·위·왼쪽) 요소는 힌트에서 제외하고 안의 이웃은 담는다", () => {
+  it("뷰포트 밖(아래·위·왼쪽) 요소나 0크기 요소는 힌트에서 제외하고 안의 이웃은 담는다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
     document.body.innerHTML = `
@@ -259,6 +259,7 @@ describe("getScreenContext", () => {
         <button id="below">아래쪽</button>
         <button id="above">위쪽</button>
         <button id="left">왼쪽</button>
+        <button id="zero">제로</button>
         <button id="near">가까운 버튼</button>
         <button id="go">저장</button>
       </main>
@@ -270,6 +271,9 @@ describe("getScreenContext", () => {
     // 뷰포트 안으로 잘못 판정된다 — 원시 DOMRect 로 판정해야 걸러진다.
     stubRect(document.querySelector("#above")!, { x: 0, y: -800, width: 100, height: 40 });
     stubRect(document.querySelector("#left")!, { x: -500, y: 20, width: 100, height: 40 });
+    // 뷰포트 안 양의 좌표라도 너비·높이가 0이면 화면에 보이지 않는다 — 슬롯을
+    // 낭비하면 안 된다.
+    stubRect(document.querySelector("#zero")!, { x: 10, y: 40, width: 0, height: 0 });
     stubRect(document.querySelector("#near")!, { x: 10, y: 60, width: 96, height: 40 });
     stubRect(document.querySelector("#go")!, { x: 10, y: 20, width: 96, height: 40 });
 
@@ -279,6 +283,7 @@ describe("getScreenContext", () => {
     expect(texts).not.toContain("아래쪽");
     expect(texts).not.toContain("위쪽");
     expect(texts).not.toContain("왼쪽");
+    expect(texts).not.toContain("제로");
     // 부재만 확인하면 layoutHints 가 통째로 [] 여도 통과한다 — 실제 이웃이
     // 담기는지까지 확인해야 생산자가 살아있다는 증거가 된다.
     expect(texts).toContain("가까운 버튼");
@@ -396,6 +401,41 @@ describe("getScreenContext", () => {
     expect(texts).toContain("다음 버튼");
   });
 
+  it("클릭이 버튼 안 아이콘에 떨어져도 크롬이 아닌 실제 이웃이 이긴다", () => {
+    // 클릭은 실무에서 버튼 안 아이콘·span 에 자주 떨어진다. 그 요소는
+    // NEIGHBOR_SELECTOR 에 없어 all.indexOf(target) 이 -1 이 되고, anchor 가
+    // 0 으로 붕괴하면 창이 문서 맨 앞으로 밀려 페이지 크롬이 12칸을 다 먹는다.
+    // target.closest(NEIGHBOR_SELECTOR) 로 가장 가까운 후보를 앵커로 써야 한다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    const chrome = Array.from({ length: 70 }, (_unused, index) => `<button id="chrome${index}">크롬${index}</button>`).join(
+      "",
+    );
+    document.body.innerHTML = `
+      ${chrome}
+      <div><div><div><div>
+        <button id="sibling-before">이전 버튼</button>
+        <button id="go"><span id="label">저장</span></button>
+        <button id="sibling-after">다음 버튼</button>
+      </div></div></div></div>
+    `;
+    for (let index = 0; index < 70; index += 1) {
+      stubRect(document.querySelector(`#chrome${index}`)!, { x: index, y: 0, width: 40, height: 20 });
+    }
+    stubRect(document.querySelector("#sibling-before")!, { x: 10, y: 760, width: 96, height: 40 });
+    stubRect(document.querySelector("#go")!, { x: 10, y: 810, width: 96, height: 40 });
+    stubRect(document.querySelector("#label")!, { x: 20, y: 815, width: 60, height: 20 });
+    stubRect(document.querySelector("#sibling-after")!, { x: 10, y: 860, width: 96, height: 40 });
+
+    // 타겟은 span 자신 — 실제 클릭 요소는 버튼이 아니라 그 안의 아이콘/라벨이다.
+    const context = expectValidScreenContext(document.querySelector("#label")!);
+    const texts = context.layoutHints.map((hint) => hint.textMaskedOrLimited);
+
+    expect(context.target?.tagName).toBe("span");
+    expect(texts).toContain("이전 버튼");
+    expect(texts).toContain("다음 버튼");
+  });
+
   it("이웃 하나의 rect 조회가 던져도 화면 맥락 전체를 잃지 않는다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
@@ -451,6 +491,40 @@ describe("getScreenContext", () => {
     const context = expectValidScreenContext(document.querySelector("#go")!);
 
     expect(JSON.stringify(context)).not.toContain("서울시");
+  });
+
+  it("링크 안에 select 가 있으면 이웃 힌트에도 옵션 라벨을 담지 않는다", () => {
+    // select 의 option 라벨도 textContent 에 들어간다. containsTextEntrySubtree
+    // 가 textarea·contenteditable 만 보면 select 안의 라벨이 이 새어 나간다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `
+      <main id="page">
+        <a id="row" href="/x"><span>행 열기</span><select><option>김철수</option></select></a>
+        <button id="go">저장</button>
+      </main>
+    `;
+    stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
+    stubRect(document.querySelector("#row")!, { x: 20, y: 20, width: 400, height: 40 });
+    stubRect(document.querySelector("#go")!, { x: 20, y: 80, width: 96, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#go")!);
+
+    expect(JSON.stringify(context)).not.toContain("김철수");
+  });
+
+  it("클릭 타겟 자신에 select 가 있으면 옵션 라벨을 담지 않는다", () => {
+    // 힌트 경로는 TEXT_TAG_WHITELIST 라는 관문이라도 있지만, 타겟 경로
+    // (buildScreenTarget)는 화이트리스트 없이 getElementMetadata 텍스트를
+    // 그대로 쓴다 — 이 요소를 직접 클릭하면 같은 구멍이 그대로 열린다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `<a id="row" href="/x"><span>행 열기</span><select><option>김철수</option></select></a>`;
+    stubRect(document.querySelector("#row")!, { x: 20, y: 20, width: 400, height: 40 });
+
+    const context = expectValidScreenContext(document.querySelector("#row")!);
+
+    expect(JSON.stringify(context)).not.toContain("김철수");
   });
 });
 

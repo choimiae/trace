@@ -30,6 +30,9 @@ const TEXT_ROLE_WHITELIST = new Set(["button", "link", "tab", "heading"]);
 const TEXT_TAG_WHITELIST = new Set(["button", "a", "h1", "h2", "h3"]);
 
 const CONTENTEDITABLE_SELECTOR = '[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
+// select 의 option 라벨도 textContent 에 들어간다. <a><span>행 열기</span><select>
+// <option>김철수</option></select></a> 처럼 사용자 데이터가 실린다.
+const TEXT_ENTRY_SUBTREE_SELECTOR = `textarea, select, ${CONTENTEDITABLE_SELECTOR}`;
 
 // input·textarea·contenteditable 내부 텍스트는 저장하지 않는다.
 function isTextEntryElement(element: Element): boolean {
@@ -41,11 +44,11 @@ function isTextEntryElement(element: Element): boolean {
 }
 
 // textContent 는 자손을 포함한다. isTextEntryElement 는 요소 자신과 조상만 보므로,
-// 화이트리스트 요소(예: <h1>, <a>) 안에 편집 가능 자손이나 textarea 가 있으면
-// 그 안의 글자가 textContent 를 통해 새어 나간다. 요소 전체를 건너뛰는 쪽이
-// 텍스트 노드를 걸러내는 것보다 단순하고 안전하다 — 제목 일부를 잃더라도.
+// 화이트리스트 요소(예: <h1>, <a>) 안에 편집 가능 자손이나 textarea·select 가
+// 있으면 그 안의 글자가 textContent 를 통해 새어 나간다. 요소 전체를 건너뛰는
+// 쪽이 텍스트 노드를 걸러내는 것보다 단순하고 안전하다 — 제목 일부를 잃더라도.
 function containsTextEntrySubtree(element: Element): boolean {
-  return element.querySelector(`textarea, ${CONTENTEDITABLE_SELECTOR}`) !== null;
+  return element.querySelector(TEXT_ENTRY_SUBTREE_SELECTOR) !== null;
 }
 
 export function getElementMetadata(element: Element): ElementMetadata {
@@ -152,6 +155,7 @@ function buildScreenTarget(element: Element, viewport: ScreenViewport): ScreenTa
 // 화면 위쪽·왼쪽으로 스크롤된 요소가 y:0 으로 접혀 통과하고, 미리보기 상단에
 // 몰려 실제 화면을 왜곡한다.
 function intersectsViewport(rect: DOMRect | ClientRect, viewport: ScreenViewport): boolean {
+  if (rect.width <= 0 || rect.height <= 0) return false;
   return rect.right > 0 && rect.bottom > 0 && rect.left < viewport.width && rect.top < viewport.height;
 }
 
@@ -260,7 +264,12 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   // 타겟의 문서 순서 위치를 중심으로 창을 잡아 rect 읽기를 묶은 뒤 거리로 정렬한다.
   const container = nearestContainer(target);
   const all = Array.from(container.querySelectorAll(NEIGHBOR_SELECTOR));
-  const targetIndex = all.indexOf(target);
+  // 클릭은 버튼 안의 아이콘·span, 테이블 셀, 평범한 div 에 자주 떨어진다. 그런
+  // 요소는 all 에 없어서 indexOf 가 -1 이고, anchor 를 0 으로 떨어뜨리면 창이
+  // 문서 앞쪽으로 붕괴해 페이지 크롬이 12칸을 다 먹는다. 가장 가까운 후보를
+  // 기준으로 삼는다. 타겟 자체는 바꾸지 않는다 — 클릭 마커는 실제 클릭 요소를 쓴다.
+  const anchorElement = target.closest(NEIGHBOR_SELECTOR) ?? target;
+  const targetIndex = all.indexOf(anchorElement);
   const anchor = targetIndex === -1 ? 0 : targetIndex;
   const half = Math.floor(MAX_HINT_CANDIDATES / 2);
   const windowed = all.slice(Math.max(0, anchor - half), anchor + half);
