@@ -106,11 +106,55 @@ describe("요소 지문", () => {
     );
   });
 
-  it("안정 속성이 다르면 갈린다", () => {
+  // 안정 속성은 하나씩 못박는다. 두 속성을 동시에 바꾸는 테스트 하나로는 둘 중
+  // 어느 쪽을 STABLE_ATTRIBUTES 에서 지워도 여전히 통과한다.
+  it("data-trace-id 만 달라도 갈린다", () => {
+    render(`
+      <main><div>
+        <button data-trace-id="settings-save">저장</button>
+        <button data-trace-id="settings-cancel">저장</button>
+      </div></main>
+    `);
+
+    const [save, cancel] = Array.from(document.querySelectorAll("button"));
+    expect(getElementMetadata(save!).elementSelectorHash).not.toBe(
+      getElementMetadata(cancel!).elementSelectorHash,
+    );
+  });
+
+  it("data-testid 만 달라도 갈린다", () => {
+    render(`
+      <main><div>
+        <button data-testid="save-button">저장</button>
+        <button data-testid="cancel-button">저장</button>
+      </div></main>
+    `);
+
+    const [save, cancel] = Array.from(document.querySelectorAll("button"));
+    expect(getElementMetadata(save!).elementSelectorHash).not.toBe(
+      getElementMetadata(cancel!).elementSelectorHash,
+    );
+  });
+
+  it("name 만 달라도 갈린다", () => {
     render(`
       <main><div>
         <input type="text" name="workspaceName" />
-        <input type="email" name="ownerEmail" />
+        <input type="text" name="ownerName" />
+      </div></main>
+    `);
+
+    const [workspace, owner] = Array.from(document.querySelectorAll("input"));
+    expect(getElementMetadata(workspace!).elementSelectorHash).not.toBe(
+      getElementMetadata(owner!).elementSelectorHash,
+    );
+  });
+
+  it("type 만 달라도 갈린다", () => {
+    render(`
+      <main><div>
+        <input type="text" name="owner" />
+        <input type="email" name="owner" />
       </div></main>
     `);
 
@@ -129,6 +173,29 @@ describe("요소 지문", () => {
     `);
 
     expect(hashOf(".row-3")).toBe(hashOf(".row-5"));
+  });
+
+  // 다음 두 테스트가 ANCESTOR_DEPTH 를 정확히 3 에 못박는다. 하나만 있으면 깊이를
+  // 1 로 줄이거나 10 으로 늘려도 전부 통과한다. 10 은 spec 위반이다 — 페이지
+  // 껍데기(body>main>...)가 지문을 지배해 판별력이 떨어진다.
+  it("조상 4단에서만 다른 두 요소는 지문을 공유한다", () => {
+    render(`
+      <main><div><section><span><button class="in-main">저장</button></span></section></div></main>
+      <aside><div><section><span><button class="in-aside">저장</button></span></section></div></aside>
+    `);
+
+    // 조상 사슬은 양쪽 모두 div>section>span 이고, main/aside 는 4단이라 밖이다.
+    expect(hashOf(".in-main")).toBe(hashOf(".in-aside"));
+  });
+
+  it("조상 3단에서 다른 두 요소는 지문이 갈린다", () => {
+    render(`
+      <main><div><span><button class="in-main">저장</button></span></div></main>
+      <aside><div><span><button class="in-aside">저장</button></span></div></aside>
+    `);
+
+    // 조상 사슬이 main>div>span 과 aside>div>span 으로 갈린다.
+    expect(hashOf(".in-main")).not.toBe(hashOf(".in-aside"));
   });
 
   it("콜론을 포함한 생성 id 는 지문에 넣지 않는다", () => {
