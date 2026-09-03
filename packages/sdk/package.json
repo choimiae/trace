@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -b --force tsconfig.json && npm run build:bundle",
     "build:bundle": "esbuild src/index.ts --bundle --format=iife --minify --platform=browser --outfile=dist/trace.js",
+    "pretest": "npm run build --workspace @trace/shared",
     "test": "vitest run"
   },
   "dependencies": {

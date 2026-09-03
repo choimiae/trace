@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspace @trace/shared && npm run build --workspace @trace/sdk && npm run build --workspace @trace/api && npm run build --workspace @trace/admin",
+    "pretest": "npm run build --workspace @trace/shared",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false",
