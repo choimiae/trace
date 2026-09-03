@@ -5,40 +5,222 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trace Demo SaaS</title>
     <style>
+      * {
+        box-sizing: border-box;
+      }
+
       body {
-        margin: 40px;
+        margin: 0;
+        padding: 20px;
         color: #17202a;
         font-family: system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #d9e1ea;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      nav a {
+        margin-left: 16px;
+        color: #1f4788;
+        text-decoration: none;
+        font-size: 14px;
+      }
+
+      nav a:hover {
+        text-decoration: underline;
+      }
+
+      .container {
+        display: flex;
+        gap: 20px;
+        flex: 1;
+      }
+
+      main {
+        flex: 1;
+      }
+
+      .panel {
+        border: 1px solid #d9e1ea;
+        border-radius: 8px;
+        padding: 20px;
+      }
+
+      main.panel h1 {
+        margin: 0 0 8px 0;
+        font-size: 18px;
+      }
+
+      main.panel > p {
+        margin: 0 0 16px 0;
+        font-size: 14px;
+        color: #555;
+      }
+
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      label {
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      input, select, textarea {
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 13px;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 60px;
       }
 
       button {
         margin-right: 8px;
         padding: 10px 14px;
+        background-color: #f0f2f5;
+        border: 1px solid #d9e1ea;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
       }
 
-      .panel {
-        max-width: 720px;
-        border: 1px solid #d9e1ea;
-        border-radius: 8px;
-        padding: 24px;
+      button:hover {
+        background-color: #e8ecf1;
+      }
+
+      button[type="submit"] {
+        background-color: #1f4788;
+        color: white;
+        border-color: #1f4788;
+        align-self: flex-start;
+      }
+
+      button[type="submit"]:hover {
+        background-color: #162f5c;
+      }
+
+      .button-group {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      aside {
+        width: 180px;
+        flex-shrink: 0;
+      }
+
+      aside.panel {
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      aside.panel h3 {
+        margin: 0 0 8px 0;
+        font-size: 14px;
+      }
+
+      aside.panel p {
+        margin: 0;
+        color: #666;
       }
     </style>
   </head>
   <body>
-    <main class="panel">
-      <h1>설정</h1>
-      <p>반복 클릭과 오류 감지를 확인하는 데모 화면입니다.</p>
-      <button id="dead-click">권한 추가</button>
-      <button onclick="window.trace?.track('report_export_clicked')">리포트 내보내기</button>
-      <button onclick="throw new Error('Demo error')">오류 발생</button>
-    </main>
+    <header>
+      <h1>더존비즈온</h1>
+      <nav>
+        <a href="#dashboard">대시보드</a>
+        <a href="#settings">설정</a>
+        <a href="#users">사용자</a>
+        <a href="#billing">청구</a>
+      </nav>
+    </header>
+
+    <div class="container">
+      <main class="panel">
+        <h1>설정</h1>
+        <p>워크스페이스 기본 정보를 관리합니다.</p>
+
+        <form onsubmit="return false">
+          <div class="form-group">
+            <label for="workspaceName">워크스페이스 이름</label>
+            <input type="text" name="workspaceName" id="workspaceName" value="더존비즈온 영업팀" />
+          </div>
+
+          <div class="form-group">
+            <label for="ownerEmail">관리자 이메일</label>
+            <input type="email" name="ownerEmail" id="ownerEmail" value="choi@example.com" />
+          </div>
+
+          <div class="form-group">
+            <label for="approver">담당 승인자</label>
+            <select name="approver" id="approver">
+              <option value="">선택하세요</option>
+              <option value="kim">김철수</option>
+              <option value="lee">이영희</option>
+              <option value="park">박민수</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="memo">메모</label>
+            <textarea name="memo" id="memo">김철수 담당자 연락처 010-1234-5678</textarea>
+          </div>
+
+          <button type="submit">저장</button>
+        </form>
+
+        <div class="button-group">
+          <button id="dead-click">권한 추가</button>
+          <button onclick="window.trace?.track('report_export_clicked')">리포트 내보내기</button>
+          <button onclick="throw new Error('Demo error')">오류 발생</button>
+        </div>
+      </main>
+
+      <aside class="panel">
+        <h3>도움말</h3>
+        <p>워크스페이스 이름과 관리자 정보는 조직 내에서만 공유됩니다. 민감한 정보는 저장되지 않습니다.</p>
+      </aside>
+    </div>
+
     <script>
-      // query string 에서 projectId 를 읽어야 하므로 정적 script 태그로는 속성을 채울 수 없다.
+      // query string 에서 projectId 와 port 를 읽어야 하므로 정적 script 태그로는 속성을 채울 수 없다.
       // 동적으로 삽입한 classic script 도 실행 중에는 document.currentScript 가
       // 자기 요소를 가리키므로 data-* 파싱 경로가 동일하게 동작한다.
-      const projectId = new URLSearchParams(window.location.search).get("projectId") ?? "proj_demo";
+      const params = new URLSearchParams(window.location.search);
+      const projectId = params.get("projectId") ?? "proj_demo";
+      const port = params.get("port") ?? "4000";
       const script = document.createElement("script");
-      script.src = "http://localhost:4000/trace.js";
+      script.src = `http://localhost:${port}/trace.js`;
       script.dataset.projectId = projectId;
       document.head.appendChild(script);
     </script>
