@@ -23,7 +23,9 @@
 - 지문에 사용자 텍스트(`aria-label`·`textContent`)와 클래스를 넣지 않는다.
 - `nth-of-type` 등 형제 순서번호를 지문에 넣지 않는다. 목록 행마다 있는 같은 컨트롤은 하나의 요소여야 한다.
 - 관리자 화면 문구와 커밋 메시지는 한국어를 기본으로 한다.
-- 상대 임포트는 명시 `.js` 확장자를 쓴다. 공유 타입은 `@trace/shared` 루트에서 가져온다 (`@trace/shared/events` 서브패스는 존재하지 않는다).
+- 상대 임포트는 명시 `.js` 확장자를 쓴다.
+- **SDK(`packages/sdk`)는 런타임 함수를 배럴이 아니라 서브패스로 가져온다** — `dom.ts`·`client.ts` 가 이미 `@trace/shared/privacy` 를 쓰고 `packages/sdk/vitest.config.ts` 에 그 alias 가 bare `@trace/shared` 보다 먼저 등록돼 있다. 루트 배럴로 가져오면 `events.ts` 의 zod 스키마가 번들에 끌려와 gzip 예산을 넘긴다(실측 21074B). 서브패스를 새로 쓸 때는 `packages/shared/package.json` 의 `exports` 와 `packages/sdk/vitest.config.ts` 의 alias 를 함께 추가한다.
+- API(`apps/api`)와 테스트 파일은 번들되지 않으므로 `@trace/shared` 루트에서 가져와도 된다 (`apps/api/vitest.config.ts` 가 루트를 소스로 alias 한다). `@trace/shared/events` 서브패스는 존재하지 않는다.
 - 기존 미커밋 변경 파일은 이 계획 실행 중 임의로 되돌리지 않는다.
 
 ---
