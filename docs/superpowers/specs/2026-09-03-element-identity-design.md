@@ -72,7 +72,8 @@ id 없는 버튼은 웹에서 예외가 아니라 기본값이므로 엣지 케�
 영향받는 곳은 두 종류다(`apps/api/src/detection/detect.ts`).
 
 - **동등 비교** — `detectRageClicks:65` 의 연속 클릭 비교(현재 `event.elementSelectorHash === current.elementSelectorHash`). 여기가 허위 분노 클릭을 만드는 지점이다.
-- **이슈 키 계산** — `selectorHash` 를 `makeIssue` 에 넘기는 모든 곳: `detectDeadClicks:45`, `detectRageClicks:79`, `detectLongPauses:101`. `detectDeadClicks` 와 `detectLongPauses` 는 이벤트 간 해시를 비교하지 않고 이벤트마다 이슈를 만들지만, 그 이슈의 키가 해시에서 나오므로 서로 다른 버튼의 반응 없는 클릭·긴 멈춤이 한 이슈로 병합된다.
+- **이슈 키 계산** — `selectorHash` 를 `makeIssue` 에 넘기는 모든 곳: `detectDeadClicks:45`, `detectRageClicks:79`, `detectLongPauses:101`, `detectErrorFriction:119`. 이 중 **실제로 동작이 바뀌는 것은 `detectDeadClicks` 뿐이다** — 이벤트마다 이슈를 만들지만 그 이슈의 키가 해시에서 나오므로, 서로 다른 버튼의 반응 없는 클릭이 지금은 한 이슈로 병합된다.
+- `detectLongPauses` 와 `detectErrorFriction` 은 호출 형태만 기계적으로 바뀌고 동작은 그대로다. SDK 는 요소 메타데이터를 클릭에만 싣고(`collectors.ts:84` 의 click 리스너가 `getElementMetadata` 를 부르는 유일한 지점), idle 이벤트는 아예 발행하지 않는다. 따라서 두 함수가 넘기는 `event.elementSelectorHash` 는 항상 `undefined` 이고 키는 계속 `page` 다.
 - `detectErrorFriction:119` 도 `selectorHash` 를 넘기지만 오류 이벤트에는 요소 메타데이터가 없어 값이 항상 `undefined` 다. 동작이 바뀌지 않는다.
 
 ### 이슈 id
