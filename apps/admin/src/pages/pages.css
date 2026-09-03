@@ -1246,7 +1246,7 @@
 }
 
 .friction-hero__action {
-  margin-top: var(--space-5);
+  margin: var(--space-5) 0 0;
   border-top: 1px solid var(--border);
   padding-top: var(--space-5);
 }
