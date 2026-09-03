@@ -218,7 +218,12 @@
       // 자기 요소를 가리키므로 data-* 파싱 경로가 동일하게 동작한다.
       const params = new URLSearchParams(window.location.search);
       const projectId = params.get("projectId") ?? "proj_demo";
-      const port = params.get("port") ?? "4000";
+      // port 를 그대로 끼워 넣으면 안 된다. ?port=1@evil.example.com 은
+      // "http://localhost:1@evil.example.com/trace.js" 가 되고, 이 URL 의 host 는
+      // localhost 가 아니라 evil.example.com 이다 — 앞부분이 userinfo 로 해석된다.
+      // 로컬 예제라도 원격 스크립트를 실행시키는 링크가 되므로 숫자만 받는다.
+      const rawPort = params.get("port") ?? "";
+      const port = /^\d{1,5}$/.test(rawPort) ? rawPort : "4000";
       const script = document.createElement("script");
       script.src = `http://localhost:${port}/trace.js`;
       script.dataset.projectId = projectId;
