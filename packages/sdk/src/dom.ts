@@ -1,5 +1,5 @@
 import { isSafeElementRole, isSensitiveField, redactText } from "@trace/shared/privacy";
-import type { ScreenContext } from "@trace/shared";
+import { hash64Hex, type ScreenContext } from "@trace/shared";
 
 export interface ElementMetadata {
   elementSelectorHash?: string;
@@ -79,28 +79,61 @@ export function getElementMetadata(element: Element): ElementMetadata {
   const text = allowedElementText(element);
 
   return {
-    elementSelectorHash: hashSelector(selector),
+    elementSelectorHash: hash64Hex(selector),
     elementRole: role,
     ...(text === undefined ? {} : { elementTextMaskedOrLimited: text }),
   };
 }
 
-function buildSelector(element: Element): string {
-  const id = element.id ? `#${element.id}` : "";
-  const tag = element.tagName.toLowerCase();
-  const role = element.getAttribute("role") ? `[role="${element.getAttribute("role")}"]` : "";
+// 조상은 3단까지만 본다. 더 올라가면 페이지 껍데기가 지문을 지배해 판별력이 떨어지고,
+// 얕으면 서로 다른 영역의 같은 컨트롤을 못 가른다.
+const ANCESTOR_DEPTH = 3;
+// 개발자가 쓴 값만 넣는다. 사용자 텍스트(aria-label·textContent)는 행마다 달라져
+// 목록 행을 갈라 버리고, 클래스는 CSS 모듈·빌드 해시로 배포마다 바뀐다.
+const STABLE_ATTRIBUTES = ["data-trace-id", "data-testid", "name", "type"] as const;
+const ATTRIBUTE_VALUE_LIMIT = 64;
 
-  return `${tag}${id}${role}`;
+// React useId 는 `:r1:` 처럼 콜론을 포함한 id 를 렌더마다 새로 만든다. 그 id 를
+// 지문에 넣으면 같은 버튼이 렌더마다 다른 요소로 갈려 이슈가 폭증한다.
+// 콜론을 쓰지 않는 다른 생성기(무작위 UUID 등)는 이 가드가 잡지 못한다.
+function stableId(element: Element): string {
+  return element.id && !element.id.includes(":") ? `#${element.id}` : "";
 }
 
-function hashSelector(selector: string): string {
-  let hash = 0;
+function ancestorChain(element: Element): string {
+  const root = element.ownerDocument.documentElement;
+  const tags: string[] = [];
+  let current = element.parentElement;
 
-  for (let index = 0; index < selector.length; index += 1) {
-    hash = (hash * 31 + selector.charCodeAt(index)) >>> 0;
+  for (let depth = 0; depth < ANCESTOR_DEPTH && current && current !== root; depth += 1) {
+    tags.unshift(current.tagName.toLowerCase());
+    current = current.parentElement;
   }
 
-  return hash.toString(16);
+  return tags.length === 0 ? "" : `${tags.join(">")}>`;
+}
+
+// 고정 순서로 이어 붙인다. 순서가 흔들리면 같은 요소가 다른 문자열을 만들어
+// 지문이 불안정해진다.
+function stableAttributes(element: Element): string {
+  let attributes = "";
+
+  for (const name of STABLE_ATTRIBUTES) {
+    const value = element.getAttribute(name);
+    if (value === null) continue;
+    attributes += `[${name}="${value.slice(0, ATTRIBUTE_VALUE_LIMIT)}"]`;
+  }
+
+  return attributes;
+}
+
+function buildSelector(element: Element): string {
+  const tag = element.tagName.toLowerCase();
+  const role = element.getAttribute("role");
+
+  return `${ancestorChain(element)}${tag}${stableId(element)}${stableAttributes(element)}${
+    role ? `[role="${role}"]` : ""
+  }`;
 }
 
 type ScreenTarget = NonNullable<ScreenContext["target"]>;

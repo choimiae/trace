@@ -1,4 +1,4 @@
-import { screenContextSchema } from "@trace/shared";
+import { isSafeElementSelectorHash, screenContextSchema } from "@trace/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getElementMetadata, getScreenContext } from "./dom.js";
 
@@ -65,6 +65,112 @@ describe("getElementMetadata", () => {
     const link = document.querySelector("a")!;
 
     expect(getElementMetadata(link).elementTextMaskedOrLimited).toBeUndefined();
+  });
+});
+
+describe("요소 지문", () => {
+  function render(html: string): void {
+    document.body.innerHTML = html;
+  }
+
+  function hashOf(selector: string): string {
+    const element = document.querySelector(selector);
+    if (!element) throw new Error(`요소를 찾지 못했다: ${selector}`);
+    return getElementMetadata(element).elementSelectorHash!;
+  }
+
+  it("구조가 다른 버튼은 지문이 갈린다", () => {
+    render(`
+      <main>
+        <form><button type="submit" id="save">저장</button></form>
+        <div class="button-group">
+          <button id="export">리포트 내보내기</button>
+        </div>
+      </main>
+    `);
+
+    expect(hashOf("#save")).not.toBe(hashOf("#export"));
+  });
+
+  it("id·role·속성이 없어도 조상 구조가 다르면 갈린다", () => {
+    render(`
+      <main>
+        <form><button>저장</button></form>
+        <div><button>리포트 내보내기</button></div>
+      </main>
+    `);
+
+    const [inForm, inDiv] = Array.from(document.querySelectorAll("button"));
+    expect(getElementMetadata(inForm!).elementSelectorHash).not.toBe(
+      getElementMetadata(inDiv!).elementSelectorHash,
+    );
+  });
+
+  it("안정 속성이 다르면 갈린다", () => {
+    render(`
+      <main><div>
+        <input type="text" name="workspaceName" />
+        <input type="email" name="ownerEmail" />
+      </div></main>
+    `);
+
+    const [text, email] = Array.from(document.querySelectorAll("input"));
+    expect(getElementMetadata(text!).elementSelectorHash).not.toBe(
+      getElementMetadata(email!).elementSelectorHash,
+    );
+  });
+
+  it("목록 행처럼 구조·속성이 같은 반복 컨트롤은 하나의 요소로 유지된다", () => {
+    render(`
+      <main><table><tbody>
+        <tr><td><button class="row-3">삭제</button></td></tr>
+        <tr><td><button class="row-5">삭제</button></td></tr>
+      </tbody></table></main>
+    `);
+
+    expect(hashOf(".row-3")).toBe(hashOf(".row-5"));
+  });
+
+  it("콜론을 포함한 생성 id 는 지문에 넣지 않는다", () => {
+    render(`<main><div><button id=":r1:">저장</button></div></main>`);
+    const first = hashOf("#\\:r1\\:");
+
+    render(`<main><div><button id=":r7:">저장</button></div></main>`);
+    const second = hashOf("#\\:r7\\:");
+
+    expect(first).toBe(second);
+  });
+
+  it("콜론 없는 id 는 지문에 계속 반영된다", () => {
+    render(`<main><div><button id="save">저장</button></div></main>`);
+    const withId = hashOf("#save");
+
+    render(`<main><div><button>저장</button></div></main>`);
+    const withoutId = getElementMetadata(document.querySelector("button")!).elementSelectorHash;
+
+    expect(withId).not.toBe(withoutId);
+  });
+
+  it("지문은 항상 16 hex 이고 계약을 통과한다", () => {
+    render(`<main><div><button id="save">저장</button></div></main>`);
+    const hash = hashOf("#save");
+
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(isSafeElementSelectorHash(hash)).toBe(true);
+  });
+
+  it("비정상적으로 긴 속성값이 지문을 통째로 지배하지 않는다", () => {
+    const long = "x".repeat(500);
+    render(`<main><div>
+      <button name="${long}a">저장</button>
+      <button name="${long}b">저장</button>
+    </div></main>`);
+
+    const [first, second] = Array.from(document.querySelectorAll("button"));
+    // 64자에서 절단되므로 500자 뒤의 a/b 차이는 지문에 남지 않는다.
+    expect(getElementMetadata(first!).elementSelectorHash).toBe(
+      getElementMetadata(second!).elementSelectorHash,
+    );
   });
 });
 
