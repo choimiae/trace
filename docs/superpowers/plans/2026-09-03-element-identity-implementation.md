@@ -56,12 +56,16 @@
 ## Task 1: SDK 지문 문자열과 해시 폭
 
 **Files:**
+- Create: `packages/shared/src/hash.ts`
+- Create: `packages/shared/src/hash.test.ts`
+- Modify: `packages/shared/src/index.ts`
 - Modify: `packages/sdk/src/dom.ts`
 - Modify: `packages/sdk/src/dom.test.ts`
 
 **Interfaces:**
 - Consumes: `isSafeElementSelectorHash` from `@trace/shared` (테스트에서만)
 - Produces:
+  - `export function hash64Hex(input: string): string` from `@trace/shared` — 임의 문자열을 정확히 16 hex 로 접는다. **Task 2 가 이 함수를 소비한다.**
   - `buildSelector` 는 모듈 내부 함수로 남는다(export 하지 않는다). 관측은 `getElementMetadata(element).elementSelectorHash` 로 한다.
   - `getElementMetadata` 의 반환 형태는 바뀌지 않는다. `elementSelectorHash` 가 항상 정확히 16 hex 문자열이 된다.
 
@@ -246,31 +250,89 @@ function buildSelector(element: Element): string {
 }
 ```
 
-- [ ] **Step 4: `hashSelector` 를 64비트로 넓힌다**
+- [ ] **Step 4: 공유 해시 모듈을 만든다**
 
-`packages/sdk/src/dom.ts` 의 기존 `hashSelector` 를 아래로 교체한다.
+같은 64비트 접기를 SDK 와 서버가 모두 필요로 한다(서버는 Task 2 에서 `(지문, 글자)` 쌍을 접는다). 루프를 두 패키지에 통째로 복사하면 리뷰 기준으로 결함이고, 한쪽만 고쳐질 때 드리프트가 조용히 생긴다. `@trace/shared` 에 한 번만 둔다 — SDK 는 이미 `@trace/shared` 를 런타임으로 임포트하므로 번들 구조가 바뀌지 않는다.
+
+`packages/shared/src/hash.ts` 를 새로 만든다.
 
 ```ts
-// 32비트 누산기 두 개를 서로 다른 오프셋·소수로 돌려 16 hex 를 만든다. 선택자가
-// 다양해지면 서로 다른 요소가 같은 해시로 충돌할 확률이 오르고, 그 충돌은 이
-// 작업이 고치는 버그와 증상이 같다 — 32비트는 서로 다른 선택자 약 77,000개에서
-// 충돌 확률 50%다. 계약이 이미 16 hex 를 허용하므로 계약 변경은 없다.
-// BigInt 는 번들 예산 때문에 쓰지 않는다.
-function hashSelector(selector: string): string {
+// 32비트 누산기 두 개를 서로 다른 오프셋·소수로 돌려 16 hex 를 만든다. 입력이
+// 다양해지면 서로 다른 입력이 같은 해시로 충돌할 확률이 오르고, 요소 지문에서
+// 그 충돌은 서로 다른 컨트롤을 한 요소로 합치는 버그와 증상이 같다 — 32비트는
+// 서로 다른 입력 약 77,000개에서 충돌 확률 50%다. 요소 지문 계약이 16 hex 까지
+// 허용하므로 계약을 바꾸지 않고 폭을 두 배로 쓸 수 있다.
+// BigInt 는 SDK 번들 예산 때문에 쓰지 않는다.
+export function hash64Hex(input: string): string {
   let low = 0;
   let high = 0x811c9dc5;
 
-  for (let index = 0; index < selector.length; index += 1) {
-    const code = selector.charCodeAt(index);
+  for (let index = 0; index < input.length; index += 1) {
+    const code = input.charCodeAt(index);
     low = (low * 31 + code) >>> 0;
-    // 16777619 를 곱하면 2^53 을 넘어 정밀도를 잃는다. Math.imul 은 32비트 곱을
-    // 정확히 낸다.
+    // 16777619 를 평범하게 곱하면 2^53 을 넘어 정밀도를 잃는다. Math.imul 은
+    // 32비트 곱을 정확히 낸다.
     high = Math.imul(high ^ code, 16777619) >>> 0;
   }
 
   return `${low.toString(16).padStart(8, "0")}${high.toString(16).padStart(8, "0")}`;
 }
 ```
+
+`packages/shared/src/index.ts` 에 재수출을 더한다. 기존 두 줄 아래에 추가한다.
+
+```ts
+export * from "./hash.js";
+```
+
+`packages/shared/src/hash.test.ts` 를 새로 만든다.
+
+```ts
+import { describe, expect, it } from "vitest";
+import { hash64Hex } from "./hash.js";
+import { isSafeElementSelectorHash } from "./privacy.js";
+
+describe("hash64Hex", () => {
+  it("항상 정확히 16 hex 를 낸다", () => {
+    for (const input of ["", "a", "button", "body>main>form>button#save[type=\"submit\"]", "가".repeat(500)]) {
+      expect(hash64Hex(input)).toMatch(/^[0-9a-f]{16}$/);
+    }
+  });
+
+  it("요소 지문 계약을 통과한다", () => {
+    expect(isSafeElementSelectorHash(hash64Hex("body>main>div>button"))).toBe(true);
+  });
+
+  it("같은 입력은 같은 값을, 다른 입력은 다른 값을 낸다", () => {
+    expect(hash64Hex("body>main>form>button")).toBe(hash64Hex("body>main>form>button"));
+    expect(hash64Hex("body>main>form>button")).not.toBe(hash64Hex("body>main>div>button"));
+  });
+
+  it("한 글자 차이도 반영한다", () => {
+    expect(hash64Hex("button[name=\"a\"]")).not.toBe(hash64Hex("button[name=\"b\"]"));
+  });
+});
+```
+
+Run: `PATH=/Users/choimiae/.nvm/versions/node/v22.17.0/bin:$PATH npm test --workspace @trace/shared -- hash.test.ts`
+
+Expected: PASS (4 tests).
+
+- [ ] **Step 4b: `hashSelector` 를 공유 함수에 위임한다**
+
+`packages/sdk/src/dom.ts` 의 기존 `hashSelector` 함수를 **삭제**하고, 그 호출부를 공유 함수로 바꾼다. 파일 상단의 `@trace/shared` 임포트 목록에 `hash64Hex` 를 더한다(새 임포트 줄을 만들지 않는다).
+
+`getElementMetadata` 안의 호출을 바꾼다:
+
+```ts
+    elementSelectorHash: hash64Hex(selector),
+```
+
+`hashSelector` 를 참조하는 다른 곳이 없는지 확인한다:
+
+Run: `grep -rn "hashSelector" packages/sdk/src`
+
+Expected: 결과 없음.
 
 - [ ] **Step 5: 테스트를 돌려 통과를 확인한다**
 
@@ -287,7 +349,7 @@ Expected: 10240 미만. 값을 리포트에 적는다(직전 기준 4854B).
 - [ ] **Step 7: 커밋**
 
 ```bash
-git add packages/sdk/src/dom.ts packages/sdk/src/dom.test.ts
+git add packages/shared/src/hash.ts packages/shared/src/hash.test.ts packages/shared/src/index.ts packages/sdk/src/dom.ts packages/sdk/src/dom.test.ts
 git commit -m "수정: 지문에 조상 구조와 안정 속성을 넣고 해시를 64비트로 넓힌다"
 ```
 
@@ -303,7 +365,7 @@ git commit -m "수정: 지문에 조상 구조와 안정 속성을 넣고 해시
 - Modify: `apps/api/src/detection/detect.test.ts`
 
 **Interfaces:**
-- Consumes: `TraceEvent` from `@trace/shared`
+- Consumes: `TraceEvent` and `hash64Hex(input: string): string` from `@trace/shared` — `hash64Hex` 는 Task 1 이 만든다.
 - Produces:
   - `export function sameElement(left: TraceEvent, right: TraceEvent): boolean`
   - `export function elementKey(event: TraceEvent): string | undefined` — 지문이 없으면 `undefined`, 있으면 16 hex
@@ -403,10 +465,10 @@ Expected: FAIL — `Failed to resolve import "./element-identity.js"`.
 
 - [ ] **Step 3: 신원 모듈을 구현한다**
 
-`apps/api/src/detection/element-identity.ts` 를 새로 만든다.
+`apps/api/src/detection/element-identity.ts` 를 새로 만든다. 해시는 Task 1 이 `@trace/shared` 에 만든 `hash64Hex` 를 쓴다 — 같은 루프를 여기 다시 쓰지 않는다.
 
 ```ts
-import type { TraceEvent } from "@trace/shared";
+import { hash64Hex, type TraceEvent } from "@trace/shared";
 
 // 요소 신원은 지문만으로 정해지지 않는다. 구조와 속성이 완전히 같고 적힌 글자만
 // 다른 컨트롤이 흔하다 — 같은 영역에 나란히 놓인 버튼들이 대표적이다. 그 글자는
@@ -420,25 +482,13 @@ export function sameElement(left: TraceEvent, right: TraceEvent): boolean {
 
 // 이슈 id 는 [^a-z0-9|:_-] 를 _ 로 치환한다(issueTargetKey). 한글 글자를 그대로
 // 넣으면 "저장" 과 "오류 발생" 이 둘 다 "_" 가 되어 다시 합쳐지므로, 쌍을 hex 로
-// 접어서 넣는다. SDK 의 hashSelector 와 같은 알고리즘을 쓸 이유는 없다 — 이 값은
-// 이슈 id 의 안정성에만 쓰이고 SDK 와 대조되지 않는다.
+// 접어서 넣는다.
 export function elementKey(event: TraceEvent): string | undefined {
   if (!event.elementSelectorHash) return undefined;
 
   // 구분자는 마스킹된 글자에 나타날 수 없는 NUL 이라, 두 필드의 경계가 겹쳐 서로
   // 다른 쌍이 같은 입력 문자열이 되는 일이 생기지 않는다.
-  const input = `${event.elementSelectorHash}\u0000${event.elementTextMaskedOrLimited ?? ""}`;
-  let low = 0;
-  let high = 0x811c9dc5;
-
-  for (let index = 0; index < input.length; index += 1) {
-    const code = input.charCodeAt(index);
-    low = (low * 31 + code) >>> 0;
-    // Math.imul 은 32비트 곱을 정확히 낸다. 평범한 곱은 2^53 을 넘어 정밀도를 잃는다.
-    high = Math.imul(high ^ code, 16777619) >>> 0;
-  }
-
-  return `${low.toString(16).padStart(8, "0")}${high.toString(16).padStart(8, "0")}`;
+  return hash64Hex(`${event.elementSelectorHash}\u0000${event.elementTextMaskedOrLimited ?? ""}`);
 }
 ```
 
@@ -450,36 +500,34 @@ Expected: PASS (9 tests).
 
 - [ ] **Step 5: 탐지기의 실패하는 테스트를 쓴다**
 
-`apps/api/src/detection/detect.test.ts` 끝에 다음 describe 를 추가한다. 파일이 이미 쓰는 이벤트 생성 헬퍼가 있으면 그것을 쓰고, 없으면 아래 `clickAt` 을 이 블록 안에 둔다.
+`apps/api/src/detection/detect.test.ts` 는 이미 5행에 `click(partial: Partial<TraceEvent>): TraceEvent` 헬퍼를 갖고 있다. **새 헬퍼를 만들지 말고 그 헬퍼를 고친다** — 지금은 `elementTextMaskedOrLimited: "권한 추가"` 를 하드코딩해 오버라이드를 받지 않아, 글자가 다른 클릭을 만들 수 없다. 그 한 줄만 바꾼다(기본값이 그대로이므로 기존 테스트는 영향받지 않는다):
+
+```ts
+    elementTextMaskedOrLimited: partial.elementTextMaskedOrLimited ?? "권한 추가",
+```
+
+그리고 파일 끝에 다음 describe 를 추가한다. `click` 과 `detectIssues` 는 이미 임포트돼 있다.
 
 ```ts
 describe("요소 신원", () => {
-  function clickAt(timestamp: string, text: string): TraceEvent {
-    return {
-      eventId: `evt_${timestamp}`,
-      sessionId: "sess_1",
-      pageId: "page_1",
-      timestamp,
-      type: "click",
-      urlPath: "/settings",
-      // 구조·속성이 같은 형제 버튼을 흉내낸다. SDK 는 이런 경우 같은 지문을 낸다.
-      elementSelectorHash: "aaaaaaaabbbbbbbb",
-      elementTextMaskedOrLimited: text,
-      metadata: {},
-    } as TraceEvent;
+  // 구조·속성이 같은 형제 버튼을 흉내낸다. SDK 는 이런 경우 같은 지문을 낸다.
+  const SIBLING_HASH = "aaaaaaaabbbbbbbb";
+
+  function siblingClick(eventId: string, timestamp: string, text: string): TraceEvent {
+    return click({ eventId, timestamp, elementSelectorHash: SIBLING_HASH, elementTextMaskedOrLimited: text });
   }
 
   it("구조가 같고 글자만 다른 클릭은 분노 클릭으로 뭉치지 않는다", () => {
     // 서로 다른 두 버튼을 각각 2번. 어느 쪽도 3회 문턱을 넘지 않는다.
     const issues = detectIssues({
       projectId: "proj_1",
-      events: [
-        clickAt("2026-09-03T01:00:00.000Z", "리포트 내보내기"),
-        clickAt("2026-09-03T01:00:00.400Z", "오류 발생"),
-        clickAt("2026-09-03T01:00:00.800Z", "리포트 내보내기"),
-        clickAt("2026-09-03T01:00:01.200Z", "오류 발생"),
-      ],
       now: "2026-09-03T01:00:05.000Z",
+      events: [
+        siblingClick("evt_1", "2026-09-03T01:00:00.000Z", "리포트 내보내기"),
+        siblingClick("evt_2", "2026-09-03T01:00:00.400Z", "오류 발생"),
+        siblingClick("evt_3", "2026-09-03T01:00:00.800Z", "리포트 내보내기"),
+        siblingClick("evt_4", "2026-09-03T01:00:01.200Z", "오류 발생"),
+      ],
     });
 
     expect(issues.filter((issue) => issue.issueType === "rage_click")).toHaveLength(0);
@@ -488,12 +536,12 @@ describe("요소 신원", () => {
   it("글자까지 같은 클릭은 여전히 분노 클릭으로 잡는다", () => {
     const issues = detectIssues({
       projectId: "proj_1",
-      events: [
-        clickAt("2026-09-03T01:00:00.000Z", "오류 발생"),
-        clickAt("2026-09-03T01:00:00.400Z", "오류 발생"),
-        clickAt("2026-09-03T01:00:00.800Z", "오류 발생"),
-      ],
       now: "2026-09-03T01:00:05.000Z",
+      events: [
+        siblingClick("evt_1", "2026-09-03T01:00:00.000Z", "오류 발생"),
+        siblingClick("evt_2", "2026-09-03T01:00:00.400Z", "오류 발생"),
+        siblingClick("evt_3", "2026-09-03T01:00:00.800Z", "오류 발생"),
+      ],
     });
 
     expect(issues.filter((issue) => issue.issueType === "rage_click")).toHaveLength(1);
@@ -502,11 +550,11 @@ describe("요소 신원", () => {
   it("한글 글자가 이슈 id 에서 뭉개지지 않는다", () => {
     const issues = detectIssues({
       projectId: "proj_1",
-      events: [
-        clickAt("2026-09-03T01:00:00.000Z", "저장"),
-        clickAt("2026-09-03T01:00:10.000Z", "오류 발생"),
-      ],
       now: "2026-09-03T01:00:30.000Z",
+      events: [
+        siblingClick("evt_1", "2026-09-03T01:00:00.000Z", "저장"),
+        siblingClick("evt_2", "2026-09-03T01:00:10.000Z", "오류 발생"),
+      ],
     });
 
     const deadClickIds = issues
@@ -520,18 +568,8 @@ describe("요소 신원", () => {
   it("오류 이슈의 id 는 여전히 page 슬롯을 쓴다", () => {
     const issues = detectIssues({
       projectId: "proj_1",
-      events: [
-        {
-          eventId: "evt_err",
-          sessionId: "sess_1",
-          pageId: "page_1",
-          timestamp: "2026-09-03T01:00:00.000Z",
-          type: "js_error",
-          urlPath: "/settings",
-          metadata: {},
-        } as TraceEvent,
-      ],
       now: "2026-09-03T01:00:05.000Z",
+      events: [click({ eventId: "evt_err", type: "js_error", timestamp: "2026-09-03T01:00:00.000Z" })],
     });
 
     const error = issues.find((issue) => issue.issueType === "error_friction");
@@ -539,6 +577,21 @@ describe("요소 신원", () => {
   });
 });
 ```
+
+**주의:** 마지막 테스트는 `click` 헬퍼로 `js_error` 이벤트를 만들므로 `elementSelectorHash` 가 `"button_hash"` 로 채워진다. 실제 오류 이벤트에는 지문이 없다. 이 테스트가 검증하려는 것은 "지문이 없을 때 page 슬롯을 쓴다" 가 아니라 "오류 이슈 id 형태가 이 변경으로 깨지지 않는다" 이므로, `elementSelectorHash: undefined` 를 명시해 실제 모양에 맞춘다:
+
+```ts
+      events: [
+        click({
+          eventId: "evt_err",
+          type: "js_error",
+          timestamp: "2026-09-03T01:00:00.000Z",
+          elementSelectorHash: undefined,
+        }),
+      ],
+```
+
+`click` 헬퍼가 `partial.elementSelectorHash ?? "button_hash"` 이므로 `undefined` 를 넘겨도 기본값이 들어간다. 따라서 헬퍼를 고칠 때 이 필드도 함께 오버라이드 가능하게 만든다 — `"elementSelectorHash" in partial ? partial.elementSelectorHash : "button_hash"` 로 바꾸고, 위 테스트는 그대로 쓴다.
 
 - [ ] **Step 6: 탐지기 테스트를 돌려 실패를 확인한다**
 
