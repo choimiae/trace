@@ -38,6 +38,11 @@ function hasColumn(db: Database.Database, tableName: string, columnName: string)
   return columns.some((column) => column.name === columnName);
 }
 
+function userVersion(db: Database.Database): number {
+  const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
+  return row.user_version;
+}
+
 export class SqliteStore implements TraceStore {
   readonly isDurable = true;
   private readonly db: Database.Database;
@@ -724,6 +729,25 @@ export class SqliteStore implements TraceStore {
     }
     if (!hasColumn(this.db, "issues", "related_error_signature")) {
       this.db.exec("ALTER TABLE issues ADD COLUMN related_error_signature TEXT");
+    }
+
+    // 요소 지문 규칙이 바뀌었다. 과거 이벤트는 옛 규칙 지문을 들고 있고
+    // detectIssues 는 배치마다 저장된 전체 이벤트에 대해 다시 도므로(ingestion.ts
+    // 의 listEvents), 그대로 두면 옛 규칙 이슈가 영구히 재생성되어 같은 버튼을
+    // 이중 집계한다. 이벤트 보존은 기본값이 없어 과거 이벤트가 만료되지도 않는다.
+    //
+    // 반복 실행되면 새 이벤트의 지문까지 지우므로 user_version 으로 한 번만 돌린다.
+    // 기존 마이그레이션은 컬럼 추가형이라 버전 카운터를 쓰지 않았다.
+    if (userVersion(this.db) < 1) {
+      // 탐지기가 지문 없는 클릭을 이미 건너뛰므로 옛 규칙 이슈는 재생성되지 않는다.
+      // 이슈 id 는 `issue_{urlPath}|{키 또는 page}|{타입}` 이고 urlPath 의 `/` 는 `_`
+      // 로 치환되어 `|` 는 조립 구분자에서만 나온다. 따라서 `|page|` 는 지문 없는
+      // 슬롯을 모호함 없이 식별한다 — 오류 이슈는 살아남는다.
+      this.db.exec(`
+        UPDATE events SET element_selector_hash = NULL;
+        DELETE FROM issues WHERE issue_id NOT LIKE '%|page|%';
+        PRAGMA user_version = 1;
+      `);
     }
   }
 

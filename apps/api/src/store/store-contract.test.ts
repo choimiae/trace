@@ -1143,6 +1143,42 @@ function describeTraceStoreContract(
       expect(await store.getSessionTimeline(project.projectId, "sess_1")).toHaveLength(1);
     });
 
+    it("요소 지문과 마스킹 글자를 모두 왕복 보존한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-03T01:00:01.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_identity",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-03T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            elementSelectorHash: "aaaaaaaabbbbbbbb",
+            elementTextMaskedOrLimited: "오류 발생",
+            metadata: {},
+          },
+        ],
+      });
+
+      const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+      const event = timeline.find((candidate) => candidate.eventId === "evt_identity");
+
+      expect(event?.elementSelectorHash).toBe("aaaaaaaabbbbbbbb");
+      expect(event?.elementTextMaskedOrLimited).toBe("오류 발생");
+    });
+
     it("오류 식별자를 타임라인에서 보존한다", async () => {
       const store = open();
       const project = await store.createProject({

@@ -129,3 +129,132 @@ describe("SqliteStore event diagnostics", () => {
     }
   });
 });
+
+describe("SqliteStore 요소 신원 마이그레이션", () => {
+  // 옛 규칙 데이터는 SqliteStore 를 처음 열기 전에 심어야 한다. SqliteStore 생성자가
+  // migrate() 를 돌리므로, 먼저 열면 마이그레이션이 빈 DB 에서 소비된다.
+  function seedLegacy(dbPath: string): void {
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE events (
+        event_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        page_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        type TEXT NOT NULL,
+        url_path TEXT NOT NULL,
+        url_query_redacted TEXT,
+        title_masked TEXT,
+        element_selector_hash TEXT,
+        element_role TEXT,
+        element_text_masked_or_limited TEXT,
+        x REAL,
+        y REAL,
+        viewport_x INTEGER,
+        viewport_y INTEGER,
+        metadata TEXT NOT NULL DEFAULT '{}'
+      );
+
+      CREATE TABLE issues (
+        issue_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        issue_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        affected_sessions_count INTEGER NOT NULL,
+        affected_users_count INTEGER NOT NULL,
+        severity_score INTEGER NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        trend TEXT NOT NULL,
+        related_url_path TEXT,
+        related_feature_id TEXT,
+        example_session_ids TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL
+      );
+
+      INSERT INTO events
+        (event_id, project_id, session_id, page_id, timestamp, type, url_path, element_selector_hash, metadata)
+      VALUES
+        ('evt_old', 'proj_1', 'sess_1', 'page_1', '2026-09-01T00:00:00.000Z', 'click', '/settings', 'ade22732', '{}');
+
+      INSERT INTO issues
+        (issue_id, project_id, issue_type, title, summary, affected_sessions_count, affected_users_count,
+         severity_score, first_seen_at, last_seen_at, trend, example_session_ids, status)
+      VALUES
+        ('issue__|ade22732|rage_click', 'proj_1', 'rage_click', '제목', '요약', 1, 1, 100,
+         '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', 'flat', '[]', 'new'),
+        ('issue__|page|error_friction', 'proj_1', 'error_friction', '제목', '요약', 1, 1, 71,
+         '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', 'flat', '[]', 'new');
+    `);
+    legacy.close();
+  }
+
+  it("옛 지문을 무효화하고 해시로 키잉된 이슈만 지운다", () => {
+    const dbPath = createTempDbPath();
+    seedLegacy(dbPath);
+
+    const store = new SqliteStore(dbPath);
+    store.close();
+
+    const migrated = new Database(dbPath, { readonly: true });
+    try {
+      const event = migrated
+        .prepare("SELECT element_selector_hash FROM events WHERE event_id = ?")
+        .get("evt_old") as Row;
+      const issueIds = (migrated.prepare("SELECT issue_id FROM issues").all() as Row[]).map(
+        (row) => row.issue_id as string,
+      );
+      const version = migrated.prepare("PRAGMA user_version").get() as Row;
+
+      expect(event.element_selector_hash).toBeNull();
+      expect(issueIds).toEqual(["issue__|page|error_friction"]);
+      expect(version.user_version).toBe(1);
+    } finally {
+      migrated.close();
+    }
+  });
+
+  it("두 번째 실행은 새 이벤트의 지문을 지우지 않는다", () => {
+    const dbPath = createTempDbPath();
+    seedLegacy(dbPath);
+
+    const first = new SqliteStore(dbPath);
+    first.close();
+
+    const added = new Database(dbPath);
+    added
+      .prepare(
+        `INSERT INTO events
+           (event_id, project_id, session_id, page_id, timestamp, type, url_path, element_selector_hash, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "evt_new",
+        "proj_1",
+        "sess_1",
+        "page_1",
+        "2026-09-03T00:00:00.000Z",
+        "click",
+        "/settings",
+        "aaaaaaaabbbbbbbb",
+        "{}",
+      );
+    added.close();
+
+    const second = new SqliteStore(dbPath);
+    second.close();
+
+    const checked = new Database(dbPath, { readonly: true });
+    try {
+      const event = checked
+        .prepare("SELECT element_selector_hash FROM events WHERE event_id = ?")
+        .get("evt_new") as Row;
+
+      expect(event.element_selector_hash).toBe("aaaaaaaabbbbbbbb");
+    } finally {
+      checked.close();
+    }
+  });
+});
