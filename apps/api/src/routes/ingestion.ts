@@ -24,6 +24,15 @@ const MAX_VIEWPORT = 10000;
 const MAX_LAYOUT_HINTS = 12;
 const MAX_SCREEN_TEXT = 120;
 const SAFE_TAG_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+// 두 정규식의 사본이 packages/sdk/src/collectors.ts(SAFE_ERROR_NAME_PATTERN,
+// SAFE_ERROR_SOURCE_SHAPE)와 packages/shared/src/events.ts(errorNameSchema,
+// errorSourceSchema)에도 있다. 공유 상수로 묶지 않는 것은 기존 관례이므로 셋을 함께
+// 고친다. 어긋나면: 이 파일의 정리기 계약은 "언제나 eventBatchSchema.parse 가 받는
+// 값을 낸다" 이므로, 계약 쪽 정규식만 좁히면 정리해서 통과시키던 값이 배치 전체
+// 400 이 된다 — "수집 API 는 거절이 아니라 정리한다" 가 깨진다.
+// 소스 정규식은 계약 사본과 일부러 다르다. 계약은 선행 "//" 를 lookahead 로 거절하고
+// 여기는 거절하지 않지만, sanitizeErrorSource 가 먼저 "//" 를 접으므로 이 사본이
+// 계약이 거절할 값을 낼 수는 없다. 접기를 지우면 그 보장이 사라진다.
 const SAFE_ERROR_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const SAFE_ERROR_SOURCE_PATTERN = /^\/[^\s?#]*$/;
 const MAX_ERROR_SOURCE = 256;

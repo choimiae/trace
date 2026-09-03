@@ -141,6 +141,11 @@ const tagNameSchema = z
   .toLowerCase()
   .regex(/^[a-z][a-z0-9-]{0,31}$/);
 
+// 같은 정규식의 사본이 packages/sdk/src/collectors.ts 와
+// apps/api/src/routes/ingestion.ts 의 SAFE_ERROR_NAME_PATTERN 에 있다. 공유 상수로
+// 묶지 않는 것은 기존 관례이므로 셋을 함께 고친다. 여기만 좁히면 정리기(SDK·수집 API)가
+// 통과시키던 값이 이 계약에서 걸려 배치 전체가 400 이 되고, "수집 API 는 거절이 아니라
+// 정리한다" 가 깨진다. 넓히는 방향도 정리기가 따라오지 않으면 의미가 없다.
 const errorNameSchema = z
   .string()
   .trim()
@@ -154,6 +159,12 @@ const errorNameSchema = z
 // 수 있지만, 그 모양만으로는 원시 protocol-relative filename 과 구분할 수 없다.
 // 그래서 수집 단계(sanitizeErrorSource)가 선행 "//" 를 "/" 로 접어서 넘기고,
 // 이 계약은 접히지 않은 값을 거절하는 2차 방어로 남는다. 느슨하게 바꾸지 말 것.
+//
+// 사본 위치: packages/sdk/src/collectors.ts 의 SAFE_ERROR_SOURCE_SHAPE 와
+// apps/api/src/routes/ingestion.ts 의 SAFE_ERROR_SOURCE_PATTERN. 셋의 모양이 일부러
+// 다르다 — lookahead 는 여기에만 있다. 수집 API 사본은 선행 "//" 를 먼저 접으므로
+// 이 계약이 거절할 값을 낼 수 없다. 여기만 좁히면 그 정리 경로가 배치 전체 400 으로
+// 바뀌어 "수집 API 는 거절이 아니라 정리한다" 가 깨진다. 셋을 함께 고칠 것.
 const errorSourceSchema = z
   .string()
   .trim()

@@ -14,6 +14,12 @@ function measuredViewport(value: number): number | undefined {
   return rounded > 0 ? rounded : undefined;
 }
 
+// 같은 정규식이 apps/api/src/routes/ingestion.ts 의 SAFE_ERROR_NAME_PATTERN 과
+// packages/shared/src/events.ts 의 errorNameSchema 에도 손으로 복사돼 있다. 셋을
+// 공유 상수로 묶지 않는 것은 이 파일의 관례다 — 대신 셋은 함께 고쳐야 한다.
+// 어긋나면: 정리기의 계약은 "언제나 eventBatchSchema.parse 가 받는 값을 낸다" 이므로
+// 계약(events.ts) 쪽만 좁히면, 정리해서 통과시키던 값이 배치 전체 400 으로 바뀐다.
+// "수집 API 는 거절이 아니라 정리한다" 가 그 자리에서 깨진다.
 const SAFE_ERROR_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 function safeErrorName(error: unknown): string | undefined {
@@ -34,6 +40,12 @@ function safeErrorName(error: unknown): string | undefined {
 // 모양을 확인하되 정규화(자르기·접기)는 하지 않는다 — 잘린 경로는 다른 파일을
 // 가리키게 되므로 자르는 대신 생략한다. 선행 "//" 는 의도적으로 허용한다
 // (`//vendor/lib.js` 같은 정상 경로일 수 있고, 접는 일은 Task 5 서버의 몫이다).
+//
+// 사본 위치: apps/api/src/routes/ingestion.ts 의 SAFE_ERROR_SOURCE_PATTERN 과
+// packages/shared/src/events.ts 의 errorSourceSchema. 셋의 모양이 일부러 다르다 —
+// 계약만 선행 "//" 를 거절하고(lookahead), 여기와 수집 API 사본에는 lookahead 가
+// 없다. 여기서는 선행 "//" 를 통과시켜도 수집 API 가 접어서 넘기므로 계약을 통과한다.
+// 셋 중 하나만 손대면 이 사슬이 끊긴다 — 특히 계약을 좁히면 배치 전체가 400 이 된다.
 const SAFE_ERROR_SOURCE_SHAPE = /^\/[^\s?#]*$/;
 const MAX_ERROR_SOURCE_LENGTH = 256;
 
