@@ -53,9 +53,11 @@ function containsTextEntrySubtree(element: Element): boolean {
   return element.matches(TEXT_ENTRY_SUBTREE_SELECTOR) || element.querySelector(TEXT_ENTRY_SUBTREE_SELECTOR) !== null;
 }
 
-export function getElementMetadata(element: Element): ElementMetadata {
-  const role = element.getAttribute("role") ?? element.tagName.toLowerCase();
-  const selector = buildSelector(element);
+// 텍스트를 쓸지 정한 뒤에만 부른다. textContent 는 자손을 모두 이어 붙인 문자열이고
+// redactText 는 그 위로 전역 정규식 3개를 돌리므로, <main> 같은 화면 크기 컨테이너에서
+// 미리 계산하면 버릴 문자열에 클릭당 밀리초를 쓴다(200KB 에서 2ms, 600KB 에서 5.4ms).
+// containsTextEntrySubtree 의 서브트리 순회도 같은 이유로 이 안에 둔다.
+function allowedElementText(element: Element): string | undefined {
   const sensitive =
     isTextEntryElement(element) ||
     containsTextEntrySubtree(element) ||
@@ -65,12 +67,21 @@ export function getElementMetadata(element: Element): ElementMetadata {
       name: element instanceof HTMLInputElement ? element.name : "",
       id: element.id,
     });
+  if (sensitive) return undefined;
+
   const text = redactText((element.textContent || element.getAttribute("aria-label") || "").trim());
+  return text.length === 0 ? undefined : text;
+}
+
+export function getElementMetadata(element: Element): ElementMetadata {
+  const role = element.getAttribute("role") ?? element.tagName.toLowerCase();
+  const selector = buildSelector(element);
+  const text = allowedElementText(element);
 
   return {
     elementSelectorHash: hashSelector(selector),
     elementRole: role,
-    ...(sensitive || text.length === 0 ? {} : { elementTextMaskedOrLimited: text }),
+    ...(text === undefined ? {} : { elementTextMaskedOrLimited: text }),
   };
 }
 
@@ -199,13 +210,15 @@ function buildLayoutHint(
   if (!intersectsViewport(domRect, viewport)) return undefined;
   const rect = rectFromDomRect(domRect);
 
-  const metadata = getElementMetadata(element);
-  const role = safeRole(metadata.elementRole);
+  // getElementMetadata 를 부르지 않는다. 힌트는 selectorHash 를 쓰지 않고, 무엇보다
+  // 텍스트를 쓸지 정하기 전에 텍스트를 뽑아 버리면 랜드마크(<main> 등)에서 화면 전체
+  // 문자열을 만들었다가 그대로 버린다.
+  const role = safeRole(element.getAttribute("role") ?? tagName);
   const masked = isMaskedHintElement(element, tagName);
-  const text =
-    allowsHintText(element, tagName, role) && metadata.elementTextMaskedOrLimited
-      ? redactScreenText(metadata.elementTextMaskedOrLimited)
-      : undefined;
+  // masked 를 텍스트 판정보다 앞에 둔다. "masked:true 인 힌트는 텍스트를 담지 않는다" 는
+  // 규칙이 화이트리스트 두 개의 조합에 기대지 않고 이 한 줄로 서게 한다.
+  const rawText = !masked && allowsHintText(element, tagName, role) ? allowedElementText(element) : undefined;
+  const text = rawText === undefined ? undefined : redactScreenText(rawText);
 
   return {
     rect,

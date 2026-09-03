@@ -251,6 +251,41 @@ describe("getScreenContext", () => {
     expect(JSON.stringify(context)).not.toContain("박스 안의 긴 설명 문구");
   });
 
+  it("텍스트를 담지 않는 랜드마크에서는 textContent 를 아예 읽지 않는다", () => {
+    // <main> 의 textContent 는 화면 전체 문자열이고, redactText 는 그 위로 전역
+    // 정규식 3개를 돌린다. allowsHintText 가 어차피 버릴 문자열을 고객 사이트의
+    // 클릭 핸들러 안에서 만들어 내면 안 된다 — 업무 그리드에서 밀리초 단위 비용이
+    // 힌트 12개 × rage click 연타만큼 곱해진다.
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `
+      <main id="page">
+        <button id="save">저장</button>
+        <button id="go">결제하기</button>
+      </main>
+    `;
+    const landmark = document.querySelector("#page")!;
+    stubRect(landmark, { x: 0, y: 0, width: 1440, height: 900 });
+    stubRect(document.querySelector("#save")!, { x: 20, y: 260, width: 120, height: 40 });
+    stubRect(document.querySelector("#go")!, { x: 20, y: 320, width: 120, height: 40 });
+    let landmarkTextReads = 0;
+    Object.defineProperty(landmark, "textContent", {
+      configurable: true,
+      get: () => {
+        landmarkTextReads += 1;
+        return "저장 결제하기";
+      },
+    });
+
+    const context = expectValidScreenContext(document.querySelector("#go")!);
+    const byTag = (tagName: string) => context.layoutHints.find((hint) => hint.tagName === tagName);
+
+    expect(landmarkTextReads).toBe(0);
+    // 이웃 버튼은 여전히 텍스트를 담는다 — 건너뛴 것이 "전부"가 아님을 함께 고정한다.
+    expect(byTag("main")).toBeDefined();
+    expect(byTag("button")?.textMaskedOrLimited).toBe("저장");
+  });
+
   it("뷰포트 밖(아래·위·왼쪽) 요소나 0크기 요소는 힌트에서 제외하고 안의 이웃은 담는다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
