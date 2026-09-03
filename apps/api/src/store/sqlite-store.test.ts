@@ -257,4 +257,87 @@ describe("SqliteStore 요소 신원 마이그레이션", () => {
       checked.close();
     }
   });
+
+  it("경로에 파이프가 섞인 지문 이슈와 지문을 가진 오류 이슈를 모두 정확히 가른다", () => {
+    // 반례 1: urlPath 자체에 `|` 가 섞여 들어오면(issueTargetKey 의 허용 문자셋에
+    // `|` 가 포함돼 있어 치환되지 않는다) 지문 키 이슈의 id 에도 우연히 `|page|`
+    // 부분 문자열이 생길 수 있다. NOT LIKE '%|page|%' 같은 포함 여부 검사는 이런
+    // 행을 잘못 살려둔다 — 이 이슈는 지문 키(abcd1234abcd1234)로 만들어졌으므로
+    // 지워져야 한다.
+    //
+    // 반례 2: detectErrorFriction 도 다른 탐지기와 동일하게 elementKey(event) 를
+    // 넘긴다 — 오류 이벤트가 지문을 안 갖는 것은 오늘 SDK 의 우연일 뿐 계약이
+    // 아니다. issue_type 이 error_friction 이어도 키가 지문이면 그 이슈는
+    // "error_friction 은 보존한다"는 타입 기준 예외에 들지 못하고 지워져야 한다
+    // (지문이 NULL 로 지워지면 다음 배치에서 page 키로 다시 감지된다). 반대로
+    // 진짜 page 키로 만들어진 error_friction 이슈는 살아남아야 한다 — 이 둘을
+    // 한 테스트에 같이 둬서 판별이 양방향으로 맞는지 확인한다.
+    const dbPath = createTempDbPath();
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE events (
+        event_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        page_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        type TEXT NOT NULL,
+        url_path TEXT NOT NULL,
+        url_query_redacted TEXT,
+        title_masked TEXT,
+        element_selector_hash TEXT,
+        element_role TEXT,
+        element_text_masked_or_limited TEXT,
+        x REAL,
+        y REAL,
+        viewport_x INTEGER,
+        viewport_y INTEGER,
+        metadata TEXT NOT NULL DEFAULT '{}'
+      );
+
+      CREATE TABLE issues (
+        issue_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        issue_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        affected_sessions_count INTEGER NOT NULL,
+        affected_users_count INTEGER NOT NULL,
+        severity_score INTEGER NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        trend TEXT NOT NULL,
+        related_url_path TEXT,
+        related_feature_id TEXT,
+        example_session_ids TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL
+      );
+
+      INSERT INTO issues
+        (issue_id, project_id, issue_type, title, summary, affected_sessions_count, affected_users_count,
+         severity_score, first_seen_at, last_seen_at, trend, example_session_ids, status)
+      VALUES
+        ('issue__settings|page|abcd1234abcd1234|rage_click', 'proj_1', 'rage_click', '제목', '요약', 1, 1, 100,
+         '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', 'flat', '[]', 'new'),
+        ('issue__settings|abcd1234abcd1234|error_friction', 'proj_1', 'error_friction', '제목', '요약', 1, 1, 71,
+         '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', 'flat', '[]', 'new'),
+        ('issue__settings|page|error_friction', 'proj_1', 'error_friction', '제목', '요약', 1, 1, 71,
+         '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', 'flat', '[]', 'new');
+    `);
+    legacy.close();
+
+    const store = new SqliteStore(dbPath);
+    store.close();
+
+    const migrated = new Database(dbPath, { readonly: true });
+    try {
+      const issueIds = (migrated.prepare("SELECT issue_id FROM issues ORDER BY issue_id").all() as Row[]).map(
+        (row) => row.issue_id as string,
+      );
+
+      expect(issueIds).toEqual(["issue__settings|page|error_friction"]);
+    } finally {
+      migrated.close();
+    }
+  });
 });

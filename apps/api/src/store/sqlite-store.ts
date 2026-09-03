@@ -740,14 +740,34 @@ export class SqliteStore implements TraceStore {
     // 기존 마이그레이션은 컬럼 추가형이라 버전 카운터를 쓰지 않았다.
     if (userVersion(this.db) < 1) {
       // 탐지기가 지문 없는 클릭을 이미 건너뛰므로 옛 규칙 이슈는 재생성되지 않는다.
-      // 이슈 id 는 `issue_{urlPath}|{키 또는 page}|{타입}` 이고 urlPath 의 `/` 는 `_`
-      // 로 치환되어 `|` 는 조립 구분자에서만 나온다. 따라서 `|page|` 는 지문 없는
-      // 슬롯을 모호함 없이 식별한다 — 오류 이슈는 살아남는다.
-      this.db.exec(`
-        UPDATE events SET element_selector_hash = NULL;
-        DELETE FROM issues WHERE issue_id NOT LIKE '%|page|%';
-        PRAGMA user_version = 1;
-      `);
+      //
+      // 부분 문자열 포함 검사(NOT LIKE '%|page|%')는 두 방향 모두에서 틀릴 수 있다.
+      // urlPath 안에 `|` 가 섞여 들어오면(issueTargetKey 의 허용 문자셋이 `|` 를
+      // 포함해 치환하지 않는다) 지문 키 이슈의 id 에도 우연히 "|page|" 부분 문자열이
+      // 생겨 잘못 살아남는다. 반대로 detectErrorFriction 도 다른 탐지기처럼
+      // elementKey(event) 를 그대로 넘기므로 — 오류 이벤트가 지문을 안 갖는 것은
+      // 오늘 SDK 의 우연이지 계약이 아니다 — issue_type 만으로 오류 이슈를 통째로
+      // 봐줄 수 없다. 지문 키를 가진 error_friction 이슈는 다른 지문 키 이슈와
+      // 동일하게 지워져야 맞다(지문이 NULL 이 되면 다음 배치에서 page 키로 다시
+      // 감지된다).
+      //
+      // 대신 꼬리를 정확히 비교한다. 이슈 id 의 꼬리는 언제나 `|{키}|{issue_type}`
+      // 이고, 이 꼬리가 정확히 `|page|{issue_type}` 와 같다는 것은 키가 정확히
+      // "page" 라는 것과 동치다 — 키는 16자 16진수 해시이거나 리터럴 "page" 뿐이라
+      // 16진수 16자는 "page" 와 절대 같을 수 없다. urlPath 안의 `|` 는 접미사
+      // 비교에 영향을 주지 못한다. LIKE 는 쓰지 않는다 — issue_type 자체가 `_`
+      // (LIKE 의 단일 문자 와일드카드)를 담고 있어(rage_click, dead_click_cluster)
+      // issue_type 으로 지은 LIKE 패턴은 느슨하게 맞아버린다. substr + <> 는 정확한
+      // 문자열 비교라 그런 오탐이 없다.
+      const purgeStaleFingerprints = this.db.transaction(() => {
+        this.db.exec(`
+          UPDATE events SET element_selector_hash = NULL;
+          DELETE FROM issues
+            WHERE substr(issue_id, -length('|page|' || issue_type)) <> '|page|' || issue_type;
+          PRAGMA user_version = 1;
+        `);
+      });
+      purgeStaleFingerprints();
     }
   }
 
