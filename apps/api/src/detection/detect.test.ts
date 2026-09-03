@@ -10,9 +10,9 @@ function click(partial: Partial<TraceEvent>): TraceEvent {
     timestamp: partial.timestamp ?? "2026-08-24T00:00:00.000Z",
     type: partial.type ?? "click",
     urlPath: partial.urlPath ?? "/settings",
-    elementSelectorHash: partial.elementSelectorHash ?? "button_hash",
+    elementSelectorHash: "elementSelectorHash" in partial ? partial.elementSelectorHash : "button_hash",
     elementRole: "button",
-    elementTextMaskedOrLimited: "권한 추가",
+    elementTextMaskedOrLimited: partial.elementTextMaskedOrLimited ?? "권한 추가",
     metadata: partial.metadata ?? {},
   };
 }
@@ -340,5 +340,80 @@ describe("detectIssues", () => {
     const errorIssue = issues.find((issue) => issue.issueType === "error_friction");
 
     expect(errorIssue?.relatedErrorSignature).toBe("/assets/cart.js:88");
+  });
+});
+
+describe("요소 신원", () => {
+  // 구조·속성이 같은 형제 버튼을 흉내낸다. SDK 는 이런 경우 같은 지문을 낸다.
+  const SIBLING_HASH = "aaaaaaaabbbbbbbb";
+
+  function siblingClick(eventId: string, timestamp: string, text: string): TraceEvent {
+    return click({ eventId, timestamp, elementSelectorHash: SIBLING_HASH, elementTextMaskedOrLimited: text });
+  }
+
+  it("구조가 같고 글자만 다른 클릭은 분노 클릭으로 뭉치지 않는다", () => {
+    // 서로 다른 두 버튼을 각각 2번. 어느 쪽도 3회 문턱을 넘지 않는다.
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-03T01:00:05.000Z",
+      events: [
+        siblingClick("evt_1", "2026-09-03T01:00:00.000Z", "리포트 내보내기"),
+        siblingClick("evt_2", "2026-09-03T01:00:00.400Z", "오류 발생"),
+        siblingClick("evt_3", "2026-09-03T01:00:00.800Z", "리포트 내보내기"),
+        siblingClick("evt_4", "2026-09-03T01:00:01.200Z", "오류 발생"),
+      ],
+    });
+
+    expect(issues.filter((issue) => issue.issueType === "rage_click")).toHaveLength(0);
+  });
+
+  it("글자까지 같은 클릭은 여전히 분노 클릭으로 잡는다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-03T01:00:05.000Z",
+      events: [
+        siblingClick("evt_1", "2026-09-03T01:00:00.000Z", "오류 발생"),
+        siblingClick("evt_2", "2026-09-03T01:00:00.400Z", "오류 발생"),
+        siblingClick("evt_3", "2026-09-03T01:00:00.800Z", "오류 발생"),
+      ],
+    });
+
+    expect(issues.filter((issue) => issue.issueType === "rage_click")).toHaveLength(1);
+  });
+
+  it("한글 글자가 이슈 id 에서 뭉개지지 않는다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-03T01:00:30.000Z",
+      events: [
+        siblingClick("evt_1", "2026-09-03T01:00:00.000Z", "저장"),
+        siblingClick("evt_2", "2026-09-03T01:00:10.000Z", "오류 발생"),
+      ],
+    });
+
+    const deadClickIds = issues
+      .filter((issue) => issue.issueType === "dead_click_cluster")
+      .map((issue) => issue.issueId);
+
+    expect(deadClickIds).toHaveLength(2);
+    expect(new Set(deadClickIds).size).toBe(2);
+  });
+
+  it("오류 이슈의 id 는 여전히 page 슬롯을 쓴다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-03T01:00:05.000Z",
+      events: [
+        click({
+          eventId: "evt_err",
+          type: "js_error",
+          timestamp: "2026-09-03T01:00:00.000Z",
+          elementSelectorHash: undefined,
+        }),
+      ],
+    });
+
+    const error = issues.find((issue) => issue.issueType === "error_friction");
+    expect(error?.issueId).toContain("|page|");
   });
 });

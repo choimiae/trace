@@ -1,4 +1,5 @@
 import type { Issue, TraceEvent } from "@trace/shared";
+import { elementKey, sameElement } from "./element-identity.js";
 import { scoreIssue } from "./severity.js";
 import { issueTargetKey } from "./url.js";
 
@@ -42,7 +43,7 @@ function detectDeadClicks(projectId: string, events: TraceEvent[], now: string):
         title: `${event.urlPath} 화면에서 반응 없는 클릭이 감지되었습니다`,
         summary: "클릭 후 2초 안에 화면 변화, 이벤트, 오류, URL 변경이 감지되지 않았습니다.",
         relatedUrlPath: event.urlPath,
-        selectorHash: event.elementSelectorHash,
+        elementKey: elementKey(event),
         sessionIds: [event.sessionId],
         timeRange: eventTimeRange([event]),
         severityScore: scoreIssue({ base: 38, affectedSessions: 1 }),
@@ -60,11 +61,7 @@ function detectRageClicks(projectId: string, events: TraceEvent[], now: string):
 
     const cluster = clicks.filter((event) => {
       const delta = Math.abs(Date.parse(event.timestamp) - Date.parse(current.timestamp));
-      return (
-        event.sessionId === current.sessionId &&
-        event.elementSelectorHash === current.elementSelectorHash &&
-        delta <= 3000
-      );
+      return event.sessionId === current.sessionId && sameElement(event, current) && delta <= 3000;
     });
 
     if (cluster.length >= 3) {
@@ -76,7 +73,7 @@ function detectRageClicks(projectId: string, events: TraceEvent[], now: string):
           title: `${current.urlPath} 화면에서 반복 클릭이 감지되었습니다`,
           summary: `${cluster.length}회 클릭이 3초 안에 같은 요소에서 발생했습니다.`,
           relatedUrlPath: current.urlPath,
-          selectorHash: current.elementSelectorHash,
+          elementKey: elementKey(current),
           sessionIds,
           timeRange: eventTimeRange(cluster),
           severityScore: scoreIssue({ base: 44, affectedSessions: sessionIds.length, repeatedClicks: cluster.length }),
@@ -98,7 +95,7 @@ function detectLongPauses(projectId: string, events: TraceEvent[], now: string):
         title: `${event.urlPath} 화면에서 긴 정지가 감지되었습니다`,
         summary: `${Math.round(Number(event.metadata.durationMs) / 1000)}초 동안 후속 행동이 없었습니다.`,
         relatedUrlPath: event.urlPath,
-        selectorHash: event.elementSelectorHash,
+        elementKey: elementKey(event),
         sessionIds: [event.sessionId],
         timeRange: eventTimeRange([event]),
         severityScore: scoreIssue({ base: 35, affectedSessions: 1 }),
@@ -116,7 +113,7 @@ function detectErrorFriction(projectId: string, events: TraceEvent[], now: strin
         title: `${event.urlPath} 화면에서 오류 기반 막힘이 감지되었습니다`,
         summary: `사용자 행동 흐름 중 ${event.type} 이벤트가 발생했습니다.`,
         relatedUrlPath: event.urlPath,
-        selectorHash: event.elementSelectorHash,
+        elementKey: elementKey(event),
         sessionIds: [event.sessionId],
         timeRange: eventTimeRange([event]),
         severityScore: scoreIssue({ base: 45, affectedSessions: 1, hasError: true }),
@@ -144,7 +141,7 @@ function makeIssue(input: {
   title: string;
   summary: string;
   relatedUrlPath: string;
-  selectorHash?: string | undefined;
+  elementKey?: string | undefined;
   sessionIds: string[];
   timeRange: { firstSeenAt: string; lastSeenAt: string };
   severityScore: number;
@@ -153,7 +150,7 @@ function makeIssue(input: {
   return {
     issueId: `issue_${issueTargetKey({
       urlPath: input.relatedUrlPath,
-      selectorHash: input.selectorHash,
+      elementKey: input.elementKey,
       issueType: input.issueType,
     })}`,
     projectId: input.projectId,
