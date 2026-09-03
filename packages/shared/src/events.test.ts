@@ -689,4 +689,44 @@ describe("오류 식별자 계약", () => {
 
     expect(parsed.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
   });
+
+  it("생산자가 낼 수 있는 가장 긴 오류 서명을 계약이 받는다", () => {
+    // errorSignature(detect.ts)는 `${errorName} · ${errorSource}:${errorLine}` 로
+    // 조립한다. 각 조각의 상한은 이 계약이 정한다 — errorName 64, 구분자 " · " 3,
+    // errorSource 256, ":" 1, errorLine 은 상한이 없어(z.number().int().positive())
+    // 10 진 표기가 가장 긴 값이 21 자다. 1e21 부터는 지수 표기라 오히려 짧아진다.
+    // 계약 상한이 이 합보다 작으면 정상 서명이 거절된다. 자르는 것은 답이 아니다 —
+    // 잘린 경로는 다른 파일을 가리킨다.
+    const maxName = "E".repeat(64);
+    const maxSource = `/${"a".repeat(255)}`;
+    const maxLine = 999999999999999900000;
+    const longest = `${maxName} · ${maxSource}:${maxLine}`;
+
+    // 조각들이 실제로 이 계약을 통과하는 값인지부터 못박는다.
+    expect(
+      traceEventSchema.safeParse({ ...baseEvent, errorName: maxName, errorSource: maxSource, errorLine: maxLine })
+        .success,
+    ).toBe(true);
+    expect(String(maxLine)).toHaveLength(21);
+    expect(longest).toHaveLength(345);
+
+    const baseIssue = {
+      issueId: "issue_1",
+      projectId: "proj_1",
+      issueType: "error_friction" as const,
+      title: "/checkout 화면에서 오류 기반 막힘이 감지되었습니다",
+      summary: "사용자 행동 흐름 중 js_error 이벤트가 발생했습니다.",
+      affectedSessionsCount: 1,
+      affectedUsersCount: 1,
+      severityScore: 45,
+      firstSeenAt: "2026-09-02T01:00:00.000Z",
+      lastSeenAt: "2026-09-02T01:00:00.000Z",
+      trend: "flat" as const,
+      exampleSessionIds: ["sess_1"],
+      status: "new" as const,
+    };
+
+    expect(issueSchema.safeParse({ ...baseIssue, relatedErrorSignature: longest }).success).toBe(true);
+    expect(issueSchema.safeParse({ ...baseIssue, relatedErrorSignature: `${longest}x` }).success).toBe(false);
+  });
 });

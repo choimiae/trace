@@ -281,7 +281,12 @@ export const issueSchema = z.object({
   relatedFeatureId: z.string().optional(),
   exampleSessionIds: z.array(z.string()).default([]),
   representativeEvent: traceEventSchema.optional(),
-  relatedErrorSignature: z.string().trim().min(1).max(320).optional(),
+  // 상한은 생산자(detect.ts 의 errorSignature)가 낼 수 있는 최대 길이에 맞춘다.
+  // errorName 64 + " · " 3 + errorSource 256 + ":" 1 + errorLine 21 = 345.
+  // errorLine 은 traceEventSchema 에서 상한이 없으므로(z.number().int().positive()),
+  // 10 진 표기가 가장 긴 값(1e21 미만, 21 자)을 기준으로 잡는다. 계약을 더 좁히면
+  // 정상 서명이 거절된다 — 자르는 쪽은 답이 아니다. 잘린 경로는 다른 파일을 가리킨다.
+  relatedErrorSignature: z.string().trim().min(1).max(345).optional(),
   status: issueStatusSchema,
 });
 
