@@ -130,7 +130,14 @@ export function IssueDashboardOverview({
               <dd>{topIssue.relatedUrlPath ?? "-"}</dd>
             </div>
             <div>
-              <dt>클릭</dt>
+              {/*
+                대표 이벤트는 이슈가 아니라 세션으로 고른다(findRepresentativeEvent 는
+                프로젝트·세션·경로·시간창·타입만 본다). 그래서 여기 뜨는 클릭이 이
+                이슈의 클릭이라는 보장이 없고, error_friction 은 오류 이벤트에
+                screenContext 가 없어 언제나 다른 클릭이다. 라벨은 데이터가 뒷받침하는
+                "같은 화면에서 일어난 클릭"까지만 말한다.
+              */}
+              <dt>화면 내 클릭</dt>
               <dd>{clickEvidence}</dd>
             </div>
             <div>

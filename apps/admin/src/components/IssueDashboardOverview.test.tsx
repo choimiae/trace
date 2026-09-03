@@ -288,7 +288,11 @@ describe("IssueDashboardOverview", () => {
 
     expect(within(hero).getByText("화면")).toBeInTheDocument();
     expect(within(factsTable).getByText("/checkout")).toBeInTheDocument();
-    expect(within(hero).getByText("클릭")).toBeInTheDocument();
+    // 대표 이벤트는 이슈가 아니라 세션으로 고르므로(findRepresentativeEvent) 이
+    // 클릭이 이 이슈의 클릭이라고 말할 수 없다. 라벨은 데이터가 뒷받침하는 것,
+    // 즉 "같은 화면에서 일어난 클릭"까지만 말한다.
+    expect(within(hero).getByText("화면 내 클릭")).toBeInTheDocument();
+    expect(within(hero).queryByText("클릭")).not.toBeInTheDocument();
     expect(within(hero).getByText(/button/)).toBeInTheDocument();
     expect(within(hero).getByText("패턴")).toBeInTheDocument();
     expect(within(hero).getByText("오류 마찰")).toBeInTheDocument();
