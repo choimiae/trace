@@ -207,4 +207,138 @@ describe("detectIssues", () => {
     expect(errorIssue?.affectedSessionsCount).toBe(2);
     expect(errorIssue?.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
   });
+
+  it("같은 이슈로 병합될 때 가장 최근 발생 건의 서명을 남긴다", () => {
+    // 오류 이벤트에는 요소 정보가 없어 같은 경로의 모든 오류가 한 이슈로 접힌다.
+    // 가장 오래된 서명이 영구히 남으면 이미 고친 오류의 이름이 대시보드에 계속
+    // 뜨고, 그 아래 쌓이는 새 오류는 이름을 얻지 못한다.
+    const older = {
+      eventId: "evt_older",
+      sessionId: "sess_1",
+      pageId: "page_1",
+      timestamp: "2026-09-02T01:00:00.000Z",
+      type: "js_error" as const,
+      urlPath: "/checkout",
+      errorName: "TypeError",
+      errorSource: "/assets/checkout.js",
+      errorLine: 412,
+      metadata: {},
+    };
+    const newer = {
+      eventId: "evt_newer",
+      sessionId: "sess_2",
+      pageId: "page_1",
+      timestamp: "2026-09-02T01:00:30.000Z",
+      type: "js_error" as const,
+      urlPath: "/checkout",
+      errorName: "RangeError",
+      errorSource: "/assets/cart.js",
+      errorLine: 88,
+      metadata: {},
+    };
+    // 병합은 배열 순서가 아니라 발생 시각으로 결정돼야 한다. 두 입력 순서 모두에서
+    // 같은 답이 나와야 한다.
+    const signatures = [
+      [older, newer],
+      [newer, older],
+    ].map(
+      (events) =>
+        detectIssues({ projectId: "proj_1", now: "2026-09-02T01:01:00.000Z", events }).find(
+          (issue) => issue.issueType === "error_friction",
+        )?.relatedErrorSignature,
+    );
+
+    expect(signatures).toEqual(["RangeError · /assets/cart.js:88", "RangeError · /assets/cart.js:88"]);
+  });
+
+  it("최근 발생 건에 서명이 없으면 서명이 있는 예전 발생 건의 서명을 유지한다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-02T01:01:00.000Z",
+      events: [
+        {
+          eventId: "evt_with_sig",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          errorName: "TypeError",
+          errorSource: "/assets/checkout.js",
+          errorLine: 412,
+          metadata: {},
+        },
+        {
+          eventId: "evt_no_sig",
+          sessionId: "sess_2",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:30.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          metadata: {},
+        },
+      ],
+    });
+    const errorIssue = issues.find((issue) => issue.issueType === "error_friction");
+
+    expect(errorIssue?.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
+  });
+
+  it("서명 후보가 아예 없으면 서명 필드를 만들지 않는다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-02T01:01:00.000Z",
+      events: [
+        {
+          eventId: "evt_a",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          metadata: {},
+        },
+        {
+          eventId: "evt_b",
+          sessionId: "sess_2",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:30.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          metadata: {},
+        },
+      ],
+    });
+    const errorIssue = issues.find((issue) => issue.issueType === "error_friction");
+
+    expect(errorIssue?.affectedSessionsCount).toBe(2);
+    expect(errorIssue).not.toHaveProperty("relatedErrorSignature");
+  });
+
+  it("서명 조립은 null 같은 빈 값을 조각으로 세지 않는다", () => {
+    // SqliteStore.toEvent 가 null 을 걷어내므로 오늘은 닿지 않는 경로다. 다만
+    // 가드가 undefined 만 보면 다른 저장소·직렬화 경로에서 " · /assets/cart.js:88"
+    // 처럼 앞이 빈 서명이 나온다.
+    const issues = detectIssues({
+      projectId: "proj_1",
+      now: "2026-09-02T01:01:00.000Z",
+      events: [
+        {
+          eventId: "evt_null_name",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-02T01:00:00.000Z",
+          type: "js_error",
+          urlPath: "/checkout",
+          errorName: null as unknown as string,
+          errorSource: "/assets/cart.js",
+          errorLine: 88,
+          metadata: {},
+        },
+      ],
+    });
+    const errorIssue = issues.find((issue) => issue.issueType === "error_friction");
+
+    expect(errorIssue?.relatedErrorSignature).toBe("/assets/cart.js:88");
+  });
 });

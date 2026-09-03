@@ -130,7 +130,11 @@ function errorSignature(event: TraceEvent): string | undefined {
   const location = event.errorSource
     ? `${event.errorSource}${event.errorLine === undefined ? "" : `:${event.errorLine}`}`
     : undefined;
-  const parts = [event.errorName, location].filter((part): part is string => part !== undefined);
+  // 진릿값으로 거른다. undefined 만 보면 null·빈 문자열이 조각으로 세어져
+  // " · /assets/cart.js:88" 처럼 구분자만 앞에 남은 서명이 나온다. 오늘은
+  // SqliteStore.toEvent 의 compact() 가 null 을 걷어내 닿지 않지만, 그 한 겹에
+  // 기대는 대신 여기서 닫는다.
+  const parts = [event.errorName, location].filter((part): part is string => Boolean(part));
   return parts.length === 0 ? undefined : parts.join(" · ");
 }
 
@@ -165,12 +169,45 @@ function makeIssue(input: {
     relatedUrlPath: input.relatedUrlPath,
     exampleSessionIds: input.sessionIds.slice(0, 3),
     status: "new",
+    // 진릿값 전개를 유지한다. 호출부가 undefined 를 명시적으로 걸러도 이 자리는
+    // errorSignature 가 언젠가 빈 문자열을 낼 때 필드가 생기는 것을 막는 마지막
+    // 겹이다 — relatedErrorSignature 계약은 min(1) 이라 빈 문자열은 계약 위반이다.
     ...(input.relatedErrorSignature ? { relatedErrorSignature: input.relatedErrorSignature } : {}),
   };
 }
 
+// 오류 이벤트에는 요소 정보가 없어 issueTargetKey 가 "page" 로 떨어진다. 그래서 한
+// 경로의 모든 오류가 하나의 error_friction 이슈로 접히고, 서명은 그중 하나만 남는다.
+// 남길 서명은 "가장 최근 발생 건의 것"이다 — 가장 오래된 것을 붙들면 이미 고친 오류의
+// 이름이 대시보드에 영구히 뜨고 그 아래 쌓이는 새 오류는 이름을 얻지 못한다.
+//
+// 병합된 이슈의 lastSeenAt 은 서명이 없는 발생 건 때문에도 늘어나므로, 서명이 어느
+// 시각의 것인지를 따로 기억한다. 그래야 배열 순서에 기대지 않고 언제나 최신을 고른다.
+function pickNewestSignatures(issues: Issue[]): Map<string, string> {
+  const newest = new Map<string, { signature: string; at: string }>();
+
+  for (const issue of issues) {
+    const signature = issue.relatedErrorSignature;
+    if (signature === undefined) continue;
+
+    const best = newest.get(issue.issueId);
+    if (
+      best === undefined ||
+      issue.lastSeenAt > best.at ||
+      // 밀리초까지 같은 두 서명 사이에 "더 최근"은 없다. 입력 순서로 갈리지 않도록
+      // 문자열 순서로 결정한다.
+      (issue.lastSeenAt === best.at && signature > best.signature)
+    ) {
+      newest.set(issue.issueId, { signature, at: issue.lastSeenAt });
+    }
+  }
+
+  return new Map([...newest].map(([issueId, entry]) => [issueId, entry.signature]));
+}
+
 function dedupeIssues(issues: Issue[]): Issue[] {
   const merged = new Map<string, Issue>();
+  const newestSignatures = pickNewestSignatures(issues);
 
   for (const issue of issues) {
     const existing = merged.get(issue.issueId);
@@ -194,11 +231,13 @@ function dedupeIssues(issues: Issue[]): Issue[] {
       firstSeenAt: minTimestamp(existing.firstSeenAt, issue.firstSeenAt),
       lastSeenAt: maxTimestamp(existing.lastSeenAt, issue.lastSeenAt),
       exampleSessionIds,
-      relatedErrorSignature: existing.relatedErrorSignature ?? issue.relatedErrorSignature,
     });
   }
 
-  return [...merged.values()];
+  return [...merged.values()].map((issue) => {
+    const signature = newestSignatures.get(issue.issueId);
+    return signature === undefined ? issue : { ...issue, relatedErrorSignature: signature };
+  });
 }
 
 function unique(values: string[]): string[] {
