@@ -759,6 +759,14 @@ export class SqliteStore implements TraceStore {
       // (LIKE 의 단일 문자 와일드카드)를 담고 있어(rage_click, dead_click_cluster)
       // issue_type 으로 지은 LIKE 패턴은 느슨하게 맞아버린다. substr + <> 는 정확한
       // 문자열 비교라 그런 오탐이 없다.
+      //
+      // 이 판정이 정확한 것은 **요소 키 슬롯이 언제나 16진수 아니면 리터럴 "page"
+      // 뿐** 이라는 전제 위에서다. 그 전제를 지키는 것은 두 곳이다 — 수집에서
+      // isSafeElementSelectorHash(`[0-9a-f]{1,16}`)가 elementSelectorHash 를 걸러
+      // 16진수 아닌 지문이 애초에 저장되지 않고, elementKey 는 그 지문을 다시
+      // hash64Hex 로 접어 항상 16 hex 를 돌려주거나(지문이 없으면) undefined 를
+      // 돌려 issueTargetKey 가 "page" 를 넣는다. 이 중 어느 쪽이든 슬롯에 세 번째
+      // 형태가 들어오게 만드는 변경은 이 DELETE 를 조용히 틀리게 한다.
       const purgeStaleFingerprints = this.db.transaction(() => {
         this.db.exec(`
           UPDATE events SET element_selector_hash = NULL;
