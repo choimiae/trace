@@ -100,12 +100,15 @@ id 없는 버튼은 웹에서 예외가 아니라 기본값이므로 엣지 케�
 
 ```sql
 UPDATE events SET element_selector_hash = NULL;
-DELETE FROM issues WHERE issue_id NOT LIKE '%|page|%';
+DELETE FROM issues
+  WHERE substr(issue_id, -length('|page|' || issue_type)) <> '|page|' || issue_type;
 PRAGMA user_version = 1;
 ```
 
+세 문장은 `db.transaction` 으로 감싼다. `db.exec` 멀티스테이트먼트에는 암묵 트랜잭션이 없다.
+
 - **지문 무효화** — 탐지기가 지문 없는 클릭을 이미 건너뛰므로(`detect.ts` 의 `filter(event => event.type === "click" && event.elementSelectorHash)`) 옛 규칙 이슈가 재생성되지 않는다.
-- **해시로 키잉된 이슈 행만 삭제** — `issue_id` 형태는 `issue_{urlPath}|{selectorHash ?? "page"}|{issueType}` 이고 `urlPath` 의 `/` 는 `_` 로 치환되므로 `|` 는 조립 구분자에서만 나온다. 따라서 `|page|` 는 지문 없는 슬롯을 모호함 없이 식별한다(`/page/1` → `_page_1`, `/page` → `_page` 모두 `|page|` 를 포함하지 않는다). **오류 이슈는 살아남는다** — 트래픽이 멈춘 프로젝트도 오류 이슈를 잃지 않는다.
+- **해시로 키잉된 이슈 행만 삭제** — `issue_id` 형태는 `issue_{urlPath}|{키 ?? "page"}|{issueType}` 이다. `|page|` 를 부분문자열로 찾는 것은 **틀렸다**: `issueTargetKey` 의 허용 문자 클래스 `[a-z0-9|:_-]` 에 파이프가 들어 있고 `normalizePath` 도 파이프를 제거하지 않으므로(실측 `normalizePath("/settings|page") === "/settings|page"`), 경로에 파이프가 있으면 지문으로 키잉된 이슈가 `|page|` 를 포함해 삭제를 피한다. 또 `detectErrorFriction` 도 `elementKey(event)` 를 넘기므로(`detect.ts:116`) 지문을 실은 오류 이벤트는 `|page|` 없는 id 를 만들어 잘못 삭제된다. 따라서 **행 자신의 `issue_type` 으로 접미사를 정확히 비교한다** — 꼬리가 `|page|{타입}` 인 것은 키가 정확히 `page` 인 것과 동치이고, 키는 16 hex 아니면 `page` 이므로 이 판정은 증명적으로 정확하다(`/page/1` → `_page_1`, `/page` → `_page` 모두 `|page|` 를 포함하지 않는다). **오류 이슈는 살아남는다** — 트래픽이 멈춘 프로젝트도 오류 이슈를 잃지 않는다.
 
 `MemoryStore` 는 영속 저장이 없어 마이그레이션 대상이 아니다.
 

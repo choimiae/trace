@@ -498,7 +498,7 @@ export function elementKey(event: TraceEvent): string | undefined {
 
 Run: `PATH=/Users/choimiae/.nvm/versions/node/v22.17.0/bin:$PATH npm test --workspace @trace/api -- element-identity.test.ts`
 
-Expected: PASS (9 tests).
+Expected: PASS (8 tests — Step 1 의 코드 블록에 it 이 8개다).
 
 - [ ] **Step 5: 탐지기의 실패하는 테스트를 쓴다**
 
@@ -851,7 +851,8 @@ function userVersion(db: Database.Database): number {
       // 슬롯을 모호함 없이 식별한다 — 오류 이슈는 살아남는다.
       this.db.exec(`
         UPDATE events SET element_selector_hash = NULL;
-        DELETE FROM issues WHERE issue_id NOT LIKE '%|page|%';
+        DELETE FROM issues
+          WHERE substr(issue_id, -length('|page|' || issue_type)) <> '|page|' || issue_type;
         PRAGMA user_version = 1;
       `);
     }
