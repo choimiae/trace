@@ -414,6 +414,10 @@ describe("요소 신원", () => {
     });
 
     const error = issues.find((issue) => issue.issueType === "error_friction");
-    expect(error?.issueId).toContain("|page|");
+    // 부분 문자열 포함 검사(toContain("|page|"))는 쓰지 않는다. urlPath 안의 `|` 는
+    // issueTargetKey 의 허용 문자셋에 들어 있어 치환되지 않으므로, 지문 키로 지어진
+    // id 에도 "|page|" 가 우연히 나타날 수 있다 — 마이그레이션 작업이 바로 그 이유로
+    // 이 패턴을 버리고 접미사 정확 비교로 갔다. 여기서도 꼬리 전체를 끝에 붙여 본다.
+    expect(error?.issueId).toMatch(/\|page\|error_friction$/);
   });
 });
