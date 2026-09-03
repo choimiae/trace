@@ -8,6 +8,10 @@ export default defineConfig({
         replacement: new URL("../shared/src/privacy.ts", import.meta.url).pathname,
       },
       {
+        find: "@trace/shared/hash",
+        replacement: new URL("../shared/src/hash.ts", import.meta.url).pathname,
+      },
+      {
         find: "@trace/shared",
         replacement: new URL("../shared/src/index.ts", import.meta.url).pathname,
       },

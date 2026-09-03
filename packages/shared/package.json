@@ -4,7 +4,6 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,6 +12,10 @@
     "./privacy": {
       "types": "./dist/privacy.d.ts",
       "default": "./dist/privacy.js"
+    },
+    "./hash": {
+      "types": "./dist/hash.d.ts",
+      "default": "./dist/hash.js"
     }
   },
   "scripts": {

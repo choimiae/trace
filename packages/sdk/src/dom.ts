@@ -1,5 +1,6 @@
 import { isSafeElementRole, isSensitiveField, redactText } from "@trace/shared/privacy";
-import { hash64Hex, type ScreenContext } from "@trace/shared";
+import { hash64Hex } from "@trace/shared/hash";
+import type { ScreenContext } from "@trace/shared";
 
 export interface ElementMetadata {
   elementSelectorHash?: string;
