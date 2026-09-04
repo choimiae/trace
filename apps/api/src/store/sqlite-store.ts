@@ -741,64 +741,15 @@ export class SqliteStore implements TraceStore {
     // 조회 시점에 SQL 로 요소를 거르기 위한 저장 컬럼이다. SQLite 에는 hash64Hex 가
     // 없어 WHERE 절에서 키를 만들어 낼 수 없다.
     //
-    // issues 는 백필하지 않는다 — 탐지기가 배치마다 저장된 전체 이벤트를 다시 훑고
-    // upsertIssues 로 덮어쓰므로(ingestion.ts), 트래픽이 있는 프로젝트는 다음
-    // 배치에서 저절로 채워진다.
-    //
-    // events 는 다르다. "옛 이벤트의 요소 키는 어차피 undefined" 라는 전제는
-    // user_version = 1 마이그레이션이 실행되기 전부터 있던 행에만 맞는다. 요소
-    // 신원 릴리스 이후·이 브랜치 배포 이전에 수집된 행은 element_selector_hash 가
-    // 살아 있는 채로 이 컬럼을 새로 얻으므로 NULL 로 채워진다. 그대로 두면
-    // detectIssues 가 다음 배치에서 그 행들로부터 element_key 를 실은 이슈를
-    // 만들고, findScreenContextEvents 의 `AND element_key = ?` 는 NULL 인 이
-    // 행들을 걸러 버린다 — screen_context 를 가진 정확한 증거가 테이블에 있는데도
-    // 대표 이벤트가 영구히 사라진다. 그래서 컬럼을 추가하는 이 순간, 지문이 남아
-    // 있는 행만 골라 한 번 채워 둔다.
-    //
-    // 이 백필을 나중에 "옛 이벤트는 어차피 NULL 이니 중복"이라 여겨 지우면 안
-    // 된다 — 지우면 위 시나리오가 그대로 재현된다.
-    if (!hasColumn(this.db, "events", "element_key")) {
-      this.db.exec(`ALTER TABLE events ADD COLUMN element_key TEXT`);
-
-      // element_selector_hash 자체가 없는 아주 오래된 테이블(마이그레이션 이전
-      // 스키마)이라면 지문이 있을 수 없으니 백필할 것도 없다 — 컬럼이 없는데
-      // 이 아래에서 그 컬럼을 SELECT 하면 실행 시점 오류가 난다.
-      const backfillEvents = this.db.transaction(() => {
-        if (!hasColumn(this.db, "events", "element_selector_hash")) return;
-
-        const rows = this.db
-          .prepare(
-            `SELECT event_id, element_selector_hash, element_text_masked_or_limited
-             FROM events
-             WHERE element_selector_hash IS NOT NULL`,
-          )
-          .all() as Array<{
-          event_id: string;
-          element_selector_hash: string;
-          element_text_masked_or_limited: string | null;
-        }>;
-        const updateElementKey = this.db.prepare(`UPDATE events SET element_key = ? WHERE event_id = ?`);
-
-        for (const row of rows) {
-          // elementKey() 는 elementSelectorHash 와 elementTextMaskedOrLimited 두
-          // 필드만 읽는다(element-identity.ts). 나머지 TraceEvent 필드는 이 계산에
-          // 관여하지 않으므로 이 둘만 채운 좁은 값을 캐스트해 넘긴다 — 해시 계산을
-          // 여기 다시 구현하면 elementKey() 와 별도의 두 번째 생산자가 생겨, 이번
-          // 결함을 만든 것과 같은 정의 드리프트 위험을 다시 판다.
-          const pseudoEvent = {
-            elementSelectorHash: row.element_selector_hash,
-            ...(row.element_text_masked_or_limited === null
-              ? {}
-              : { elementTextMaskedOrLimited: row.element_text_masked_or_limited }),
-          } as TraceEvent;
-          const key = elementKey(pseudoEvent);
-          if (key !== undefined) updateElementKey.run(key, row.event_id);
-        }
-      });
-      backfillEvents();
-    }
-    if (!hasColumn(this.db, "issues", "element_key")) {
-      this.db.exec(`ALTER TABLE issues ADD COLUMN element_key TEXT`);
+    // 백필하지 않는다. 이 저장소는 아직 어디에도 배포된 적이 없어(비공개 저장소,
+    // 릴리스 태그 0개) 요소 신원 릴리스를 겪고 트래픽을 더 받은 DB 가 존재하지
+    // 않는다. 데이터가 쌓인 DB 를 상대로 이 컬럼을 추가하게 되는 날이 오면 그때
+    // 백필이 필요하다 — 지문이 살아 있는 행이 NULL 키를 얻으면 findScreenContextEvents
+    // 의 `AND element_key = ?` 가 그 행을 영원히 거르기 때문이다.
+    for (const table of ["events", "issues"]) {
+      if (!hasColumn(this.db, table, "element_key")) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN element_key TEXT`);
+      }
     }
 
     // 요소 지문 규칙이 바뀌었다. 과거 이벤트는 옛 규칙 지문을 들고 있고

@@ -3,8 +3,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { TraceEvent } from "@trace/shared";
-import { elementKey } from "../detection/element-identity.js";
 import { SqliteStore } from "./sqlite-store.js";
 
 type Row = Record<string, unknown>;
@@ -388,72 +386,4 @@ describe("SqliteStore 요소 신원 마이그레이션", () => {
     inspector.close();
   });
 
-  it("user_version=1 에 이미 도달했지만 지문이 살아있는 이벤트도 element_key 를 채운다", () => {
-    // Critical 1 의 사각지대: 요소 신원 릴리스(userVersion<1 지문 정리)가 이미
-    // 지나간 DB 라도, 그 정리 이후·이 브랜치 배포 이전에 수집된 이벤트는
-    // element_selector_hash 가 살아 있는 채로 element_key 컬럼만 새로 얻는다.
-    // userVersion<1 블록은 이미 지난 버전이라 다시 돌지 않으므로(아래에서
-    // element_selector_hash 가 그대로임을 함께 확인한다), 이 행을 구해내는 것은
-    // 오직 컬럼 추가 시점의 백필뿐이다. 백필이 빠지면 element_key 가 NULL 로
-    // 남아 findScreenContextEvents 의 `AND element_key = ?` 에 영원히 걸리지
-    // 않는다 — 화면 맥락이 테이블에 그대로 있는데도 대표 이벤트가 사라진다.
-    const dbPath = createTempDbPath();
-    const legacy = new Database(dbPath);
-    legacy.exec(`
-      CREATE TABLE events (
-        event_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, session_id TEXT NOT NULL,
-        page_id TEXT NOT NULL, timestamp TEXT NOT NULL, type TEXT NOT NULL, url_path TEXT NOT NULL,
-        element_selector_hash TEXT, element_text_masked_or_limited TEXT,
-        metadata TEXT NOT NULL DEFAULT '{}'
-      );
-      CREATE TABLE issues (
-        issue_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, issue_type TEXT NOT NULL,
-        title TEXT NOT NULL, summary TEXT NOT NULL, affected_sessions_count INTEGER NOT NULL,
-        affected_users_count INTEGER NOT NULL, severity_score INTEGER NOT NULL, first_seen_at TEXT NOT NULL,
-        last_seen_at TEXT NOT NULL, trend TEXT NOT NULL, example_session_ids TEXT NOT NULL DEFAULT '[]',
-        status TEXT NOT NULL
-      );
-      INSERT INTO events
-        (event_id, project_id, session_id, page_id, timestamp, type, url_path,
-         element_selector_hash, element_text_masked_or_limited, metadata)
-      VALUES
-        ('evt_fingerprinted', 'proj_1', 'sess_1', 'page_1', '2026-09-03T00:00:00.000Z', 'click', '/settings',
-         '1111111111111111', '권한 추가', '{}'),
-        ('evt_no_fingerprint', 'proj_1', 'sess_1', 'page_1', '2026-09-03T00:00:01.000Z', 'page_view', '/settings',
-         NULL, NULL, '{}');
-      -- 요소 신원 정리 마이그레이션이 이미 지나갔다고 표시한다. 이 표시가 없으면
-      -- userVersion<1 블록이 이번에 돌아 element_selector_hash 를 스스로 지워
-      -- 버려서, 이 테스트가 잡으려는 "이미 버전 1인 DB" 시나리오 자체가 사라진다.
-      PRAGMA user_version = 1;
-    `);
-    legacy.close();
-
-    const store = new SqliteStore(dbPath);
-    store.close();
-
-    const migrated = new Database(dbPath, { readonly: true });
-    try {
-      const fingerprinted = migrated
-        .prepare("SELECT element_selector_hash, element_key FROM events WHERE event_id = ?")
-        .get("evt_fingerprinted") as Row;
-      const withoutFingerprint = migrated
-        .prepare("SELECT element_key FROM events WHERE event_id = ?")
-        .get("evt_no_fingerprint") as Row;
-      const version = migrated.prepare("PRAGMA user_version").get() as Row;
-
-      expect(version.user_version).toBe(1);
-      // 지문이 지워지지 않았다 — userVersion<1 정리 블록이 다시 돌지 않았다는
-      // 증거다. 이 전제가 깨지면 위 시나리오 자체가 성립하지 않는다.
-      expect(fingerprinted.element_selector_hash).toBe("1111111111111111");
-      expect(fingerprinted.element_key).toBe(
-        elementKey({
-          elementSelectorHash: "1111111111111111",
-          elementTextMaskedOrLimited: "권한 추가",
-        } as TraceEvent),
-      );
-      expect(withoutFingerprint.element_key).toBeNull();
-    } finally {
-      migrated.close();
-    }
-  });
 });
