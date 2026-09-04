@@ -5,6 +5,7 @@ import {
   isSafeElementSelectorHash,
   isSafeTraceIdentifier,
   isoDateStringSchema,
+  MAX_SCREEN_LAYOUT_HINTS,
   redactMetadata,
   redactText,
   redactUrl,
@@ -21,7 +22,6 @@ import type { TraceStore } from "../store/types.js";
 
 const MAX_SCREEN_RECT = 10000;
 const MAX_VIEWPORT = 10000;
-const MAX_LAYOUT_HINTS = 12;
 const MAX_SCREEN_TEXT = 120;
 const SAFE_TAG_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 // 두 정규식의 사본이 packages/sdk/src/collectors.ts(SAFE_ERROR_NAME_PATTERN,
@@ -236,7 +236,7 @@ function sanitizeScreenContext(value: unknown): ScreenContext | undefined {
   const titleMasked = sanitizeScreenText(raw.data.titleMasked);
   const target = raw.data.target ? sanitizeScreenElement(raw.data.target) : undefined;
   const layoutHints = raw.data.layoutHints
-    .slice(0, MAX_LAYOUT_HINTS)
+    .slice(0, MAX_SCREEN_LAYOUT_HINTS)
     .map((hint) => {
       const sanitized = sanitizeScreenElement(hint);
       if (sanitized === undefined) return undefined;

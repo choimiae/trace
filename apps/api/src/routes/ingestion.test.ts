@@ -321,8 +321,57 @@ describe("ingestion routes", () => {
     });
     expect(timeline[0]?.screenContext?.target).not.toHaveProperty("role");
     expect(timeline[0]?.screenContext?.target).not.toHaveProperty("selectorHash");
-    expect(timeline[0]?.screenContext?.layoutHints).toHaveLength(12);
+    expect(timeline[0]?.screenContext?.layoutHints).toHaveLength(20);
     expect(timeline[1]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
+  });
+
+  // 계약(screenContextSchema)은 layoutHints 를 20개까지 받는데, 수집 API 가 한때
+  // 자신만의 사본 상수로 12개에서 잘랐다. 두 벌로 갈라 둔 상한이 계약만 넓히고
+  // 수집 API 는 조용히 좁은 채로 남는 drift 를 낳았던 회귀를 고정한다.
+  it("화면 힌트 20개를 계약 상한 그대로 저장한다 (계약-수집 API 상한 drift 회귀 고정)", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: {
+              viewport: { width: 1440, height: 900 },
+              layoutHints: Array.from({ length: 20 }, (_unused, index) => ({
+                tagName: "section",
+                masked: false,
+                rect: { x: index, y: index, width: 40, height: 40 },
+              })),
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(timeline[0]?.screenContext?.layoutHints).toHaveLength(20);
   });
 
   it("masked 힌트가 텍스트를 실어 보내도 서버가 텍스트를 지운다", async () => {
