@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventBatchSchema, issueSchema, traceEventSchema } from "./events.js";
+import { eventBatchSchema, issueSchema, screenContextSchema, traceEventSchema } from "./events.js";
 
 describe("eventBatchSchema", () => {
   it("accepts a valid click batch", () => {
@@ -460,7 +460,7 @@ describe("screenContextSchema", () => {
   });
 
   it("limits layout hints to keep payloads small", () => {
-    const layoutHints = Array.from({ length: 13 }, (_, index) => ({
+    const layoutHints = Array.from({ length: 21 }, (_, index) => ({
       tagName: "button",
       role: "button",
       textMaskedOrLimited: `버튼 ${index}`,
@@ -766,5 +766,32 @@ describe("issueSchema elementKey", () => {
 
   it("hex 가 아닌 글자를 거절한다", () => {
     expect(() => issueSchema.parse({ ...baseIssue, elementKey: "0fd2102e520470zz" })).toThrow();
+  });
+});
+
+describe("screenContextSchema layoutHints 상한", () => {
+  const hint = (index: number) => ({
+    tagName: "div",
+    rect: { x: index, y: index, width: 10, height: 10 },
+    masked: true,
+  });
+  const context = (count: number) => ({
+    viewport: { width: 1456, height: 828 },
+    layoutHints: Array.from({ length: count }, (_, index) => hint(index)),
+  });
+
+  it("20개를 받는다", () => {
+    const parsed = screenContextSchema.parse(context(20));
+    expect(parsed.layoutHints).toHaveLength(20);
+  });
+
+  // 상한이 없으면 페이로드가 무한정 커진다. 넓히되 열어 두지는 않는다.
+  it("21개를 거절한다", () => {
+    expect(() => screenContextSchema.parse(context(21))).toThrow();
+  });
+
+  // 넓히는 방향이라 기존에 저장된 12개짜리 데이터가 그대로 유효해야 한다.
+  it("기존 12개짜리도 그대로 통과한다", () => {
+    expect(screenContextSchema.parse(context(12)).layoutHints).toHaveLength(12);
   });
 });

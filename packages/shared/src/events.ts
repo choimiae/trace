@@ -205,7 +205,10 @@ export const screenContextSchema = z.object({
     height: z.number().int().min(1).max(10000),
   }),
   target: screenElementSchema.optional(),
-  layoutHints: screenLayoutHintSchema.array().max(12).default([]),
+  // 20은 실측으로 정했다. 실제 화면 좌표로 12·20·30 예산의 미리보기를 그려 비교한
+  // 결과 결정적 차이는 3→12 였고 20→30 은 거의 무의미했다. 20 은 12에서 넘은
+  // 문턱에 여유를 둔 값이다. 힌트 하나가 약 90B 라 20개면 screenContext 약 2.2KB 다.
+  layoutHints: screenLayoutHintSchema.array().max(20).default([]),
 });
 
 export type ScreenContext = z.infer<typeof screenContextSchema>;
