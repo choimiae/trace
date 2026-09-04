@@ -336,7 +336,9 @@ function intersectsViewportRect(rect: ScreenRect, viewport: ScreenViewport): boo
 
 // 원시 DOMRect 로 판정한다. rectFromDomRect 가 x/y 를 0 으로 클램프한 뒤에 보면
 // 화면 위쪽·왼쪽으로 완전히 벗어난 요소가 0 으로 접혀 뷰포트 안으로 잘못
-// 판정된다. offset 은 iframe 좌표 보정치다(지금은 항상 {0,0}).
+// 판정된다. offset 은 iframe 좌표 보정치다 — scanBoxes 가 프레임 내부를 스캔할
+// 때는 그 프레임의 원시 오프셋이 그대로 들어오고(항상 {0,0} 이 아니다),
+// scanFrameBoxes 가 프레임 자신의 뷰포트 게이트를 볼 때는 {0,0} 이다.
 function domRectIntersectsViewport(
   rect: DOMRect | ClientRect,
   viewport: ScreenViewport,
@@ -401,6 +403,13 @@ function sameOriginDocument(frame: Element): Document | undefined {
   }
 }
 
+// 클릭당 스캔할 같은 출처 프레임 수 상한. 프레임마다 MAX_RECT_SCAN(3,000) 전체를
+// 다시 훑으므로 상한이 없으면 프레임 20개가 클릭 한 번에 6만 번의
+// getBoundingClientRect 호출이 되고, 분노 클릭 연타로 그대로 곱해진다. 뷰포트
+// 안 + 같은 출처 필터가 이미 대부분을 걸러내고, 미리보기는 프레임을 몇 개 더
+// 본다고 핸드풀을 넘어서는 만큼 더 알아보기 쉬워지지 않는다.
+const MAX_SCANNED_FRAMES = 4;
+
 // 한 겹만 내려간다. 재귀하면 비용이 문서 구조에 따라 예측 불가능해진다.
 // 다른 출처 프레임은 여기서 아무것도 더하지 않는다 — 프레임 요소 자체는 부모
 // 문서 스캔에서 이미 후보로 잡혔고(REPLACED_TAGS), 그 사각형이 "볼 수 없는 영역"
@@ -411,21 +420,36 @@ function scanFrameBoxes(
   targetRect: ScreenRect,
 ): BoxCandidate[] {
   const collected: BoxCandidate[] = [];
+  let scannedFrames = 0;
 
   for (const frame of Array.from(doc.querySelectorAll(FRAME_SELECTOR))) {
-    let frameRect: ScreenRect;
+    if (scannedFrames >= MAX_SCANNED_FRAMES) break;
+
+    let domRect: DOMRect | ClientRect;
     try {
-      frameRect = rectFromDomRect(frame.getBoundingClientRect());
+      domRect = frame.getBoundingClientRect();
     } catch {
       continue;
     }
-    if (frameRect.width < MIN_BOX_SIDE || frameRect.height < MIN_BOX_SIDE) continue;
-    if (!intersectsViewportRect(frameRect, viewport)) continue;
+    if (domRect.width < MIN_BOX_SIDE || domRect.height < MIN_BOX_SIDE) continue;
+    // 원시 DOMRect 로 게이트를 통과시키고, 원시 left/top 을 그대로 오프셋으로
+    // 넘긴다. rectFromDomRect 로 먼저 클램프하면 x/y 가 음수일 때 0 으로 접혀
+    // 두 가지가 동시에 틀어진다 — (1) 화면 밖 왼쪽/위로 완전히 벗어난 프레임
+    // (예: position:absolute; left:-9999px 인 숨김 shim) 이 클램프된 0 으로
+    // 뷰포트 게이트를 통과하고, (2) 통과한 프레임의 오프셋도 0 이 되어 내부
+    // 요소가 실제 위치보다 아래/오른쪽으로 밀려 그려진다(뷰포트 위로 스크롤된
+    // 에디터 iframe 의 raw top:-300 이 offset y:0 이 되면 내부 힌트가 300px
+    // 아래에 저장된다). scanBoxes 는 (원시 좌표 + 오프셋) 을 더한 뒤 딱 한 번만
+    // 클램프하므로, 오프셋 자체가 미리 클램프돼 있으면 그 전제가 깨진다.
+    // 클램프가 필요한 곳(저장할 rect)은 scanBoxes/offsetRect 안에서 이미 한다.
+    if (!domRectIntersectsViewport(domRect, viewport, { x: 0, y: 0 })) continue;
 
     const innerDoc = sameOriginDocument(frame);
     if (!innerDoc) continue;
 
-    collected.push(...scanBoxes(innerDoc, viewport, targetRect, { x: frameRect.x, y: frameRect.y }));
+    scannedFrames += 1;
+    const offset = { x: domRect.x ?? domRect.left, y: domRect.y ?? domRect.top };
+    collected.push(...scanBoxes(innerDoc, viewport, targetRect, offset));
   }
 
   return collected;

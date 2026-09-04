@@ -1231,6 +1231,53 @@ describe("iframe", () => {
     );
   });
 
+  // 프레임의 원시 rect 가 음수(뷰포트 위/왼쪽으로 걸치거나 완전히 벗어남)일 때
+  // 클램프 순서가 끝까지 지켜지는지 못박는다. scanFrameBoxes 가 rectFromDomRect
+  // 로 먼저 클램프한 값을 게이트·오프셋에 쓰면: (1) 완전히 벗어난 프레임의
+  // x/y 가 0 으로 접혀 뷰포트 게이트를 잘못 통과하고, (2) 통과한 프레임의
+  // 오프셋도 0 이 되어 내부 요소가 실제보다 아래/오른쪽으로 밀려 그려진다.
+  it("뷰포트 위로 걸친 프레임 내부 상자는 음수만큼 보정되어 저장된다", () => {
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `<div id="side">사이드</div><iframe id="f"></iframe>`;
+    const frame = document.querySelector("#f") as HTMLIFrameElement;
+    stubRect(document.querySelector("#side")!, { x: 0, y: 600, width: 300, height: 200 });
+    // 뷰포트 위/왼쪽으로 걸친 프레임: 원시 x:-200,y:-150 이지만 폭·높이가 커서
+    // 오른쪽/아래 일부가 뷰포트 안에 실제로 보인다.
+    stubRect(frame, { x: -200, y: -150, width: 800, height: 600 });
+    const innerDoc = frame.contentDocument!;
+    innerDoc.body.innerHTML = `<div id="in">본문</div>`;
+    stubRect(innerDoc.querySelector("#in")!, { x: 250, y: 300, width: 100, height: 80 });
+
+    const context = getScreenContext(document.querySelector("#side")!)!;
+    // 올바른 계산: clamp(250 + -200) = 50, clamp(300 + -150) = 150.
+    // 먼저 클램프하는 잘못된 계산: clamp(250 + clamp(-200)) = clamp(250 + 0) = 250.
+    expect(context.layoutHints).toContainEqual(
+      expect.objectContaining({ rect: { x: 50, y: 150, width: 100, height: 80 } }),
+    );
+  });
+
+  // 숨김 shim(예: position:absolute; left:-9999px 인 인쇄·다운로드용 iframe)은
+  // 클램프된 rect 로 보면 x:0 이 되어 뷰포트 게이트를 통과한다. 원시 rect 로
+  // 봐야 뷰포트 밖이라는 게 드러나 문서 자체를 스캔하지 않는다.
+  it("뷰포트 밖 멀리 걸린 숨김 프레임은 문서를 스캔하지 않는다", () => {
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    document.body.innerHTML = `<div id="side">사이드</div><iframe id="f"></iframe>`;
+    const frame = document.querySelector("#f") as HTMLIFrameElement;
+    stubRect(document.querySelector("#side")!, { x: 0, y: 0, width: 300, height: 600 });
+    stubRect(frame, { x: -9999, y: 0, width: 200, height: 100 });
+    const innerDoc = frame.contentDocument!;
+    innerDoc.body.innerHTML = `<div id="in">보이면 안 되는 내용</div>`;
+    stubRect(innerDoc.querySelector("#in")!, { x: 10, y: 10, width: 100, height: 50 });
+
+    const context = getScreenContext(document.querySelector("#side")!)!;
+
+    expect(
+      context.layoutHints.some((hint) => hint.rect.width === 100 && hint.rect.height === 50),
+    ).toBe(false);
+  });
+
   // 실제 브라우저에서 다른 출처 프레임은 contentDocument 가 null 을 돌려주고,
   // 던지는 것은 contentWindow.document 다(2026-09-04 실측). 우리 코드는
   // contentDocument 만 읽으므로 실전에서는 null 경로를 탄다 — 그 경로는 아래
@@ -1286,8 +1333,54 @@ describe("iframe", () => {
     stubRect(innerDoc.querySelector("#in")!, { x: 10, y: 20, width: 500, height: 400 });
 
     const context = getScreenContext(document.querySelector("#side")!)!;
+    const innerHint = context.layoutHints.find(
+      (hint) => hint.rect.x === 410 && hint.rect.y === 120 && hint.rect.width === 500 && hint.rect.height === 400,
+    );
+
+    // 부정 단정(글자가 없다)만 있으면 프레임 스캔이 아무것도 만들지 않아도
+    // 통과한다 — 상자가 실제로 수집됐다는 긍정 단정을 함께 못박는다.
+    expect(innerHint).toBeDefined();
+    expect(innerHint?.textMaskedOrLimited).toBeUndefined();
     for (const hint of context.layoutHints) {
       expect(hint.textMaskedOrLimited).not.toBe("비밀 문서 내용");
     }
+  });
+
+  // 프레임마다 MAX_RECT_SCAN(3,000) 전체를 다시 훑으므로 상한이 없으면 프레임이
+  // 많은 문서(에디터 여러 개, 결제·미리보기 위젯 등)에서 클릭당 비용이 프레임
+  // 수에 비례해 계속 커진다. 열 개 중 같은 출처 네 개(MAX_SCANNED_FRAMES)만
+  // 기여하는지 — 다섯 번째부터는 내부를 아예 스캔하지 않는지 — 직접 못박는다.
+  // "getBoundingClientRect 호출 총량" 이 아니라 "몇 번째 프레임까지 기여했는가"
+  // 를 고른 이유: 호출 총량은 scanBoxes 내부 구현(문서당 3,000 상한)에 얽혀
+  // MAX_SCANNED_FRAMES 하나만 바뀌어도 함께 흔들리는데, 기여 프레임 개수는
+  // scanFrameBoxes 의 반복 자체를 직접 가리켜 더 정직하다.
+  it("같은 출처 프레임은 MAX_SCANNED_FRAMES(4)개까지만 내부를 스캔한다", () => {
+    window.innerWidth = 1440;
+    window.innerHeight = 900;
+    const FRAME_COUNT = 10;
+    let html = `<div id="click"></div>`;
+    for (let index = 0; index < FRAME_COUNT; index += 1) {
+      html += `<iframe id="f${index}"></iframe>`;
+    }
+    document.body.innerHTML = html;
+    stubRect(document.querySelector("#click")!, { x: 900, y: 800, width: 4, height: 4 });
+
+    for (let index = 0; index < FRAME_COUNT; index += 1) {
+      const frame = document.querySelector(`#f${index}`) as HTMLIFrameElement;
+      // 세로로 늘어선 10개의 프레임. 전부 뷰포트 안에 들어온다.
+      stubRect(frame, { x: 0, y: index * 70, width: 100, height: 60 });
+      const innerDoc = frame.contentDocument!;
+      innerDoc.body.innerHTML = `<div id="inner">프레임 내부 ${index}</div>`;
+      stubRect(innerDoc.querySelector("#inner")!, { x: 10, y: 10, width: 40, height: 40 });
+    }
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    // 프레임 i 의 내부 div 는 부모 기준 x:10, y: i*70+10 이다.
+    const innerYs = context.layoutHints
+      .filter((hint) => hint.rect.x === 10 && hint.rect.width === 40 && hint.rect.height === 40)
+      .map((hint) => hint.rect.y)
+      .sort((left, right) => left - right);
+
+    expect(innerYs).toEqual([10, 80, 150, 220]);
   });
 });
