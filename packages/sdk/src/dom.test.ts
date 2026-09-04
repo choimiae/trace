@@ -434,8 +434,11 @@ describe("getScreenContext", () => {
     // main 은 랜드마크로 수집되지만 컨테이너이므로 텍스트가 없다.
     expect(byTag("main")).toBeDefined();
     expect(byTag("main")).not.toHaveProperty("textMaskedOrLimited");
-    // section 은 이웃 셀렉터에도 랜드마크에도 없어 아예 수집되지 않는다.
-    expect(byTag("section")).toBeUndefined();
+    // section 은 문서 전체 geometry 스캔으로 이제 수집된다(자기 텍스트 노드가
+    // 있어 칠해짐 판정을 통과한다) — 그러나 TEXT_TAG_WHITELIST 에 없어 텍스트는
+    // 여전히 담기지 않는다. 컨테이너는 상자로만 보이고 글자는 새지 않는다.
+    expect(byTag("section")).toBeDefined();
+    expect(byTag("section")).not.toHaveProperty("textMaskedOrLimited");
     expect(JSON.stringify(context)).not.toContain("박스 안의 긴 설명 문구");
   });
 
@@ -512,7 +515,7 @@ describe("getScreenContext", () => {
     expect(texts).toContain("가까운 버튼");
   });
 
-  it("후보가 많아도 힌트는 정확히 12개로 잘린다", () => {
+  it("후보가 많아도 힌트는 정확히 20개로 잘린다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
     const buttons = Array.from({ length: 80 }, (_unused, index) => `<button id="b${index}">버튼${index}</button>`).join("");
@@ -526,8 +529,8 @@ describe("getScreenContext", () => {
     const context = expectValidScreenContext(document.querySelector("#go")!);
 
     // 80개의 버튼 + main 랜드마크가 모두 뷰포트 안에 있으므로 개수는 상한
-    // 12로 결정적이다. <= 12 만 보면 생산자가 조용히 힌트를 덜 채워도 통과한다.
-    expect(context.layoutHints.length).toBe(12);
+    // 20으로 결정적이다. <= 20 만 보면 생산자가 조용히 힌트를 덜 채워도 통과한다.
+    expect(context.layoutHints.length).toBe(20);
   });
 
   it("랜드마크가 없는 문서에서도 안전하게 동작한다", () => {
@@ -948,5 +951,135 @@ describe("isPaintedBox", () => {
     const element = document.querySelector("#a")!;
     stubStyle(element, { visibility: "hidden" });
     expect(isPaintedBox(element)).toBe(false);
+  });
+});
+
+describe("비시맨틱 화면에서도 구조를 담는다", () => {
+  // 실제 제품(ONEFFICE 팝업) 실측: 보이는 요소 633개 중 현재 셀렉터 후보가 3개였다.
+  // div 195·td 156·table 65 로 짜여 있고 버튼이 div.btn 92개다. 이 모양을 재현한다.
+  function buildNonSemanticScreen(): Element {
+    document.body.innerHTML = `
+      <div id="shell">
+        <div id="toolbar">
+          <div id="tool1">저장</div><div id="tool2">인쇄</div><div id="tool3">공유</div>
+        </div>
+        <table id="layout"><tbody><tr>
+          <td id="side"><div id="side1">연관 문서</div><div id="side2">첨부</div></td>
+          <td id="body"><div id="doc">본문</div></td>
+        </tr></tbody></table>
+      </div>`;
+    const boxes: Array<[string, { x: number; y: number; width: number; height: number }]> = [
+      ["#shell", { x: 0, y: 0, width: 1000, height: 700 }],
+      ["#toolbar", { x: 0, y: 0, width: 1000, height: 60 }],
+      ["#tool1", { x: 10, y: 15, width: 60, height: 30 }],
+      ["#tool2", { x: 80, y: 15, width: 60, height: 30 }],
+      ["#tool3", { x: 150, y: 15, width: 60, height: 30 }],
+      ["#layout", { x: 0, y: 60, width: 1000, height: 640 }],
+      ["#side", { x: 0, y: 60, width: 300, height: 640 }],
+      ["#side1", { x: 10, y: 70, width: 280, height: 40 }],
+      ["#side2", { x: 10, y: 120, width: 280, height: 40 }],
+      ["#body", { x: 300, y: 60, width: 700, height: 640 }],
+      ["#doc", { x: 310, y: 70, width: 680, height: 620 }],
+    ];
+    for (const [selector, rect] of boxes) {
+      const element = document.querySelector(selector)!;
+      stubRect(element, rect);
+      stubStyle(element, { backgroundColor: "rgb(250, 250, 250)", borderTopWidth: "1px" });
+    }
+    stubRect(document.body, { x: 0, y: 0, width: 1000, height: 700 });
+    stubRect(document.documentElement, { x: 0, y: 0, width: 1000, height: 700 });
+    return document.querySelector("#side1")!;
+  }
+
+  it("div·table 로만 짠 화면에서 힌트를 10개 이상 담는다", () => {
+    const target = buildNonSemanticScreen();
+    const context = getScreenContext(target)!;
+
+    expect(context.layoutHints.length).toBeGreaterThanOrEqual(10);
+    const tags = new Set(context.layoutHints.map((hint) => hint.tagName));
+    expect(tags.has("div")).toBe(true);
+    expect(tags.has("td")).toBe(true);
+  });
+
+  // 구조 힌트는 rect 만 남는다. div·td 는 텍스트 화이트리스트에 없다.
+  it("구조 힌트에 글자가 실리지 않는다", () => {
+    const target = buildNonSemanticScreen();
+    const context = getScreenContext(target)!;
+
+    for (const hint of context.layoutHints) {
+      if (hint.tagName === "div" || hint.tagName === "td" || hint.tagName === "table") {
+        expect(hint.textMaskedOrLimited).toBeUndefined();
+      }
+    }
+  });
+
+  it("생산자 출력이 계약을 통과한다", () => {
+    const target = buildNonSemanticScreen();
+    expect(screenContextSchema.safeParse(getScreenContext(target)).success).toBe(true);
+  });
+});
+
+describe("시맨틱 화면이 나빠지지 않는다", () => {
+  // 측정에서 확인된 사례: <main>·<header> 는 배경도 테두리도 없는 투명한 껍데기라
+  // 칠해짐 판정만으로는 걸리지 않는다. 랜드마크 셀렉터가 이걸 건져야 한다.
+  it("아무것도 칠해지지 않은 랜드마크도 힌트로 남는다", () => {
+    document.body.innerHTML = `<header id="h"></header><main id="m"><a id="a" href="/x">이동</a></main>`;
+    for (const [selector, rect] of [
+      ["#h", { x: 0, y: 0, width: 1000, height: 60 }],
+      ["#m", { x: 0, y: 60, width: 1000, height: 640 }],
+      ["#a", { x: 10, y: 70, width: 80, height: 20 }],
+    ] as const) {
+      const element = document.querySelector(selector)!;
+      stubRect(element, rect);
+      stubStyle(element, { backgroundColor: "rgba(0, 0, 0, 0)", borderTopWidth: "0px" });
+    }
+    const context = getScreenContext(document.querySelector("#a")!)!;
+    const tags = context.layoutHints.map((hint) => hint.tagName);
+    expect(tags).toContain("header");
+    expect(tags).toContain("main");
+  });
+});
+
+describe("비용 상한", () => {
+  // 문서가 커져도 클릭당 비용이 묶여야 한다. getComputedStyle 은 리플로우를 부르므로
+  // 호출 횟수가 곧 비용이다. 분노 클릭은 연타라 이 값이 그대로 곱해진다.
+  it("getComputedStyle 호출이 클릭당 60을 넘지 않는다", () => {
+    const cells = Array.from({ length: 400 }, (_, index) => `<div id="c${index}">${index}</div>`).join("");
+    document.body.innerHTML = `<div id="wrap">${cells}</div>`;
+    stubRect(document.querySelector("#wrap")!, { x: 0, y: 0, width: 1000, height: 700 });
+    for (let index = 0; index < 400; index += 1) {
+      stubRect(document.querySelector(`#c${index}`)!, {
+        x: (index % 20) * 50, y: Math.floor(index / 20) * 30, width: 48, height: 28,
+      });
+    }
+    const view = document.defaultView!;
+    const spy = vi.spyOn(view, "getComputedStyle");
+
+    getScreenContext(document.querySelector("#c0")!);
+
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(60);
+    spy.mockRestore();
+  });
+
+  // rect 읽기도 공짜가 아니다. 문서가 아무리 커도 스캔이 MAX_RECT_SCAN 에서 멈춰야
+  // 클릭당 비용이 문서 크기와 무관해진다.
+  it("rect 스캔이 MAX_RECT_SCAN(3000)에서 멈춘다", () => {
+    const cells = Array.from({ length: 3200 }, (_, index) => `<div id="d${index}"></div>`).join("");
+    document.body.innerHTML = `<div id="wrap">${cells}</div>`;
+    let rectCalls = 0;
+    const originalRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function boundingRect(this: Element) {
+      rectCalls += 1;
+      return { x: 0, y: 0, width: 10, height: 10, top: 0, left: 0, right: 10, bottom: 10, toJSON: () => ({}) } as DOMRect;
+    };
+
+    try {
+      getScreenContext(document.querySelector("#d0")!);
+    } finally {
+      Element.prototype.getBoundingClientRect = originalRect;
+    }
+
+    // 스캔 3000 + 타겟·프레임 등 부수 호출 여유. 3200개를 다 읽으면 이 단정이 깨진다.
+    expect(rectCalls).toBeLessThan(3100);
   });
 });

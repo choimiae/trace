@@ -11,20 +11,23 @@ export interface ElementMetadata {
 const MAX_SCREEN_RECT = 10000;
 const MAX_VIEWPORT = 10000;
 const SAFE_TAG_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
-const MAX_LAYOUT_HINTS = 12;
-// 랜드마크 몫 예약. 이웃 상한은 따로 두지 않는다 — 랜드마크가 없는 문서에서는
-// 이웃이 유일한 신호이므로 나머지 전부(MAX_LAYOUT_HINTS)를 채울 수 있어야 한다.
+const MAX_LAYOUT_HINTS = 20;
+// 골격 몫. 나머지(20 - 12 = 8)는 클릭 근처가 쓴다. 골격에는 랜드마크가 먼저 들어간다.
+const SKELETON_HINTS = 12;
+// 랜드마크가 골격 칸을 다 먹지 않게 한다. 랜드마크가 20개인 문서도 있다.
 const MAX_LANDMARK_HINTS = 4;
-// 클릭당 검사 후보 상한. 시간 기반 throttle 대신 작업량을 묶는다 — rage click 의
-// 2번째 이후 클릭에서 힌트가 사라지면 정작 필요한 이슈에서 화면이 빈다.
+// getComputedStyle 호출 예산이다. 2,360 요소 화면에서 전체를 훑으면 13ms,
+// 60개만 보면 0.9ms 로 측정됐다.
 const MAX_HINT_CANDIDATES = 60;
+// rect 읽기 상한. 2,360 요소에 2.3ms 였다. 거대 문서에서 선형으로 늘어나는 것을 막는다.
+const MAX_RECT_SCAN = 3000;
+// 이보다 작으면 사람 눈에 상자가 아니다.
+const MIN_BOX_SIDE = 8;
+// 뷰포트의 이 비율 이상을 덮는 상자는 골격에서 뺀다. <html>·<body> 가 골격 칸을
+// 먹으면 화면 전체를 덮는 빈 사각형만 남는다. (스펙 §3 에 없던 규칙 — 근거는 이것이다.)
+const SKELETON_MAX_VIEWPORT_RATIO = 0.9;
 const LANDMARK_SELECTOR =
   "header, nav, main, aside, [role=banner], [role=navigation], [role=main], [role=complementary]";
-// 제목도 포함한다. h1-h3 는 TEXT_TAG_WHITELIST 에 있는데 랜드마크도 아니어서,
-// 이웃 셀렉터에 없으면 수집 자체가 안 돼 화이트리스트가 死코드가 된다.
-const NEIGHBOR_SELECTOR =
-  "button, a[href], input, select, textarea, h1, h2, h3, [role=button], [role=link], [role=tab], [role=heading]";
-const CONTAINER_SELECTOR = "form, section, header, nav, main, aside";
 // role 은 getAttribute("role") ?? tagName 이므로 <a> 는 role 이 "a", <h2> 는 "h2" 다.
 // role 이름만으로 화이트리스트를 쓰면 대부분 걸리지 않는다.
 const TEXT_ROLE_WHITELIST = new Set(["button", "link", "tab", "heading"]);
@@ -198,14 +201,6 @@ function buildScreenTarget(element: Element, viewport: ScreenViewport): ScreenTa
   };
 }
 
-// 원시 DOMRect 로 판정한다. rectFromDomRect 가 x/y 를 0 으로 클램프한 뒤에 보면
-// 화면 위쪽·왼쪽으로 스크롤된 요소가 y:0 으로 접혀 통과하고, 미리보기 상단에
-// 몰려 실제 화면을 왜곡한다.
-function intersectsViewport(rect: DOMRect | ClientRect, viewport: ScreenViewport): boolean {
-  if (rect.width <= 0 || rect.height <= 0) return false;
-  return rect.right > 0 && rect.bottom > 0 && rect.left < viewport.width && rect.top < viewport.height;
-}
-
 function rectCenterDistance(left: ScreenRect, right: ScreenRect): number {
   const dx = left.x + left.width / 2 - (right.x + right.width / 2);
   const dy = left.y + left.height / 2 - (right.y + right.height / 2);
@@ -276,13 +271,15 @@ function isMaskedHintElement(element: Element, tagName: string): boolean {
 function buildLayoutHint(
   element: Element,
   viewport: ScreenViewport,
+  precomputedRect?: ScreenRect,
 ): { hint: ScreenLayoutHint; rect: ScreenRect } | undefined {
   const tagName = element.tagName.toLowerCase();
   if (!SAFE_TAG_NAME_PATTERN.test(tagName)) return undefined;
 
-  const domRect = element.getBoundingClientRect();
-  if (!intersectsViewport(domRect, viewport)) return undefined;
-  const rect = rectFromDomRect(domRect);
+  // 호출부가 이미 rect 를 계산했으면 다시 읽지 않는다. iframe 내부 요소는 부모
+  // 문서 좌표로 보정된 값이라 여기서 다시 읽으면 프레임 기준으로 되돌아간다.
+  const rect = precomputedRect ?? rectFromDomRect(element.getBoundingClientRect());
+  if (!intersectsViewportRect(rect, viewport)) return undefined;
 
   // getElementMetadata 를 부르지 않는다. 힌트는 selectorHash 를 쓰지 않고, 무엇보다
   // 텍스트를 쓸지 정하기 전에 텍스트를 뽑아 버리면 랜드마크(<main> 등)에서 화면 전체
@@ -306,15 +303,97 @@ function buildLayoutHint(
   };
 }
 
-function nearestContainer(target: Element): Element {
-  let current: Element | null = target.parentElement;
-  for (let depth = 0; depth < 3 && current; depth += 1) {
-    if (current.matches(CONTAINER_SELECTOR)) return current;
-    current = current.parentElement;
+interface BoxCandidate {
+  element: Element;
+  rect: ScreenRect;
+  area: number;
+  distance: number;
+}
+
+function offsetRect(rect: ScreenRect, offset: { x: number; y: number }): ScreenRect {
+  return { ...rect, x: clampRectValue(rect.x + offset.x), y: clampRectValue(rect.y + offset.y) };
+}
+
+function intersectsViewportRect(rect: ScreenRect, viewport: ScreenViewport): boolean {
+  return rect.x < viewport.width && rect.y < viewport.height && rect.x + rect.width > 0 && rect.y + rect.height > 0;
+}
+
+// 원시 DOMRect 로 판정한다. rectFromDomRect 가 x/y 를 0 으로 클램프한 뒤에 보면
+// 화면 위쪽·왼쪽으로 완전히 벗어난 요소가 0 으로 접혀 뷰포트 안으로 잘못
+// 판정된다. offset 은 iframe 좌표 보정치다(지금은 항상 {0,0}).
+function domRectIntersectsViewport(
+  rect: DOMRect | ClientRect,
+  viewport: ScreenViewport,
+  offset: { x: number; y: number },
+): boolean {
+  if (rect.width <= 0 || rect.height <= 0) return false;
+  return (
+    rect.right + offset.x > 0 &&
+    rect.bottom + offset.y > 0 &&
+    rect.left + offset.x < viewport.width &&
+    rect.top + offset.y < viewport.height
+  );
+}
+
+// rect 만 읽는다. getComputedStyle 은 아직 부르지 않는다 — 그게 비싼 쪽이다.
+function scanBoxes(
+  doc: Document,
+  viewport: ScreenViewport,
+  targetRect: ScreenRect,
+  offset: { x: number; y: number },
+): BoxCandidate[] {
+  const candidates: BoxCandidate[] = [];
+  const elements = doc.querySelectorAll("*");
+  const limit = Math.min(elements.length, MAX_RECT_SCAN);
+
+  for (let index = 0; index < limit; index += 1) {
+    const element = elements[index]!;
+    let domRect: DOMRect | ClientRect;
+    try {
+      domRect = element.getBoundingClientRect();
+    } catch {
+      continue;
+    }
+    if (domRect.width < MIN_BOX_SIDE || domRect.height < MIN_BOX_SIDE) continue;
+    if (!domRectIntersectsViewport(domRect, viewport, offset)) continue;
+    const rect = offsetRect(rectFromDomRect(domRect), offset);
+    candidates.push({
+      element,
+      rect,
+      area: rect.width * rect.height,
+      distance: rectCenterDistance(rect, targetRect),
+    });
   }
-  // body 가 없는 문서(XML 등)도 있다. 그 경우 documentElement 로, 그마저 없으면
-  // 타겟 자신으로 떨어뜨려 querySelectorAll 이 null 에서 터지지 않게 한다.
-  return target.ownerDocument.body ?? target.ownerDocument.documentElement ?? target;
+
+  return candidates;
+}
+
+// 면적과 거리 양쪽에서 절반씩 뽑는다. 한쪽으로만 뽑으면 다른 쪽이 후보에조차 못 든다.
+function budgetedCandidates(candidates: BoxCandidate[]): BoxCandidate[] {
+  const half = Math.floor(MAX_HINT_CANDIDATES / 2);
+  const byArea = [...candidates].sort((left, right) => right.area - left.area).slice(0, half);
+  const byDistance = [...candidates].sort((left, right) => left.distance - right.distance).slice(0, half);
+  return Array.from(new Set([...byArea, ...byDistance]));
+}
+
+function isNearSameRect(left: ScreenRect, right: ScreenRect): boolean {
+  return (
+    Math.abs(left.x - right.x) < 4 &&
+    Math.abs(left.y - right.y) < 4 &&
+    Math.abs(left.width - right.width) < 4 &&
+    Math.abs(left.height - right.height) < 4
+  );
+}
+
+// 래퍼 div 가 겹겹이 쌓인 구조에서 같은 상자를 여러 번 그리는 것을 막는다.
+function dropNearParent(candidates: BoxCandidate[]): BoxCandidate[] {
+  const byElement = new Map(candidates.map((candidate) => [candidate.element, candidate] as const));
+  return candidates.filter((candidate) => {
+    const parent = candidate.element.parentElement;
+    if (!parent) return true;
+    const parentCandidate = byElement.get(parent);
+    return parentCandidate === undefined || !isNearSameRect(candidate.rect, parentCandidate.rect);
+  });
 }
 
 function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLayoutHint[] {
@@ -324,11 +403,11 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
 
   // 힌트 하나가 던져도 화면 맥락 전체를 잃지 않는다. getScreenContext 의 바깥
   // try/catch 에 맡기면 타겟과 뷰포트까지 날아가서 힌트를 안 걷는 것보다 나쁘다.
-  const push = (element: Element): void => {
+  const push = (element: Element, rect?: ScreenRect): void => {
     if (element === target || hints.length >= MAX_LAYOUT_HINTS) return;
     let built: ReturnType<typeof buildLayoutHint>;
     try {
-      built = buildLayoutHint(element, viewport);
+      built = buildLayoutHint(element, viewport, rect);
     } catch {
       return;
     }
@@ -339,6 +418,8 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
     hints.push(built.hint);
   };
 
+  // ① 랜드마크 — querySelectorAll 한 번이라 공짜다. 투명해서 칠해짐 판정에 걸리지
+  // 않는 <main>·<header> 를 여기서 건진다.
   const landmarks = Array.from(target.ownerDocument.querySelectorAll(LANDMARK_SELECTOR)).slice(
     0,
     MAX_HINT_CANDIDATES,
@@ -348,46 +429,26 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
     push(landmark);
   }
 
-  // 후보를 문서 순서로 자르면 안 된다. nearestContainer 가 body 로 폴백한 경우
-  // 문서 앞쪽의 페이지 크롬이 60칸을 다 먹고 정작 타겟 이웃은 후보에도 못 든다.
-  // 타겟의 문서 순서 위치를 중심으로 창을 잡아 rect 읽기를 묶은 뒤 거리로 정렬한다.
-  const container = nearestContainer(target);
-  const all = Array.from(container.querySelectorAll(NEIGHBOR_SELECTOR));
-  // 신원(indexOf)이 아니라 문서 위치로 기준점을 잡는다. closest 로 상호작용 조상을
-  // 찾아도 그 조상이 nearestContainer 밖에 있으면 all 에 없어서 다시 -1 이 되고,
-  // 상호작용 조상이 아예 없는 클릭(맨 div)도 -1 이다. 두 경우 모두 anchor 가 0 으로
-  // 붕괴해 창이 문서 앞쪽으로 쏠린다. 타겟 뒤에 오는 첫 후보의 위치를 삽입점으로
-  // 쓰면 타겟이 all 에 있든 없든 항상 타겟 주변이 잡힌다. 타겟 자체는 바꾸지
-  // 않는다 — 클릭 마커는 실제 클릭 요소를 쓴다.
-  let anchor = all.findIndex(
-    (candidate) => (target.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
-  );
-  if (anchor === -1) anchor = all.length;
-  const half = Math.floor(MAX_HINT_CANDIDATES / 2);
-  const windowed = all.slice(Math.max(0, anchor - half), anchor + half);
-  // 거리 계산도 rect 를 읽는다. push 의 try/catch 는 이 시점 이후에만 걸리므로,
-  // 여기서 던지는 후보를 거르지 않으면 push 에 닿기도 전에 힌트 수집 전체가
-  // 죽는다 — 하나가 던져도 나머지를 잃지 않는다는 약속이 정렬 단계에서 깨진다.
-  const neighbors: Array<{ element: Element; distance: number }> = [];
-  for (const element of windowed) {
-    try {
-      neighbors.push({
-        element,
-        distance: rectCenterDistance(rectFromDomRect(element.getBoundingClientRect()), targetRect),
-      });
-    } catch {
-      // 이 후보는 순위를 매길 수 없다 — 건너뛴다. 어차피 push 에서도 같은 rect
-      // 읽기가 다시 던져 걸러질 대상이다.
-    }
-  }
-  neighbors.sort((left, right) => left.distance - right.distance);
+  // ② rect 스캔 → ③ 예산 안에서만 style 판정 → ④ 칠해짐 + 부모 중복 접기
+  const scanned = scanBoxes(target.ownerDocument, viewport, targetRect, { x: 0, y: 0 });
+  const painted = budgetedCandidates(scanned).filter((candidate) => isPaintedBox(candidate.element));
+  const boxes = dropNearParent(painted);
 
-  // 랜드마크가 없으면 이웃이 유일한 신호다. MAX_LANDMARK_HINTS 는 랜드마크 몫을
-  // 예약하는 뜻이지 이웃의 전체 상한을 낮추라는 뜻이 아니므로, 이웃은
-  // MAX_LAYOUT_HINTS 까지 채운다.
-  for (const neighbor of neighbors) {
+  // 골격: 면적 큰 순. 화면 전체를 덮는 상자는 아무것도 알려주지 않으므로 뺀다.
+  const viewportArea = viewport.width * viewport.height;
+  const skeleton = boxes
+    .filter((candidate) => candidate.area < viewportArea * SKELETON_MAX_VIEWPORT_RATIO)
+    .sort((left, right) => right.area - left.area);
+  for (const candidate of skeleton) {
+    if (hints.length >= SKELETON_HINTS) break;
+    push(candidate.element, candidate.rect);
+  }
+
+  // 클릭 근처: 중심 거리 가까운 순. 남은 칸을 채운다. 한쪽이 부족하면 다른 쪽이 메운다.
+  const nearby = [...boxes].sort((left, right) => left.distance - right.distance);
+  for (const candidate of nearby) {
     if (hints.length >= MAX_LAYOUT_HINTS) break;
-    push(neighbor.element);
+    push(candidate.element, candidate.rect);
   }
 
   return hints;
