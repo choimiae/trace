@@ -166,6 +166,10 @@ function makeIssue(input: {
     relatedUrlPath: input.relatedUrlPath,
     exampleSessionIds: input.sessionIds.slice(0, 3),
     status: "new",
+    // 조회 시점(admin-proxy 의 findRepresentativeEvent)이 이 값으로 후보를 좁힌다.
+    // 이슈 id 에도 같은 값이 들어가지만 id 를 파싱하는 코드는 저장소에 0건이고
+    // 그 성질은 유지한다.
+    ...(input.elementKey ? { elementKey: input.elementKey } : {}),
     // 진릿값 전개를 유지한다. 호출부가 undefined 를 명시적으로 걸러도 이 자리는
     // errorSignature 가 언젠가 빈 문자열을 낼 때 필드가 생기는 것을 막는 마지막
     // 겹이다 — relatedErrorSignature 계약은 min(1) 이라 빈 문자열은 계약 위반이다.

@@ -1,6 +1,7 @@
 import type { TraceEvent } from "@trace/shared";
 import { describe, expect, it } from "vitest";
 import { detectIssues } from "./detect.js";
+import { elementKey } from "./element-identity.js";
 
 function click(partial: Partial<TraceEvent>): TraceEvent {
   return {
@@ -419,5 +420,76 @@ describe("요소 신원", () => {
     // id 에도 "|page|" 가 우연히 나타날 수 있다 — 마이그레이션 작업이 바로 그 이유로
     // 이 패턴을 버리고 접미사 정확 비교로 갔다. 여기서도 꼬리 전체를 끝에 붙여 본다.
     expect(error?.issueId).toMatch(/\|page\|error_friction$/);
+  });
+});
+
+describe("이슈가 요소 키를 싣는다", () => {
+  const click = (eventId: string, timestamp: string, hash: string, text: string): TraceEvent => ({
+    eventId,
+    sessionId: "sess_1",
+    pageId: "page_1",
+    timestamp,
+    type: "click",
+    urlPath: "/settings",
+    elementSelectorHash: hash,
+    elementTextMaskedOrLimited: text,
+    metadata: {},
+  });
+
+  it("반복 클릭 이슈에 그 요소의 키가 실린다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      events: [
+        click("evt_1", "2026-09-04T00:00:00.000Z", "aaaaaaaaaaaaaaaa", "권한 추가"),
+        click("evt_2", "2026-09-04T00:00:00.500Z", "aaaaaaaaaaaaaaaa", "권한 추가"),
+        click("evt_3", "2026-09-04T00:00:01.000Z", "aaaaaaaaaaaaaaaa", "권한 추가"),
+      ],
+      now: "2026-09-04T00:01:00.000Z",
+    });
+
+    const rage = issues.find((issue) => issue.issueType === "rage_click");
+    expect(rage?.elementKey).toBe(elementKey(click("x", "2026-09-04T00:00:00.000Z", "aaaaaaaaaaaaaaaa", "권한 추가")));
+    expect(rage?.elementKey).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  // 이슈 id 와 필드가 각각 계산되므로, 둘이 갈라지면 조회가 조용히 빗나간다.
+  // 같은 값이라는 것을 못박아 두 경로가 따로 놀지 못하게 한다.
+  it("이슈 id 안의 키와 필드 값이 같다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      events: [
+        click("evt_1", "2026-09-04T00:00:00.000Z", "bbbbbbbbbbbbbbbb", "저장"),
+        click("evt_2", "2026-09-04T00:00:00.500Z", "bbbbbbbbbbbbbbbb", "저장"),
+        click("evt_3", "2026-09-04T00:00:01.000Z", "bbbbbbbbbbbbbbbb", "저장"),
+      ],
+      now: "2026-09-04T00:01:00.000Z",
+    });
+
+    for (const issue of issues) {
+      if (issue.elementKey === undefined) continue;
+      expect(issue.issueId).toContain(`|${issue.elementKey}|`);
+    }
+  });
+
+  it("요소 메타데이터가 없는 오류 이슈에는 키가 없다", () => {
+    const issues = detectIssues({
+      projectId: "proj_1",
+      events: [
+        {
+          eventId: "evt_err",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-04T00:00:00.000Z",
+          type: "js_error",
+          urlPath: "/settings",
+          metadata: {},
+        },
+      ],
+      now: "2026-09-04T00:01:00.000Z",
+    });
+
+    const error = issues.find((issue) => issue.issueType === "error_friction");
+    expect(error).toBeDefined();
+    expect(error?.elementKey).toBeUndefined();
   });
 });
