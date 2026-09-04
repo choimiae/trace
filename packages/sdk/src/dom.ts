@@ -218,6 +218,46 @@ function allowsHintText(element: Element, tagName: string, role: string | undefi
   return TEXT_TAG_WHITELIST.has(tagName);
 }
 
+// 대체 요소는 배경색·테두리가 없어도 언제나 무언가를 그린다.
+const REPLACED_TAGS = new Set(["img", "iframe", "frame", "canvas", "video", "svg", "object", "embed"]);
+
+// 판정에만 쓰고 저장하지 않는다. 여기서 읽은 문자열은 이 함수 밖으로 나가지 않는다 —
+// 힌트에 실릴 텍스트는 allowsHintText 화이트리스트가 따로 정한다.
+function hasOwnTextNode(element: Element): boolean {
+  for (const node of Array.from(element.childNodes)) {
+    if (node.nodeType === 3 && (node.textContent ?? "").trim().length > 0) return true;
+  }
+  return false;
+}
+
+// 태그 이름이 아니라 그려진 결과로 판정한다. 이름은 사이트마다 다르지만
+// "칠해졌는가" 는 모든 프레임워크에서 같은 뜻이다.
+export function isPaintedBox(element: Element): boolean {
+  const view = element.ownerDocument.defaultView;
+  if (!view) return false;
+
+  let style: CSSStyleDeclaration;
+  try {
+    style = view.getComputedStyle(element);
+  } catch {
+    return false;
+  }
+
+  if (style.visibility === "hidden" || style.opacity === "0") return false;
+  if (REPLACED_TAGS.has(element.tagName.toLowerCase())) return true;
+
+  const background = style.backgroundColor;
+  if (background && background !== "transparent" && background !== "rgba(0, 0, 0, 0)") return true;
+
+  for (const side of ["borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth"] as const) {
+    if (Number.parseFloat(style[side]) > 0) return true;
+  }
+
+  if (style.backgroundImage && style.backgroundImage !== "none") return true;
+
+  return hasOwnTextNode(element);
+}
+
 // masked 는 "내용을 보여주지 않는다" 는 표시다. isTextEntryElement 는 textarea 와
 // contenteditable 만 잡고 <input> 은 잡지 않으므로, 그것만으로 계산하면 password
 // 입력조차 masked:false 가 되어 미리보기가 평범한 박스로 그려지고 Task 3 의 서버

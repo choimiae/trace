@@ -1,6 +1,6 @@
 import { isSafeElementSelectorHash, screenContextSchema } from "@trace/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getElementMetadata, getScreenContext } from "./dom.js";
+import { getElementMetadata, getScreenContext, isPaintedBox } from "./dom.js";
 
 // 이전 테스트가 남긴 DOM 이 다음 테스트로 새면 rect 가 우연히 0으로 겹치는 등
 // 재현 불가능한 통과/실패가 생긴다. 매 테스트를 빈 body 에서 시작한다.
@@ -20,6 +20,15 @@ function stubRect(
     bottom: rect.y + rect.height,
     toJSON: () => ({}),
   }));
+}
+
+function stubStyle(element: Element, style: Partial<CSSStyleDeclaration>): void {
+  const view = element.ownerDocument.defaultView!;
+  const original = view.getComputedStyle.bind(view);
+  vi.spyOn(view, "getComputedStyle").mockImplementation((target: Element, pseudo?: string | null) => {
+    if (target !== element) return original(target, pseudo ?? undefined);
+    return { ...original(target, pseudo ?? undefined), ...style } as CSSStyleDeclaration;
+  });
 }
 
 // 생산자(SDK)가 만든 값은 소비자(수집 API)의 screenContextSchema 를 항상 통과해야 한다.
@@ -881,5 +890,55 @@ describe("getScreenContext 소비자 계약", () => {
     const context = expectValidScreenContext(element);
 
     expect(context.target?.textMaskedOrLimited).toBe(`${"가".repeat(107)}[redacted]`);
+  });
+});
+
+describe("isPaintedBox", () => {
+  it("배경색이 있으면 상자다", () => {
+    document.body.innerHTML = `<div id="a">x</div>`;
+    const element = document.querySelector("#a")!;
+    stubStyle(element, { backgroundColor: "rgb(240, 240, 240)" });
+    expect(isPaintedBox(element)).toBe(true);
+  });
+
+  it("테두리가 있으면 상자다", () => {
+    document.body.innerHTML = `<div id="a"></div>`;
+    const element = document.querySelector("#a")!;
+    stubStyle(element, { borderTopWidth: "1px" });
+    expect(isPaintedBox(element)).toBe(true);
+  });
+
+  it("직접 텍스트 노드가 있으면 상자다", () => {
+    document.body.innerHTML = `<div id="a">등록된 연관 문서</div>`;
+    expect(isPaintedBox(document.querySelector("#a")!)).toBe(true);
+  });
+
+  // 자손의 텍스트는 자기 것이 아니다. 이걸 자기 것으로 세면 조상 래퍼가 전부
+  // 상자가 되어 겹겹이 같은 영역을 그린다.
+  it("자손의 텍스트만 있으면 상자가 아니다", () => {
+    document.body.innerHTML = `<div id="a"><span>글자</span></div>`;
+    expect(isPaintedBox(document.querySelector("#a")!)).toBe(false);
+  });
+
+  // 대체 요소는 언제나 무언가를 그린다. 배경색·테두리가 없어도 사람 눈에 보인다.
+  it("img·iframe·canvas 는 언제나 상자다", () => {
+    document.body.innerHTML = `<img id="i"><iframe id="f"></iframe><canvas id="c"></canvas>`;
+    for (const id of ["#i", "#f", "#c"]) {
+      expect(isPaintedBox(document.querySelector(id)!)).toBe(true);
+    }
+  });
+
+  it("아무것도 칠해지지 않은 래퍼는 상자가 아니다", () => {
+    document.body.innerHTML = `<div id="a"><span>글자</span></div>`;
+    const element = document.querySelector("#a")!;
+    stubStyle(element, { backgroundColor: "rgba(0, 0, 0, 0)", borderTopWidth: "0px" });
+    expect(isPaintedBox(element)).toBe(false);
+  });
+
+  it("visibility:hidden 이면 상자가 아니다", () => {
+    document.body.innerHTML = `<div id="a">글자</div>`;
+    const element = document.querySelector("#a")!;
+    stubStyle(element, { visibility: "hidden" });
+    expect(isPaintedBox(element)).toBe(false);
   });
 });
