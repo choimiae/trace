@@ -968,18 +968,28 @@
     width: auto;
   }
 
-  .page-header,
-  .header-actions {
-    align-items: flex-start;
-  }
-
+  /* 세로로 세우면 자식 6개가 한 줄씩 차지하고, space-between 이 그 열을
+     오른쪽으로 밀어 버튼 오른쪽 끝이 들쭉날쭉해진다. 부모를 접고 버튼은
+     가로로 흘려보낸다. */
   .page-header {
-    gap: 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
   }
 
   .header-actions {
-    flex-direction: column;
-    gap: 6px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .project-switcher {
+    width: 100%;
+  }
+
+  .project-switcher select {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
   }
 
   .member-row {
