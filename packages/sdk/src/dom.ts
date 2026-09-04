@@ -231,15 +231,21 @@ export function isPaintedBox(element: Element): boolean {
   const view = element.ownerDocument.defaultView;
   if (!view) return false;
 
+  const tagName = element.tagName.toLowerCase();
+
   let style: CSSStyleDeclaration;
   try {
     style = view.getComputedStyle(element);
   } catch {
-    return false;
+    // 실측: jsdom 기본 스타일시트에는 iframe:focus 규칙이 있고, 이를 매칭하는
+    // nwsapi 는 그 요소의 contentDocument 를 읽는다. 다른 출처 iframe 이
+    // contentDocument 접근에서 던지면 우리 코드가 그걸 부르기도 전에 여기서
+    // 걸린다. 대체 요소는 스타일을 못 읽어도 언제나 무언가를 그리므로 구제한다.
+    return REPLACED_TAGS.has(tagName);
   }
 
   if (style.visibility === "hidden" || style.opacity === "0") return false;
-  if (REPLACED_TAGS.has(element.tagName.toLowerCase())) return true;
+  if (REPLACED_TAGS.has(tagName)) return true;
 
   const background = style.backgroundColor;
   if (background && background !== "transparent" && background !== "rgba(0, 0, 0, 0)") return true;
@@ -376,6 +382,48 @@ export function scanBoxes(
   return candidates;
 }
 
+const FRAME_SELECTOR = "iframe, frame";
+
+// 다른 출처면 contentDocument 가 null 이고, 엔진에 따라 접근 자체가 던진다.
+// 두 경우를 모두 여기서 삼킨다 — 밖으로 새면 화면 맥락 전체가 사라진다.
+function sameOriginDocument(frame: Element): Document | undefined {
+  try {
+    return (frame as HTMLIFrameElement).contentDocument ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// 한 겹만 내려간다. 재귀하면 비용이 문서 구조에 따라 예측 불가능해진다.
+// 다른 출처 프레임은 여기서 아무것도 더하지 않는다 — 프레임 요소 자체는 부모
+// 문서 스캔에서 이미 후보로 잡혔고(REPLACED_TAGS), 그 사각형이 "볼 수 없는 영역"
+// 으로 남는다.
+function scanFrameBoxes(
+  doc: Document,
+  viewport: ScreenViewport,
+  targetRect: ScreenRect,
+): BoxCandidate[] {
+  const collected: BoxCandidate[] = [];
+
+  for (const frame of Array.from(doc.querySelectorAll(FRAME_SELECTOR))) {
+    let frameRect: ScreenRect;
+    try {
+      frameRect = rectFromDomRect(frame.getBoundingClientRect());
+    } catch {
+      continue;
+    }
+    if (frameRect.width < MIN_BOX_SIDE || frameRect.height < MIN_BOX_SIDE) continue;
+    if (!intersectsViewportRect(frameRect, viewport)) continue;
+
+    const innerDoc = sameOriginDocument(frame);
+    if (!innerDoc) continue;
+
+    collected.push(...scanBoxes(innerDoc, viewport, targetRect, { x: frameRect.x, y: frameRect.y }));
+  }
+
+  return collected;
+}
+
 // 면적과 거리 양쪽에서 절반씩 뽑는다. 한쪽으로만 뽑으면 다른 쪽이 후보에조차 못 든다.
 function budgetedCandidates(candidates: BoxCandidate[]): BoxCandidate[] {
   const half = Math.floor(MAX_HINT_CANDIDATES / 2);
@@ -438,7 +486,10 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   }
 
   // ② rect 스캔 → ③ 예산 안에서만 style 판정 → ④ 칠해짐 + 부모 중복 접기
-  const scanned = scanBoxes(target.ownerDocument, viewport, targetRect, { x: 0, y: 0 });
+  const scanned = [
+    ...scanBoxes(target.ownerDocument, viewport, targetRect, { x: 0, y: 0 }),
+    ...scanFrameBoxes(target.ownerDocument, viewport, targetRect),
+  ];
   const painted = budgetedCandidates(scanned).filter((candidate) => isPaintedBox(candidate.element));
   const boxes = dropNearParent(painted);
 

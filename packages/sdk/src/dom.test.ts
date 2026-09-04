@@ -1108,3 +1108,74 @@ describe("비용 상한", () => {
     expect(straddle?.rect.x).toBe(150);
   });
 });
+
+describe("iframe", () => {
+  // 실측: 실제 제품 팝업의 우측 본문 1056×576 이 통째로 같은 출처 iframe 이었고
+  // 내부 요소 31개를 하나도 보지 못해 미리보기 절반이 빈 상자였다.
+  it("같은 출처 iframe 내부 상자를 부모 좌표로 보정해 담는다", () => {
+    document.body.innerHTML = `<div id="side">사이드</div><iframe id="f"></iframe>`;
+    const frame = document.querySelector("#f") as HTMLIFrameElement;
+    stubRect(document.querySelector("#side")!, { x: 0, y: 0, width: 300, height: 600 });
+    stubRect(frame, { x: 400, y: 100, width: 600, height: 500 });
+
+    // createHTMLDocument 로 만든 문서는 defaultView 가 null 이고, isPaintedBox 는
+    // defaultView 가 없으면 곧바로 false 를 돌려준다 — 그러면 내부 상자가 전부
+    // 걸러져 구현이 옳아도 이 테스트가 실패한다. 붙인 iframe 의 실제
+    // contentDocument 를 쓴다(defaultView 가 있다).
+    const innerDoc = frame.contentDocument!;
+    innerDoc.body.innerHTML = `<div id="in">문서 본문</div>`;
+    const inner = innerDoc.querySelector("#in")!;
+    stubRect(inner, { x: 10, y: 20, width: 500, height: 400 });
+
+    const context = getScreenContext(document.querySelector("#side")!)!;
+    // iframe 이 x:400,y:100 이므로 내부 x:10,y:20 은 부모 기준 x:410,y:120 이다.
+    expect(context.layoutHints).toContainEqual(
+      expect.objectContaining({ rect: { x: 410, y: 120, width: 500, height: 400 } }),
+    );
+  });
+
+  // contentDocument 는 null 을 주고 contentWindow.document 는 SecurityError 를
+  // 던진다(2026-09-04 실측). 던지는 쪽을 놓치면 예외가 getScreenContext 바깥
+  // try/catch 까지 올라가 화면 맥락이 통째로 사라진다.
+  it("다른 출처 iframe 은 건너뛰되 사각형은 남긴다", () => {
+    document.body.innerHTML = `<div id="side">사이드</div><iframe id="f"></iframe>`;
+    const frame = document.querySelector("#f") as HTMLIFrameElement;
+    stubRect(document.querySelector("#side")!, { x: 0, y: 0, width: 300, height: 600 });
+    stubRect(frame, { x: 400, y: 100, width: 600, height: 500 });
+    Object.defineProperty(frame, "contentDocument", {
+      get() { throw new DOMException("blocked", "SecurityError"); },
+      configurable: true,
+    });
+
+    const context = getScreenContext(document.querySelector("#side")!)!;
+    expect(context.layoutHints).toContainEqual(
+      expect.objectContaining({ tagName: "iframe", rect: { x: 400, y: 100, width: 600, height: 500 } }),
+    );
+  });
+
+  it("contentDocument 가 null 이어도 조용히 건너뛴다", () => {
+    document.body.innerHTML = `<div id="side">사이드</div><iframe id="f"></iframe>`;
+    const frame = document.querySelector("#f") as HTMLIFrameElement;
+    stubRect(document.querySelector("#side")!, { x: 0, y: 0, width: 300, height: 600 });
+    stubRect(frame, { x: 400, y: 100, width: 600, height: 500 });
+    Object.defineProperty(frame, "contentDocument", { value: null, configurable: true });
+
+    expect(() => getScreenContext(document.querySelector("#side")!)).not.toThrow();
+  });
+
+  // 같은 출처라도 텍스트 정책은 부모 문서와 같다. div 는 화이트리스트에 없다.
+  it("iframe 내부 div 에도 글자가 실리지 않는다", () => {
+    document.body.innerHTML = `<div id="side">사이드</div><iframe id="f"></iframe>`;
+    const frame = document.querySelector("#f") as HTMLIFrameElement;
+    stubRect(document.querySelector("#side")!, { x: 0, y: 0, width: 300, height: 600 });
+    stubRect(frame, { x: 400, y: 100, width: 600, height: 500 });
+    const innerDoc = frame.contentDocument!;
+    innerDoc.body.innerHTML = `<div id="in">비밀 문서 내용</div>`;
+    stubRect(innerDoc.querySelector("#in")!, { x: 10, y: 20, width: 500, height: 400 });
+
+    const context = getScreenContext(document.querySelector("#side")!)!;
+    for (const hint of context.layoutHints) {
+      expect(hint.textMaskedOrLimited).not.toBe("비밀 문서 내용");
+    }
+  });
+});
