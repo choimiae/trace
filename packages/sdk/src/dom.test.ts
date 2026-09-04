@@ -1134,9 +1134,15 @@ describe("iframe", () => {
     );
   });
 
-  // contentDocument 는 null 을 주고 contentWindow.document 는 SecurityError 를
-  // 던진다(2026-09-04 실측). 던지는 쪽을 놓치면 예외가 getScreenContext 바깥
-  // try/catch 까지 올라가 화면 맥락이 통째로 사라진다.
+  // 실제 브라우저에서 다른 출처 프레임은 contentDocument 가 null 을 돌려주고,
+  // 던지는 것은 contentWindow.document 다(2026-09-04 실측). 우리 코드는
+  // contentDocument 만 읽으므로 실전에서는 null 경로를 탄다 — 그 경로는 아래
+  // "contentDocument 가 null 이어도" 테스트가 덮는다.
+  //
+  // 이 테스트는 일부러 더 가혹하게, contentDocument 자체가 던지게 만들어
+  // sameOriginDocument 의 방어적 try/catch 를 실행시킨다. 그 대가로 jsdom 의
+  // iframe:focus 매칭이 같은 getter 를 읽어 getComputedStyle 안에서도 터지는데,
+  // 이는 실제 브라우저에 없는 인공물이다.
   it("다른 출처 iframe 은 건너뛰되 사각형은 남긴다", () => {
     document.body.innerHTML = `<div id="side">사이드</div><iframe id="f"></iframe>`;
     const frame = document.querySelector("#f") as HTMLIFrameElement;
