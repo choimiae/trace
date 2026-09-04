@@ -473,13 +473,24 @@ function isNearSameRect(left: ScreenRect, right: ScreenRect): boolean {
 }
 
 // 래퍼 div 가 겹겹이 쌓인 구조에서 같은 상자를 여러 번 그리는 것을 막는다.
+// 이 함수는 칠해짐 판정(isPaintedBox) 보다 먼저 돈다 — rect 만 보면 싸기
+// 때문이다. 그래서 사슬 중 "바깥"(조상)이 아니라 "안쪽"(자손)을 남겨야 한다.
+// <td><div style="background:#eee">저장</div></td> 처럼 div 가 td 를 꽉 채우는
+// 흔한 모양에서 실제로 칠해지는 쪽은 안쪽 div 다 — 바깥 td 를 남기면 그 td 는
+// 배경도 테두리도 글자도 없어 뒤이은 칠해짐 판정에서 탈락하고, 상자 자체가
+// 통째로 사라진다. 자식을 남기려면 "나(부모)와 rect 가 거의 같은 자식이
+// 있는가"를 봐야 한다 — 예전처럼 "나(자식)와 rect 가 거의 같은 부모가
+// 있는가"를 보면 반대로 자식이 버려진다.
 function dropNearParent(candidates: BoxCandidate[]): BoxCandidate[] {
   const byElement = new Map(candidates.map((candidate) => [candidate.element, candidate] as const));
   return candidates.filter((candidate) => {
-    const parent = candidate.element.parentElement;
-    if (!parent) return true;
-    const parentCandidate = byElement.get(parent);
-    return parentCandidate === undefined || !isNearSameRect(candidate.rect, parentCandidate.rect);
+    for (const child of Array.from(candidate.element.children)) {
+      const childCandidate = byElement.get(child);
+      if (childCandidate !== undefined && isNearSameRect(candidate.rect, childCandidate.rect)) {
+        return false;
+      }
+    }
+    return true;
   });
 }
 

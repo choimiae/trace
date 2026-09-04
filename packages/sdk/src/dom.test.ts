@@ -986,13 +986,15 @@ describe("비시맨틱 화면에서도 구조를 담는다", () => {
       stubRect(element, rect);
       stubStyle(element, { backgroundColor: "rgb(250, 250, 250)", borderTopWidth: "1px" });
     }
-    // html·body 를 #shell 과 정확히 같은 rect 로 두면(과거엔 무해했다) 지금은
-    // dropNearParent 가 스캔 직후에 돌아서 칠해진 #shell 을 칠해지지 않은
-    // body/html 쪽으로 접어버린다 — 셋 다 rect 가 같으면 조상만 살아남는
-    // 접기 규칙 때문이다. 실제 페이지에서도 body 기본 마진 등으로 흔히
-    // 어긋나는 값이니, 여기서도 4px 문턱을 넘겨 셋을 갈라 둔다.
-    stubRect(document.body, { x: 0, y: 0, width: 1000, height: 706 });
-    stubRect(document.documentElement, { x: 0, y: 0, width: 1000, height: 712 });
+    // html·body 를 #shell 과 정확히 같은 rect 로 둔다. scanBoxes 가 이제
+    // doc.body 이하만 훑어(<head> 예산 낭비를 막는 수정) body·html 자신은 애초에
+    // 후보에 오르지 않으므로 dropNearParent 가 셋 중 무엇을 남기든 무관하고,
+    // 설령 셋이 함께 후보가 되는 경로가 생기더라도 dropNearParent 는 이제
+    // "안쪽"(자손)을 남기므로 칠해지는 #shell 이 살아남는다. 예전엔 이 셋을 4px
+    // 문턱 너머로 갈라 둬야 #shell 이 살아남았지만(부모를 남기는 옛 접기
+    // 규칙 때문), 이제는 실제 페이지처럼 셋이 같은 rect 여도 문제가 없다.
+    stubRect(document.body, { x: 0, y: 0, width: 1000, height: 700 });
+    stubRect(document.documentElement, { x: 0, y: 0, width: 1000, height: 700 });
     return document.querySelector("#side1")!;
   }
 
@@ -1021,6 +1023,37 @@ describe("비시맨틱 화면에서도 구조를 담는다", () => {
   it("생산자 출력이 계약을 통과한다", () => {
     const target = buildNonSemanticScreen();
     expect(screenContextSchema.safeParse(getScreenContext(target)).success).toBe(true);
+  });
+});
+
+describe("근접-동일 rect 접기는 칠해지는 안쪽을 남긴다", () => {
+  // <td><div style="background:#eee">저장</div></td> — div 가 td 를 꽉 채우는
+  // 흔한 모양이다. dropNearParent 가 isPaintedBox 보다 먼저 돌기 때문에, 바깥
+  // (조상)을 남기면 배경 없는 td 만 남아 다음 칠해짐 판정에서 탈락하고 상자
+  // 자체가 사라진다. 안쪽(자손)을 남겨야 살아남는다.
+  it("배경 없는 td 가 배경 있는 div 를 감싸고 rect 가 같으면 안쪽 div 가 힌트로 남는다", () => {
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <table><tbody><tr><td id="cell"><div id="fill">저장</div></td></tr></tbody></table>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    const rect = { x: 20, y: 20, width: 80, height: 30 };
+    stubRect(document.querySelector("#cell")!, rect);
+    stubRect(document.querySelector("#fill")!, rect);
+    stubStyle(document.querySelector("#cell")!, { backgroundColor: "rgba(0, 0, 0, 0)", borderTopWidth: "0px" });
+    stubStyle(document.querySelector("#fill")!, { backgroundColor: "rgb(238, 238, 238)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const hint = context.layoutHints.find(
+      (candidate) =>
+        candidate.rect.x === rect.x &&
+        candidate.rect.y === rect.y &&
+        candidate.rect.width === rect.width &&
+        candidate.rect.height === rect.height,
+    );
+
+    expect(hint).toBeDefined();
+    expect(hint?.tagName).toBe("div");
   });
 });
 
