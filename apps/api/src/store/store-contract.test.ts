@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import type { TraceEvent } from "@trace/shared";
+import { elementKey } from "../detection/element-identity.js";
 import { MemoryStore } from "./memory-store.js";
 import { SqliteStore } from "./sqlite-store.js";
 import { assertDeployableTraceStore, type TraceStore } from "./types.js";
@@ -1508,6 +1510,81 @@ function describeTraceStoreContract(
       expect(matched.map((matchedEvent) => matchedEvent.eventId)).toEqual(["evt_has_target", "evt_only_frame"]);
       expect(matched[0]?.screenContext?.target?.tagName).toBe("button");
       expect(matched[1]?.screenContext?.target).toBeUndefined();
+    });
+
+    it("요소 키를 넘기면 그 요소의 클릭만 돌려준다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const screenContext = {
+        viewport: { width: 1440, height: 900 },
+        target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
+        layoutHints: [],
+      };
+      const click = (eventId: string, timestamp: string, hash: string | undefined, text: string) => ({
+        eventId,
+        sessionId: "sess_1",
+        pageId: "page_1",
+        timestamp,
+        type: "click" as const,
+        urlPath: "/settings",
+        ...(hash === undefined ? {} : { elementSelectorHash: hash }),
+        elementTextMaskedOrLimited: text,
+        metadata: {},
+        screenContext,
+      });
+
+      // 리포트 내보내기와 오류 발생은 지문이 같고 글자만 다르다. 실제 데모에서
+      // 관측된 형태이고, 이번 결함이 이 둘을 뭉갰다.
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-04T00:00:10.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          click("evt_save", "2026-09-04T00:00:01.000Z", "1111111111111111", "저장"),
+          click("evt_report", "2026-09-04T00:00:02.000Z", "2222222222222222", "리포트 내보내기"),
+          click("evt_error", "2026-09-04T00:00:03.000Z", "2222222222222222", "오류 발생"),
+          click("evt_legacy", "2026-09-04T00:00:04.000Z", undefined, "지문 없음"),
+        ],
+      });
+
+      const query = {
+        projectId: project.projectId,
+        sessionIds: ["sess_1"],
+        urlPath: "/settings",
+        from: "2026-09-04T00:00:00.000Z",
+        to: "2026-09-04T00:00:09.000Z",
+      };
+
+      const reportKey = elementKey(click("x", "2026-09-04T00:00:02.000Z", "2222222222222222", "리포트 내보내기") as TraceEvent);
+      const errorKey = elementKey(click("x", "2026-09-04T00:00:03.000Z", "2222222222222222", "오류 발생") as TraceEvent);
+      expect(reportKey).not.toBe(errorKey);
+
+      const report = await store.findScreenContextEvents({ ...query, elementKey: reportKey });
+      expect(report.map((event) => event.eventId)).toEqual(["evt_report"]);
+
+      const error = await store.findScreenContextEvents({ ...query, elementKey: errorKey });
+      expect(error.map((event) => event.eventId)).toEqual(["evt_error"]);
+
+      // 키를 안 넘기면 지금 그대로 — 세션당 가장 이른 후보 하나.
+      const unfiltered = await store.findScreenContextEvents(query);
+      expect(unfiltered.map((event) => event.eventId)).toEqual(["evt_save"]);
+
+      // 지문이 없는 옛 이벤트는 element_key 가 NULL 이라 어떤 키 조회에도 걸리지
+      // 않는다. 위 두 단정이 evt_legacy 를 빼고 있지만, 요소 신원 마이그레이션이
+      // 과거 지문을 전부 NULL 로 만들었으므로 이 성질을 따로 못박는다.
+      const legacyKey = elementKey(click("x", "2026-09-04T00:00:04.000Z", undefined, "지문 없음") as TraceEvent);
+      expect(legacyKey).toBeUndefined();
+
+      const everyKeyed = await Promise.all(
+        [reportKey, errorKey].map((key) => store.findScreenContextEvents({ ...query, elementKey: key })),
+      );
+      expect(everyKeyed.flat().map((event) => event.eventId)).not.toContain("evt_legacy");
     });
 
     it("cutoff 이전 이벤트만 삭제한다", async () => {

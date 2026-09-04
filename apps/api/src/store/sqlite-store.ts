@@ -584,13 +584,14 @@ export class SqliteStore implements TraceStore {
       query.types === undefined || query.types.length === 0
         ? ""
         : ` AND type IN (${query.types.map(() => "?").join(", ")})`;
+    const elementFilter = query.elementKey === undefined ? "" : " AND element_key = ?";
     // (project_id, session_id, timestamp) 인덱스로 세션마다 후보 몇 건만 읽는다.
     // 한 행만 읽으면 클릭 지점 없는 프레임뿐인 이벤트나 파싱 불가한 행이 그 자리를
     // 차지해 버리므로, 후보 상한까지 읽고 pickRepresentative... 로 고른다.
     const statement = this.db.prepare(
       `SELECT * FROM events
        WHERE project_id = ? AND session_id = ? AND screen_context IS NOT NULL${pathFilter}
-         AND timestamp BETWEEN ? AND ?${typeFilter}
+         AND timestamp BETWEEN ? AND ?${typeFilter}${elementFilter}
        ORDER BY timestamp
        LIMIT ${SCREEN_CONTEXT_CANDIDATE_LIMIT}`,
     );
@@ -604,6 +605,7 @@ export class SqliteStore implements TraceStore {
         query.from,
         query.to,
         ...(query.types ?? []),
+        ...(query.elementKey === undefined ? [] : [query.elementKey]),
       ) as Row[];
       const candidates = rows
         .map((row) => this.toEvent(row))

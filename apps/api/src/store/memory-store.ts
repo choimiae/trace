@@ -1,5 +1,6 @@
 import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
+import { elementKey } from "../detection/element-identity.js";
 import { buildDashboardSummary } from "./dashboard-summary.js";
 import {
   normalizeAllowedDomains,
@@ -334,7 +335,8 @@ export class MemoryStore implements TraceStore {
             (query.urlPath === undefined || event.urlPath === query.urlPath) &&
             event.timestamp >= query.from &&
             event.timestamp <= query.to &&
-            (query.types === undefined || query.types.length === 0 || query.types.includes(event.type)),
+            (query.types === undefined || query.types.length === 0 || query.types.includes(event.type)) &&
+            (query.elementKey === undefined || elementKey(event) === query.elementKey),
         )
         .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
       const picked = pickRepresentativeScreenContextEvent(candidates);

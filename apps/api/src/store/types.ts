@@ -112,6 +112,9 @@ export interface ScreenContextEventQuery {
   from: string;
   to: string;
   types?: TraceEvent["type"][];
+  // 넘기면 그 요소의 이벤트만 후보가 된다. 안 넘기면 요소로 거르지 않는다 —
+  // 요소를 모르는 이슈(long_pause·error_friction)가 그 경로를 쓴다.
+  elementKey?: string;
 }
 
 export interface StoredSession {
