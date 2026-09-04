@@ -17,8 +17,10 @@ const SKELETON_HINTS = 12;
 // 랜드마크가 골격 칸을 다 먹지 않게 한다. 랜드마크가 20개인 문서도 있다.
 const MAX_LANDMARK_HINTS = 4;
 // getComputedStyle 호출 예산이다. 2,360 요소 화면에서 전체를 훑으면 13ms,
-// 60개만 보면 0.9ms 로 측정됐다.
-const MAX_HINT_CANDIDATES = 60;
+// 200개만 보면 1.2ms 로 측정됐다. 문서 크기와 무관하게 비용을 묶는 것이
+// 이 상수의 목적이므로, 실제 업무 화면(후보 574개)에서 칠해진 상자
+// 생존율을 확인하고 60 에서 200 으로 올렸다.
+const MAX_HINT_CANDIDATES = 200;
 // rect 읽기 상한. 2,360 요소에 2.3ms 였다. 거대 문서에서 선형으로 늘어나는 것을 막는다.
 const MAX_RECT_SCAN = 3000;
 // 이보다 작으면 사람 눈에 상자가 아니다.
@@ -485,13 +487,17 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
     push(landmark);
   }
 
-  // ② rect 스캔 → ③ 예산 안에서만 style 판정 → ④ 칠해짐 + 부모 중복 접기
+  // ② rect 스캔 → ③ 부모 중복 접기 → ④ 예산 안에서만 style 판정(칠해짐).
+  // 접기를 예산보다 먼저 둔다 — rect 만 보므로 싸고, 실측(574 후보 페이지)에서
+  // 면적 상위를 차지하던 중첩 래퍼를 예산이 소진되기 전에 걷어낸다. 순서를
+  // 바꾸면(예산 먼저) 예산 60~200 칸이 어차피 버려질 래퍼로 채워져 칠해진
+  // 상자가 살아남을 자리를 잃는다.
   const scanned = [
     ...scanBoxes(target.ownerDocument, viewport, targetRect, { x: 0, y: 0 }),
     ...scanFrameBoxes(target.ownerDocument, viewport, targetRect),
   ];
-  const painted = budgetedCandidates(scanned).filter((candidate) => isPaintedBox(candidate.element));
-  const boxes = dropNearParent(painted);
+  const collapsed = dropNearParent(scanned);
+  const boxes = budgetedCandidates(collapsed).filter((candidate) => isPaintedBox(candidate.element));
 
   // 골격: 면적 큰 순. 화면 전체를 덮는 상자는 아무것도 알려주지 않으므로 뺀다.
   const viewportArea = viewport.width * viewport.height;
