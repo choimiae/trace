@@ -3,7 +3,7 @@ import type { TraceEvent } from "@trace/shared";
 import { elementKey } from "../detection/element-identity.js";
 import { MemoryStore } from "./memory-store.js";
 import { SqliteStore } from "./sqlite-store.js";
-import { assertDeployableTraceStore, type TraceStore } from "./types.js";
+import { assertDeployableTraceStore, SCREEN_CONTEXT_CANDIDATE_LIMIT, type TraceStore } from "./types.js";
 
 interface StoreUnderTest {
   store: TraceStore;
@@ -1584,7 +1584,75 @@ function describeTraceStoreContract(
       const everyKeyed = await Promise.all(
         [reportKey, errorKey].map((key) => store.findScreenContextEvents({ ...query, elementKey: key })),
       );
-      expect(everyKeyed.flat().map((event) => event.eventId)).not.toContain("evt_legacy");
+      // element_key 가 NULL 인 evt_legacy 는 두 키 조회 어느 쪽에도 들어오지
+      // 않아야 한다. 스토어가 elementKey 필터를 아예 무시하고 세션의 이벤트를
+      // 죄다 돌려주는 결함이 있다면 evt_legacy 도 섞여 나온다 — 그래서 이 배열이
+      // report·error 두 건만으로 정확히 채워지는지까지 함께 확인한다("아무것도
+      // 안 돌아온다" 로도 통과해 버리는 단정이면 그 결함을 못 잡는다).
+      expect(everyKeyed.flat().map((event) => event.eventId).sort()).toEqual(["evt_error", "evt_report"]);
+    });
+
+    it("후보가 SCREEN_CONTEXT_CANDIDATE_LIMIT 를 넘어도 요소 필터가 LIMIT 보다 먼저 적용된다", async () => {
+      // 대상 요소의 유일한 클릭을 시간순 11번째(상한 10건 밖)에 둔다. 요소 필터가
+      // SQL 의 LIMIT 뒤로 밀리는 구현(상위 10건만 읽고 그 다음 JS 에서 걸러내는
+      // 방식)이라면 그 클릭은 애초에 읽히지도 않아 결과가 비어 버린다. 지금
+      // 픽스처(4건)는 SCREEN_CONTEXT_CANDIDATE_LIMIT(10) 을 넘지 않아 이 순서
+      // 회귀를 구분하지 못했다.
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const screenContext = {
+        viewport: { width: 1440, height: 900 },
+        target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
+        layoutHints: [],
+      };
+      const click = (eventId: string, timestamp: string, hash: string, text: string) => ({
+        eventId,
+        sessionId: "sess_1",
+        pageId: "page_1",
+        timestamp,
+        type: "click" as const,
+        urlPath: "/settings",
+        elementSelectorHash: hash,
+        elementTextMaskedOrLimited: text,
+        metadata: {},
+        screenContext,
+      });
+
+      const noise = Array.from({ length: SCREEN_CONTEXT_CANDIDATE_LIMIT }, (_, index) =>
+        click(
+          `evt_noise_${index}`,
+          `2026-09-04T00:00:${String(index).padStart(2, "0")}.000Z`,
+          "9999999999999999",
+          "다른 버튼",
+        ),
+      );
+      const target = click("evt_target", `2026-09-04T00:00:${SCREEN_CONTEXT_CANDIDATE_LIMIT}.000Z`, "1111111111111111", "대상 버튼");
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-04T00:01:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [...noise, target],
+      });
+
+      const targetKey = elementKey(target as TraceEvent)!;
+
+      const matched = await store.findScreenContextEvents({
+        projectId: project.projectId,
+        sessionIds: ["sess_1"],
+        urlPath: "/settings",
+        from: "2026-09-04T00:00:00.000Z",
+        to: "2026-09-04T00:01:00.000Z",
+        elementKey: targetKey,
+      });
+
+      expect(matched.map((event) => event.eventId)).toEqual(["evt_target"]);
     });
 
     it("cutoff 이전 이벤트만 삭제한다", async () => {
