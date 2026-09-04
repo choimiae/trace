@@ -465,6 +465,10 @@ describe("이슈가 요소 키를 싣는다", () => {
       now: "2026-09-04T00:01:00.000Z",
     });
 
+    // 아래 루프는 키가 없는 이슈를 건너뛴다. 키를 실은 이슈가 하나도 없으면
+    // 루프 본문이 한 번도 돌지 않아 단정 없이 통과한다 — 먼저 못박는다.
+    expect(issues.some((issue) => issue.elementKey !== undefined)).toBe(true);
+
     for (const issue of issues) {
       if (issue.elementKey === undefined) continue;
       expect(issue.issueId).toContain(`|${issue.elementKey}|`);
