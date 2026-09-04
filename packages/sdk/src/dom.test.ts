@@ -1166,7 +1166,16 @@ describe("iframe", () => {
     stubRect(frame, { x: 400, y: 100, width: 600, height: 500 });
     Object.defineProperty(frame, "contentDocument", { value: null, configurable: true });
 
-    expect(() => getScreenContext(document.querySelector("#side")!)).not.toThrow();
+    const context = getScreenContext(document.querySelector("#side")!);
+
+    // not.toThrow() 로는 못 잡는다 — getScreenContext 의 바깥 try/catch 가 모든
+    // 예외를 삼켜 undefined 를 돌려주므로 그 단정은 구현과 무관하게 통과한다.
+    // 널 가드가 빠지면 scanBoxes 가 null.querySelectorAll 에서 터지고 여기서
+    // context 자체가 undefined 가 된다.
+    expect(context).toBeDefined();
+    expect(context!.layoutHints).toContainEqual(
+      expect.objectContaining({ tagName: "iframe", rect: { x: 400, y: 100, width: 600, height: 500 } }),
+    );
   });
 
   // 같은 출처라도 텍스트 정책은 부모 문서와 같다. div 는 화이트리스트에 없다.
