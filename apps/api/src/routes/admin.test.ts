@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { TraceEvent } from "@trace/shared";
 import { createApp } from "../app.js";
 import { createAdminSessionForUser } from "../auth/session.js";
 import type { AdminAuthConfig } from "../auth/config.js";
+import { elementKey } from "../detection/element-identity.js";
 import { MemoryStore } from "../store/memory-store.js";
 
 const authConfig: AdminAuthConfig = {
@@ -2304,5 +2306,225 @@ describe("admin bff routes", () => {
     expect(listResponse.json()[0]).not.toHaveProperty("representativeEvent");
     expect(detailResponse.statusCode).toBe(200);
     expect(detailResponse.json()).not.toHaveProperty("representativeEvent");
+  });
+
+  it("요소 키가 있는 이슈는 다른 요소의 클릭을 대표로 쓰지 않는다", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-09-04T00:00:00.000Z",
+    });
+
+    const screenContext = {
+      viewport: { width: 1440, height: 900 },
+      target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
+      layoutHints: [],
+    };
+    const click = (eventId: string, timestamp: string, hash: string, text: string) => ({
+      eventId,
+      sessionId: "sess_1",
+      pageId: "page_1",
+      timestamp,
+      type: "click" as const,
+      urlPath: "/settings",
+      elementSelectorHash: hash,
+      elementTextMaskedOrLimited: text,
+      metadata: {},
+      screenContext,
+    });
+
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-04T00:00:10.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [
+        // 이슈 구간 밖(lead-in 자리)의 같은 요소 클릭. lead-in 을 없앴으므로 안 뽑혀야 한다.
+        click("evt_target_before", "2026-09-04T00:00:00.000Z", "1111111111111111", "권한 추가"),
+        // 이슈 구간 안이면서 대상보다 이른 다른 요소. 후보 선택은 가장 이른 것을
+        // 고르므로, 요소 필터가 없으면 이것이 뽑힌다. 지금 결함이 정확히 이것이다.
+        click("evt_other", "2026-09-04T00:00:05.000Z", "2222222222222222", "저장"),
+        click("evt_target_in", "2026-09-04T00:00:05.500Z", "1111111111111111", "권한 추가"),
+      ],
+    });
+
+    // 두 방어가 각각 지탱한다. 요소 필터가 빠지면 evt_other 가, 창 좁히기가
+    // 빠지면 evt_target_before 가 뽑혀 둘 다 이 단정에서 걸린다.
+
+    const targetKey = elementKey(click("x", "2026-09-04T00:00:05.000Z", "1111111111111111", "권한 추가") as TraceEvent)!;
+
+    await store.upsertIssues(project.projectId, [
+      {
+        issueId: `issue__settings|${targetKey}|rage_click`,
+        projectId: project.projectId,
+        issueType: "rage_click",
+        title: "/settings 화면에서 반복 클릭이 감지되었습니다",
+        summary: "3회 클릭이 3초 안에 같은 요소에서 발생했습니다.",
+        affectedSessionsCount: 1,
+        affectedUsersCount: 1,
+        severityScore: 70,
+        firstSeenAt: "2026-09-04T00:00:05.000Z",
+        lastSeenAt: "2026-09-04T00:00:06.000Z",
+        trend: "flat",
+        relatedUrlPath: "/settings",
+        exampleSessionIds: ["sess_1"],
+        status: "new",
+        elementKey: targetKey,
+      },
+    ]);
+
+    const app = createApp({ store, authConfig });
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/issues`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()[0].representativeEvent).toMatchObject({ eventId: "evt_target_in" });
+  });
+
+  it("요소 키가 없는 이슈는 30초 앞 클릭을 계속 쓴다", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-09-04T00:00:00.000Z",
+    });
+
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-04T00:00:40.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [
+        {
+          eventId: "evt_click_before_error",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-04T00:00:20.000Z",
+          type: "click",
+          urlPath: "/settings",
+          elementSelectorHash: "3333333333333333",
+          elementTextMaskedOrLimited: "오류 발생",
+          metadata: {},
+          screenContext: {
+            viewport: { width: 1440, height: 900 },
+            target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
+            layoutHints: [],
+          },
+        },
+      ],
+    });
+
+    // 오류 이벤트에는 화면 맥락이 없다. 이슈 시점은 클릭보다 20초 뒤라
+    // lead-in 이 없으면 후보가 사라진다 — 그래서 이 부류에서는 유지한다.
+    await store.upsertIssues(project.projectId, [
+      {
+        issueId: "issue__settings|page|error_friction",
+        projectId: project.projectId,
+        issueType: "error_friction",
+        title: "/settings 화면에서 오류 기반 막힘이 감지되었습니다",
+        summary: "사용자 행동 흐름 중 js_error 이벤트가 발생했습니다.",
+        affectedSessionsCount: 1,
+        affectedUsersCount: 1,
+        severityScore: 60,
+        firstSeenAt: "2026-09-04T00:00:40.000Z",
+        lastSeenAt: "2026-09-04T00:00:40.000Z",
+        trend: "flat",
+        relatedUrlPath: "/settings",
+        exampleSessionIds: ["sess_1"],
+        status: "new",
+      },
+    ]);
+
+    const app = createApp({ store, authConfig });
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/issues`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()[0].representativeEvent).toMatchObject({ eventId: "evt_click_before_error" });
+  });
+
+  it("요소가 일치하는 클릭이 없으면 다른 화면으로 채우지 않는다", async () => {
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-09-04T00:00:00.000Z",
+    });
+
+    // 이슈 구간 안에 클릭이 있지만 전부 다른 요소다. 예전에는 이 클릭이 뽑혀
+    // 형제 버튼의 화면을 근거로 보여줬다. 이제는 비운다.
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-04T00:00:10.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [
+        {
+          eventId: "evt_other_only",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-04T00:00:05.000Z",
+          type: "click",
+          urlPath: "/settings",
+          elementSelectorHash: "9999999999999999",
+          elementTextMaskedOrLimited: "저장",
+          metadata: {},
+          screenContext: {
+            viewport: { width: 1440, height: 900 },
+            target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
+            layoutHints: [],
+          },
+        },
+      ],
+    });
+
+    await store.upsertIssues(project.projectId, [
+      {
+        issueId: "issue__settings|1111111111111111|rage_click",
+        projectId: project.projectId,
+        issueType: "rage_click",
+        title: "/settings 화면에서 반복 클릭이 감지되었습니다",
+        summary: "3회 클릭이 3초 안에 같은 요소에서 발생했습니다.",
+        affectedSessionsCount: 1,
+        affectedUsersCount: 1,
+        severityScore: 70,
+        firstSeenAt: "2026-09-04T00:00:05.000Z",
+        lastSeenAt: "2026-09-04T00:00:06.000Z",
+        trend: "flat",
+        relatedUrlPath: "/settings",
+        exampleSessionIds: ["sess_1"],
+        status: "new",
+        elementKey: "1111111111111111",
+      },
+    ]);
+
+    const app = createApp({ store, authConfig });
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/issues`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()[0]).not.toHaveProperty("representativeEvent");
   });
 });

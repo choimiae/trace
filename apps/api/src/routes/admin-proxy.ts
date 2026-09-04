@@ -532,10 +532,32 @@ async function findRepresentativeEvent(
   const sessionIds = issue.exampleSessionIds.slice(0, 3);
   if (sessionIds.length === 0) return undefined;
 
-  const query = {
+  const base = {
     projectId,
     sessionIds,
     ...(issue.relatedUrlPath === undefined ? {} : { urlPath: issue.relatedUrlPath }),
+  };
+
+  // 요소를 아는 이슈는 그 요소의 클릭만 쓴다. 화면 맥락을 싣는 이벤트가 클릭뿐이라
+  // 유형별 선호 타입을 거는 단계가 의미를 잃고, 조회가 한 번으로 끝난다.
+  //
+  // 창도 이슈 자신의 구간으로 좁힌다. 그 이슈를 만든 클릭들은 정의상 이 구간 안에
+  // 있고 전부 화면 맥락을 갖는다(2026-09-04 실측: 클릭 19건 전건). lead-in 은
+  // 요소를 모르는 이슈를 위한 장치다.
+  if (issue.elementKey !== undefined) {
+    const matched = await store.findScreenContextEvents({
+      ...base,
+      elementKey: issue.elementKey,
+      from: issue.firstSeenAt,
+      to: issue.lastSeenAt,
+    });
+    return matched[0];
+  }
+
+  // 요소를 모르는 이슈(long_pause·error_friction). 근거 이벤트에 화면 맥락이 없어
+  // 주변 클릭을 빌려온다. 기존 동작을 그대로 유지한다.
+  const query = {
+    ...base,
     from: representativeWindowStart(issue.firstSeenAt),
     to: issue.lastSeenAt,
   };
