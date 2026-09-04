@@ -359,7 +359,12 @@ export function scanBoxes(
   offset: { x: number; y: number },
 ): BoxCandidate[] {
   const candidates: BoxCandidate[] = [];
-  const elements = doc.querySelectorAll("*");
+  // <head> 를 빼고 body 이하만 훑는다. CSS-in-JS(emotion·styled-components)는
+  // 컴포넌트마다 <style> 을 <head> 에 심어 수천 개까지 쌓이고, doc 전체를 훑으면
+  // 문서 순서상 그 <style> 더미가 MAX_RECT_SCAN 예산을 <body> 도달 전에 다 써서
+  // 힌트가 0에 가깝게 무너진다 — 최초의 "빈 미리보기" 증상과 같은 모양이다.
+  const root = doc.body ?? doc.documentElement;
+  const elements = root.querySelectorAll("*");
   const limit = Math.min(elements.length, MAX_RECT_SCAN);
 
   for (let index = 0; index < limit; index += 1) {

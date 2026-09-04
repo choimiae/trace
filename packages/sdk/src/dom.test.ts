@@ -1158,12 +1158,34 @@ describe("비용 상한", () => {
     expect(rectCalls).toBeLessThan(3100);
   });
 
-  // getScreenContext 는 오늘 scanBoxes 를 항상 offset {0,0} 으로만 부른다 —
-  // 그 경로로는 음수 좌표 + 오프셋 조합을 재현할 수 없다(clamp(clamp(a)+0) ==
-  // clamp(a+0) 이라 두 계산이 항상 같은 값을 낸다). scanBoxes 를 오프셋과 함께
-  // 직접 불러야만 클램프 순서 버그가 드러난다. 다음 태스크가 same-origin
-  // iframe 에서 이 함수를 실제 오프셋으로 부르기 시작하면, 프레임 안 요소마다
-  // 이 계산이 그대로 좌표가 된다 — 여기서 고정해 둔다.
+  // CSS-in-JS(emotion·styled-components)는 컴포넌트마다 <style> 을 <head> 에
+  // 심는다. <head> 를 포함해 문서 전체를 훑으면 문서 순서상 이 더미가 body
+  // 도달 전에 MAX_RECT_SCAN 예산을 다 써서 힌트가 0에 가깝게 무너진다 — 실제로
+  // 보지 못한 페이지에서 재현되는, 최초의 "빈 미리보기" 증상과 같은 모양이다.
+  it("head 의 style 더미가 MAX_RECT_SCAN 을 다 써도 body 의 칠해진 상자를 놓치지 않는다", () => {
+    document.head.innerHTML = Array.from({ length: 3100 }, () => "<style>.x{color:red}</style>").join("");
+    try {
+      document.body.innerHTML = `<div id="click"></div><div id="box">저장</div>`;
+      stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+      stubRect(document.querySelector("#box")!, { x: 100, y: 100, width: 80, height: 30 });
+
+      const context = getScreenContext(document.querySelector("#click")!)!;
+
+      expect(
+        context.layoutHints.some(
+          (hint) => hint.tagName === "div" && hint.rect.x === 100 && hint.rect.y === 100,
+        ),
+      ).toBe(true);
+    } finally {
+      // beforeEach 는 body 만 비운다. head 는 직접 정리해 다음 테스트로 새지 않게 한다.
+      document.head.innerHTML = "";
+    }
+  });
+
+  // scanBoxes 는 getScreenContext 를 거치지 않고 직접 부를 수 있다 — iframe
+  // 내부를 스캔할 때 scanFrameBoxes 가 실제 오프셋으로 이 함수를 부르므로,
+  // 음수 원시 좌표 + 오프셋 조합이 실전에서도 그대로 일어난다. 여기서는 그
+  // 경로를 거치지 않고 계산 자체를 고정해 둔다.
   it("scanBoxes 는 음수 원시 좌표에 오프셋을 더할 때 클램프를 한 번만, 더한 뒤에 한다", () => {
     document.body.innerHTML = `<div id="straddle">걸친 상자</div>`;
     // 왼쪽으로 걸친 요소: 원시 x 는 -50 이지만 폭 100 이라 오른쪽 절반(0~50)이
