@@ -1,5 +1,5 @@
 import { isSafeElementSelectorHash, screenContextSchema } from "@trace/shared";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getElementMetadata, getScreenContext, isPaintedBox } from "./dom.js";
 
 // 이전 테스트가 남긴 DOM 이 다음 테스트로 새면 rect 가 우연히 0으로 겹치는 등
@@ -30,6 +30,12 @@ function stubStyle(element: Element, style: Partial<CSSStyleDeclaration>): void 
     return { ...original(target, pseudo ?? undefined), ...style } as CSSStyleDeclaration;
   });
 }
+
+// stubStyle 은 getComputedStyle 에 스파이를 건다. 복원하지 않으면 다음 테스트가
+// 이전 목 위에 또 목을 쌓아, mockRestore 가 원본이 아니라 이전 목으로 되돌린다.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 // 생산자(SDK)가 만든 값은 소비자(수집 API)의 screenContextSchema 를 항상 통과해야 한다.
 // 통과하지 못하면 배치 전체가 400 이 되고 SDK 큐가 영구히 막힌다.
@@ -895,7 +901,9 @@ describe("getScreenContext 소비자 계약", () => {
 
 describe("isPaintedBox", () => {
   it("배경색이 있으면 상자다", () => {
-    document.body.innerHTML = `<div id="a">x</div>`;
+    // 텍스트를 넣지 않는다. 직접 텍스트가 있으면 hasOwnTextNode 만으로도 통과해
+    // 배경색 분기를 검증하지 못한다.
+    document.body.innerHTML = `<div id="a"></div>`;
     const element = document.querySelector("#a")!;
     stubStyle(element, { backgroundColor: "rgb(240, 240, 240)" });
     expect(isPaintedBox(element)).toBe(true);
