@@ -676,11 +676,14 @@ describe("iframe", () => {
     stubRect(document.querySelector("#side")!, { x: 0, y: 0, width: 300, height: 600 });
     stubRect(frame, { x: 400, y: 100, width: 600, height: 500 });
 
-    const innerDoc = document.implementation.createHTMLDocument("inner");
+    // createHTMLDocument 로 만든 문서는 defaultView 가 null 이고, isPaintedBox 는
+    // defaultView 가 없으면 곧바로 false 를 돌려준다 — 그러면 내부 상자가 전부
+    // 걸러져 구현이 옳아도 이 테스트가 실패한다. 붙인 iframe 의 실제
+    // contentDocument 를 쓴다(defaultView 가 있다).
+    const innerDoc = frame.contentDocument!;
     innerDoc.body.innerHTML = `<div id="in">문서 본문</div>`;
     const inner = innerDoc.querySelector("#in")!;
     stubRect(inner, { x: 10, y: 20, width: 500, height: 400 });
-    Object.defineProperty(frame, "contentDocument", { value: innerDoc, configurable: true });
 
     const context = getScreenContext(document.querySelector("#side")!)!;
     // iframe 이 x:400,y:100 이므로 내부 x:10,y:20 은 부모 기준 x:410,y:120 이다.
@@ -724,10 +727,9 @@ describe("iframe", () => {
     const frame = document.querySelector("#f") as HTMLIFrameElement;
     stubRect(document.querySelector("#side")!, { x: 0, y: 0, width: 300, height: 600 });
     stubRect(frame, { x: 400, y: 100, width: 600, height: 500 });
-    const innerDoc = document.implementation.createHTMLDocument("inner");
+    const innerDoc = frame.contentDocument!;
     innerDoc.body.innerHTML = `<div id="in">비밀 문서 내용</div>`;
     stubRect(innerDoc.querySelector("#in")!, { x: 10, y: 20, width: 500, height: 400 });
-    Object.defineProperty(frame, "contentDocument", { value: innerDoc, configurable: true });
 
     const context = getScreenContext(document.querySelector("#side")!)!;
     for (const hint of context.layoutHints) {
@@ -864,7 +866,7 @@ curl -s -c /tmp/hints-cookies.txt -o /dev/null http://localhost:4100/auth/local/
 CSRF=$(grep __trace_csrf /tmp/hints-cookies.txt | awk '{print $7}')
 curl -s -b /tmp/hints-cookies.txt -X POST http://localhost:4100/admin/api/projects \
   -H "Content-Type: application/json" -H "Origin: http://localhost:5174" -H "x-trace-csrf: $CSRF" \
-  -d '{"name":"힌트 수집 검증","allowedDomains":["http://localhost:5175"]}'
+  -d '{"name":"힌트 수집 검증","allowedDomains":["http://localhost:5175","http://localhost:3000"]}'
 ```
 
 - [ ] **Step 3: 데모 페이지(시맨틱)가 나빠지지 않았는지 본다**
@@ -898,7 +900,7 @@ document.head.appendChild(s);
 
 그다음 좌측 패널의 항목을 여러 번 클릭한다.
 
-**주의:** 프로젝트의 `allowedDomains` 에 `http://localhost:3000` 이 없으면 수집이 거절된다. Step 2 의 `allowedDomains` 에 `"http://localhost:3000"` 을 함께 넣어 둔다.
+**주의:** Step 2 의 `allowedDomains` 에 `http://localhost:3000` 이 이미 들어 있어야 한다. 없으면 수집이 거절되고 이 단계가 통째로 막힌다.
 
 - [ ] **Step 5: 힌트가 늘었는지 확인한다**
 
