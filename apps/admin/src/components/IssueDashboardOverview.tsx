@@ -1,4 +1,4 @@
-import type { DashboardSummary, Issue } from "@trace/shared";
+import { type DashboardSummary, type Issue, issueTypeLabel } from "@trace/shared";
 import { ArrowDown, ArrowRight, ArrowUp, Eye } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatKoreanDateTime } from "../time.js";
@@ -12,15 +12,6 @@ const SEVERITY_LABELS: Record<SeverityLevel, string> = {
   critical: "긴급",
   warning: "주의",
   low: "낮음",
-};
-
-const ISSUE_TYPE_LABELS: Record<Issue["issueType"], string> = {
-  dead_click_cluster: "반응 없는 클릭",
-  rage_click: "분노 클릭",
-  long_pause: "긴 멈춤",
-  scroll_friction: "스크롤 마찰",
-  error_friction: "오류 마찰",
-  form_friction: "폼 마찰",
 };
 
 function severityLevel(score: number): SeverityLevel {
@@ -142,7 +133,7 @@ export function IssueDashboardOverview({
             </div>
             <div>
               <dt>패턴</dt>
-              <dd>{ISSUE_TYPE_LABELS[topIssue.issueType]}</dd>
+              <dd>{issueTypeLabel(topIssue.issueType)}</dd>
             </div>
             {topIssue.relatedErrorSignature ? (
               <div>
@@ -245,7 +236,7 @@ export function IssueDashboardOverview({
             {summary.issueTypeDistribution.slice(0, 5).map((item) => (
               <OverviewBar
                 key={item.issueType}
-                label={ISSUE_TYPE_LABELS[item.issueType]}
+                label={issueTypeLabel(item.issueType)}
                 value={`${item.count}건`}
                 percent={(item.count / maxIssueTypeCount) * 100}
               />

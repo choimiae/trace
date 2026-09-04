@@ -1,4 +1,4 @@
-import type { Issue } from "@trace/shared";
+import { type Issue, issueTypeLabel } from "@trace/shared";
 import { Eye, Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { formatKoreanDateTime } from "../time.js";
 import { Chip, issueStatusToChip } from "../ui/Chip.js";
@@ -10,15 +10,6 @@ const SEVERITY_META: Record<SeverityLevel, { label: string; tone: string }> = {
   critical: { label: "긴급", tone: "crit" },
   warning: { label: "주의", tone: "warn" },
   low: { label: "낮음", tone: "low" },
-};
-
-const ISSUE_TYPE_LABELS: Record<Issue["issueType"], string> = {
-  dead_click_cluster: "데드 클릭",
-  rage_click: "분노 클릭",
-  long_pause: "긴 멈춤",
-  scroll_friction: "스크롤 마찰",
-  error_friction: "오류 마찰",
-  form_friction: "폼 마찰",
 };
 
 function severityLevel(score: number): SeverityLevel {
@@ -96,7 +87,7 @@ export function IssueTable({
                     <span>{severityMeta.label}</span>
                   </span>
                   <span className="issue-main">
-                    <span className="issue-kicker">{ISSUE_TYPE_LABELS[issue.issueType]}</span>
+                    <span className="issue-kicker">{issueTypeLabel(issue.issueType)}</span>
                     <strong>{issue.title}</strong>
                     <span className="issue-summary">{issue.summary}</span>
                     <span className="issue-path">{issue.relatedUrlPath ?? "-"}</span>

@@ -1,4 +1,4 @@
-import type { DashboardSummary } from "@trace/shared";
+import { type DashboardSummary, issueTypeLabel } from "@trace/shared";
 import {
   Bar,
   BarChart,
@@ -43,9 +43,16 @@ function IssueTypeBarChart({
   return (
     <BarChart {...sizeProps} data={data} margin={{ top: 12, right: 18, bottom: 8, left: 0 }}>
       <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-      <XAxis dataKey="issueType" tick={{ fontSize: 12, fill: "var(--ink-faint)" }} />
+      {/* 원시 enum(dead_click_cluster)은 좁은 폭에서 서로 겹쳐 라벨이 통째로 빠진다.
+          화면의 나머지가 쓰는 한국어 이름을 그대로 써서 짧게 만든다. */}
+      <XAxis
+        dataKey="issueType"
+        tickFormatter={issueTypeLabel}
+        tick={{ fontSize: 12, fill: "var(--ink-faint)" }}
+      />
       <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: "var(--ink-faint)" }} width={32} />
       <Tooltip
+        labelFormatter={issueTypeLabel}
         cursor={{ fill: "var(--surface-sunk)" }}
         contentStyle={{
           background: "var(--surface)",
