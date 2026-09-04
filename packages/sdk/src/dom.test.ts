@@ -1,6 +1,6 @@
 import { isSafeElementSelectorHash, screenContextSchema } from "@trace/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getElementMetadata, getScreenContext, isPaintedBox } from "./dom.js";
+import { getElementMetadata, getScreenContext, isPaintedBox, scanBoxes } from "./dom.js";
 
 // 이전 테스트가 남긴 DOM 이 다음 테스트로 새면 rect 가 우연히 0으로 겹치는 등
 // 재현 불가능한 통과/실패가 생긴다. 매 테스트를 빈 body 에서 시작한다.
@@ -1081,5 +1081,30 @@ describe("비용 상한", () => {
 
     // 스캔 3000 + 타겟·프레임 등 부수 호출 여유. 3200개를 다 읽으면 이 단정이 깨진다.
     expect(rectCalls).toBeLessThan(3100);
+  });
+
+  // getScreenContext 는 오늘 scanBoxes 를 항상 offset {0,0} 으로만 부른다 —
+  // 그 경로로는 음수 좌표 + 오프셋 조합을 재현할 수 없다(clamp(clamp(a)+0) ==
+  // clamp(a+0) 이라 두 계산이 항상 같은 값을 낸다). scanBoxes 를 오프셋과 함께
+  // 직접 불러야만 클램프 순서 버그가 드러난다. 다음 태스크가 same-origin
+  // iframe 에서 이 함수를 실제 오프셋으로 부르기 시작하면, 프레임 안 요소마다
+  // 이 계산이 그대로 좌표가 된다 — 여기서 고정해 둔다.
+  it("scanBoxes 는 음수 원시 좌표에 오프셋을 더할 때 클램프를 한 번만, 더한 뒤에 한다", () => {
+    document.body.innerHTML = `<div id="straddle">걸친 상자</div>`;
+    // 왼쪽으로 걸친 요소: 원시 x 는 -50 이지만 폭 100 이라 오른쪽 절반(0~50)이
+    // 뷰포트 안에 실제로 보인다 — 스캔 후보에서 제외돼선 안 된다.
+    stubRect(document.querySelector("#straddle")!, { x: -50, y: 0, width: 100, height: 40 });
+    const viewport = { width: 1440, height: 900 };
+    const targetRect = { x: 0, y: 0, width: 1, height: 1 };
+
+    // 프레임이 부모 문서에서 x:200 만큼 오프셋된 상황을 흉내낸다.
+    const candidates = scanBoxes(document, viewport, targetRect, { x: 200, y: 0 });
+    const straddle = candidates.find((candidate) => candidate.element.id === "straddle");
+
+    // 올바른 계산: clamp(-50 + 200) = 150.
+    // 먼저 클램프하는 잘못된 계산: clamp(clamp(-50) + 200) = clamp(0 + 200) = 200.
+    // 200 이 나오면 클램프 순서가 다시 뒤바뀐 것이다.
+    expect(straddle).toBeDefined();
+    expect(straddle?.rect.x).toBe(150);
   });
 });

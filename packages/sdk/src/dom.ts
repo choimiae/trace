@@ -310,8 +310,16 @@ interface BoxCandidate {
   distance: number;
 }
 
-function offsetRect(rect: ScreenRect, offset: { x: number; y: number }): ScreenRect {
-  return { ...rect, x: clampRectValue(rect.x + offset.x), y: clampRectValue(rect.y + offset.y) };
+// 클램프는 오프셋을 더한 뒤 한 번만 한다. 먼저 클램프하면 음수 좌표가 0 이 되어
+// 오프셋을 더한 값이 실제 위치보다 커진다 — 겹침 검사는 원본으로 판정하므로
+// 저장 rect 와 어긋난다. 프레임 안 요소에서 이 차이가 그대로 좌표 오차가 된다.
+function offsetRect(rect: DOMRect | ClientRect, offset: { x: number; y: number }): ScreenRect {
+  return {
+    x: clampRectValue((rect.x ?? rect.left) + offset.x),
+    y: clampRectValue((rect.y ?? rect.top) + offset.y),
+    width: clampRectValue(rect.width),
+    height: clampRectValue(rect.height),
+  };
 }
 
 function intersectsViewportRect(rect: ScreenRect, viewport: ScreenViewport): boolean {
@@ -336,7 +344,7 @@ function domRectIntersectsViewport(
 }
 
 // rect 만 읽는다. getComputedStyle 은 아직 부르지 않는다 — 그게 비싼 쪽이다.
-function scanBoxes(
+export function scanBoxes(
   doc: Document,
   viewport: ScreenViewport,
   targetRect: ScreenRect,
@@ -356,7 +364,7 @@ function scanBoxes(
     }
     if (domRect.width < MIN_BOX_SIDE || domRect.height < MIN_BOX_SIDE) continue;
     if (!domRectIntersectsViewport(domRect, viewport, offset)) continue;
-    const rect = offsetRect(rectFromDomRect(domRect), offset);
+    const rect = offsetRect(domRect, offset);
     candidates.push({
       element,
       rect,
