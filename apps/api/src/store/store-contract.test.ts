@@ -1561,8 +1561,8 @@ function describeTraceStoreContract(
         to: "2026-09-04T00:00:09.000Z",
       };
 
-      const reportKey = elementKey(click("x", "2026-09-04T00:00:02.000Z", "2222222222222222", "리포트 내보내기") as TraceEvent);
-      const errorKey = elementKey(click("x", "2026-09-04T00:00:03.000Z", "2222222222222222", "오류 발생") as TraceEvent);
+      const reportKey = elementKey(click("x", "2026-09-04T00:00:02.000Z", "2222222222222222", "리포트 내보내기") as TraceEvent)!;
+      const errorKey = elementKey(click("x", "2026-09-04T00:00:03.000Z", "2222222222222222", "오류 발생") as TraceEvent)!;
       expect(reportKey).not.toBe(errorKey);
 
       const report = await store.findScreenContextEvents({ ...query, elementKey: reportKey });
