@@ -730,3 +730,41 @@ describe("오류 식별자 계약", () => {
     expect(issueSchema.safeParse({ ...baseIssue, relatedErrorSignature: `${longest}x` }).success).toBe(false);
   });
 });
+
+describe("issueSchema elementKey", () => {
+  const baseIssue = {
+    issueId: "issue__settings|abc|rage_click",
+    projectId: "proj_1",
+    issueType: "rage_click" as const,
+    title: "제목",
+    summary: "요약",
+    affectedSessionsCount: 1,
+    affectedUsersCount: 1,
+    severityScore: 70,
+    firstSeenAt: "2026-09-04T00:00:00.000Z",
+    lastSeenAt: "2026-09-04T00:00:01.000Z",
+    trend: "flat" as const,
+    exampleSessionIds: [],
+    status: "new" as const,
+  };
+
+  it("정확히 16 hex 를 받는다", () => {
+    const parsed = issueSchema.parse({ ...baseIssue, elementKey: "0fd2102e520470ad" });
+    expect(parsed.elementKey).toBe("0fd2102e520470ad");
+  });
+
+  it("없어도 된다 — 요소를 모르는 이슈가 있다", () => {
+    expect(issueSchema.parse(baseIssue).elementKey).toBeUndefined();
+  });
+
+  // 폭이 짧은 값은 정상 값이 아니라 결함이다. elementKey() 는 hash64Hex 를 쓰므로
+  // 항상 16 이고, 8 hex 가 들어왔다면 32비트 시절 지문이 새어 들어온 것이다.
+  it("16 이 아닌 폭을 거절한다", () => {
+    expect(() => issueSchema.parse({ ...baseIssue, elementKey: "0fd2102e" })).toThrow();
+    expect(() => issueSchema.parse({ ...baseIssue, elementKey: "0fd2102e520470ad0" })).toThrow();
+  });
+
+  it("hex 가 아닌 글자를 거절한다", () => {
+    expect(() => issueSchema.parse({ ...baseIssue, elementKey: "0fd2102e520470zz" })).toThrow();
+  });
+});

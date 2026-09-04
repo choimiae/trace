@@ -287,6 +287,10 @@ export const issueSchema = z.object({
   // 10 진 표기가 가장 긴 값(1e21 미만, 21 자)을 기준으로 잡는다. 계약을 더 좁히면
   // 정상 서명이 거절된다 — 자르는 쪽은 답이 아니다. 잘린 경로는 다른 파일을 가리킨다.
   relatedErrorSignature: z.string().trim().min(1).max(345).optional(),
+  // 요소 키는 hash64Hex 출력이라 항상 정확히 16 hex 다. privacy.ts 의
+  // ELEMENT_SELECTOR_HASH_PATTERN(1~16)을 재사용하지 않는다 — 그 폭은 32비트
+  // 시절의 8 hex 지문을 받아 주려고 열어 둔 것이고 요소 키에는 해당하지 않는다.
+  elementKey: z.string().regex(/^[0-9a-f]{16}$/).optional(),
   status: issueStatusSchema,
 });
 
