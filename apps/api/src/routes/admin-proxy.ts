@@ -524,6 +524,22 @@ const REPRESENTATIVE_EVENT_TYPES: Record<Issue["issueType"], TraceEvent["type"][
 // 30초 앞까지만 열어 둔다. 그보다 먼 클릭은 그 문제가 난 화면이라고 볼 수 없다.
 const REPRESENTATIVE_LEAD_IN_MS = 30_000;
 
+// 요소 필터 갈래를 탈 수 있는 것은 이 두 유형뿐이다 — 이슈를 만든 증거 이벤트
+// 자체가 클릭이고, 클릭만 화면 맥락을 싣기 때문이다(설계 문서의 A 부류).
+//
+// long_pause·error_friction 은 issue.elementKey 가 값을 가질 수 있다 —
+// detectLongPauses·detectErrorFriction(detect.ts)이 elementKey(event) 를 조건
+// 없이 호출하고, 수집은 이벤트 타입을 가리지 않고 elementSelectorHash 를 남기기
+// 때문이다(누구든 그런 필드를 실은 js_error 를 보낼 수 있다 — sqlite-store.ts 의
+// 마이그레이션 주석대로 "오늘 SDK 의 우연이지 계약이 아니다"). 하지만 이 부류의
+// 증거 이벤트(idle·js_error·api_error)는 화면 맥락이 없다. 키가 실려 있다고 이
+// 갈래를 타면 창이 이슈의 한 순간으로 좁혀지는 데다 요소 필터까지 걸려, 화면
+// 맥락을 가진 주변 클릭이 있어도 근거가 통째로 사라진다.
+const ELEMENT_FILTERED_ISSUE_TYPES: ReadonlySet<Issue["issueType"]> = new Set([
+  "rage_click",
+  "dead_click_cluster",
+]);
+
 async function findRepresentativeEvent(
   store: TraceStore,
   projectId: string,
@@ -544,7 +560,10 @@ async function findRepresentativeEvent(
   // 창도 이슈 자신의 구간으로 좁힌다. 그 이슈를 만든 클릭들은 정의상 이 구간 안에
   // 있고 전부 화면 맥락을 갖는다(2026-09-04 실측: 클릭 19건 전건). lead-in 은
   // 요소를 모르는 이슈를 위한 장치다.
-  if (issue.elementKey !== undefined) {
+  //
+  // 키 유무만으로 가르지 않는다 — ELEMENT_FILTERED_ISSUE_TYPES 에 없는 유형은
+  // elementKey 가 값을 가져도 이 갈래를 타면 안 된다(위 주석 참고).
+  if (issue.elementKey !== undefined && ELEMENT_FILTERED_ISSUE_TYPES.has(issue.issueType)) {
     const matched = await store.findScreenContextEvents({
       ...base,
       elementKey: issue.elementKey,

@@ -2527,4 +2527,82 @@ describe("admin bff routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()[0]).not.toHaveProperty("representativeEvent");
   });
+
+  it("elementKey 를 실은 error_friction 이슈도 요소 필터 갈래를 타지 않는다", async () => {
+    // detectLongPauses·detectErrorFriction 은 elementKey(event) 를 조건 없이
+    // 부른다(detect.ts). js_error 이벤트에도 elementSelectorHash 가 실릴 수
+    // 있으므로(어떤 HTTP 클라이언트든 보낼 수 있다 — SDK 가 안 그러는 것은 계약이
+    // 아니라 우연이다) error_friction 이슈가 elementKey 를 가질 수 있다. 이때도
+    // 요소 필터 갈래(창을 이슈 시점 하나로 좁히고 element_key 로 거르는 갈래)를
+    // 타면 안 된다 — 타면 아래 클릭이 elementKey 까지 일치하는데도 30초 lead-in
+    // 창 밖이라는 이유로 사라진다.
+    const { store, user, cookie } = await signedInStore();
+    const project = await store.createProject({ name: "Settings", allowedDomains: ["https://example.com"] });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: user.adminUserId,
+      role: "owner",
+      createdAt: "2026-09-04T00:00:00.000Z",
+    });
+
+    const click = {
+      eventId: "evt_click_before_error",
+      sessionId: "sess_1",
+      pageId: "page_1",
+      timestamp: "2026-09-04T00:00:20.000Z",
+      type: "click" as const,
+      urlPath: "/settings",
+      elementSelectorHash: "3333333333333333",
+      elementTextMaskedOrLimited: "오류 발생",
+      metadata: {},
+      screenContext: {
+        viewport: { width: 1440, height: 900 },
+        target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
+        layoutHints: [],
+      },
+    };
+    const clickElementKey = elementKey(click as TraceEvent)!;
+
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-04T00:00:40.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://example.com/settings",
+      events: [click],
+    });
+
+    // 이슈 시점은 클릭보다 20초 뒤다. 요소 필터 갈래를 탔다면 창이 이 한 시점으로
+    // 좁혀져 20초 앞의 클릭은 elementKey 가 일치해도 후보에 들지 못한다.
+    await store.upsertIssues(project.projectId, [
+      {
+        issueId: "issue__settings|3333333333333333|error_friction",
+        projectId: project.projectId,
+        issueType: "error_friction",
+        title: "/settings 화면에서 오류 기반 막힘이 감지되었습니다",
+        summary: "사용자 행동 흐름 중 js_error 이벤트가 발생했습니다.",
+        affectedSessionsCount: 1,
+        affectedUsersCount: 1,
+        severityScore: 60,
+        firstSeenAt: "2026-09-04T00:00:40.000Z",
+        lastSeenAt: "2026-09-04T00:00:40.000Z",
+        trend: "flat",
+        relatedUrlPath: "/settings",
+        exampleSessionIds: ["sess_1"],
+        status: "new",
+        elementKey: clickElementKey,
+      },
+    ]);
+
+    const app = createApp({ store, authConfig });
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/issues`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()[0].representativeEvent).toMatchObject({ eventId: "evt_click_before_error" });
+  });
 });
