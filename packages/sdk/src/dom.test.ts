@@ -1148,6 +1148,38 @@ describe("시맨틱 화면이 나빠지지 않는다", () => {
   });
 });
 
+describe("클릭 근처 후보에도 뷰포트 전체를 덮는 상자를 뺀다", () => {
+  // 반투명 모달 백드롭(inset:0)의 중심은 뷰포트 중심과 거의 같아, 클릭이
+  // 그 근처에서 일어나면 중심 거리 기준으로 근처 랭킹 1위가 된다. 골격에서만
+  // 뷰포트 비율 필터를 적용하면 백드롭이 근처 쪽으로 새어 들어가고, 힌트는
+  // 배열 순서로 그려지는 데다 미리보기가 반투명으로 칠하므로 맨 나중에 그려져
+  // 미리보기 전체를 덮는다.
+  it("풀뷰포트 백드롭은 근처 후보에서도 제외되고, 더 작은 실제 콘텐츠는 남는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="backdrop"></div>
+      <div id="modal">확인</div>
+      <div id="click"></div>
+    `;
+    stubRect(document.querySelector("#backdrop")!, { x: 0, y: 0, width: 1000, height: 700 });
+    stubStyle(document.querySelector("#backdrop")!, { backgroundColor: "rgba(0, 0, 0, 0.5)" });
+    stubRect(document.querySelector("#modal")!, { x: 480, y: 330, width: 40, height: 40 });
+    stubStyle(document.querySelector("#modal")!, { backgroundColor: "rgb(255, 255, 255)" });
+    stubRect(document.querySelector("#click")!, { x: 500, y: 350, width: 2, height: 2 });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const viewportArea = 1000 * 700;
+
+    for (const hint of context.layoutHints) {
+      expect(hint.rect.width * hint.rect.height).toBeLessThan(viewportArea * 0.9);
+    }
+    expect(context.layoutHints).toContainEqual(
+      expect.objectContaining({ rect: { x: 480, y: 330, width: 40, height: 40 } }),
+    );
+  });
+});
+
 describe("비용 상한", () => {
   // 문서가 커져도 클릭당 비용이 묶여야 한다. getComputedStyle 은 리플로우를 부르므로
   // 호출 횟수가 곧 비용이다. 분노 클릭은 연타라 이 값이 그대로 곱해진다.

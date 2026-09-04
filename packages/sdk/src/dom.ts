@@ -25,8 +25,11 @@ const MAX_HINT_CANDIDATES = 200;
 const MAX_RECT_SCAN = 3000;
 // 이보다 작으면 사람 눈에 상자가 아니다.
 const MIN_BOX_SIDE = 8;
-// 뷰포트의 이 비율 이상을 덮는 상자는 골격에서 뺀다. <html>·<body> 가 골격 칸을
-// 먹으면 화면 전체를 덮는 빈 사각형만 남는다. (스펙 §3 에 없던 규칙 — 근거는 이것이다.)
+// 뷰포트의 이 비율 이상을 덮는 상자는 골격과 근처 후보 양쪽에서 뺀다. <html>·<body>
+// 가 골격 칸을 먹으면 화면 전체를 덮는 빈 사각형만 남는다. (스펙 §3 에 없던 규칙 —
+// 근거는 이것이다.) 근처 후보에서도 빼야 하는 이유: 반투명 모달 백드롭(inset:0)
+// 은 중심이 뷰포트 중심과 거의 같아 클릭 지점과도 가깝다 — 골격 필터만 있으면
+// 근처 랭킹 1위로 올라와 미리보기 전체를 덮는다.
 const SKELETON_MAX_VIEWPORT_RATIO = 0.9;
 const LANDMARK_SELECTOR =
   "header, nav, main, aside, [role=banner], [role=navigation], [role=main], [role=complementary]";
@@ -539,18 +542,26 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   const collapsed = dropNearParent(scanned);
   const boxes = budgetedCandidates(collapsed).filter((candidate) => isPaintedBox(candidate.element));
 
-  // 골격: 면적 큰 순. 화면 전체를 덮는 상자는 아무것도 알려주지 않으므로 뺀다.
+  // 화면 전체를 덮는 상자는 골격에도 근처에도 두지 않는다. 골격에서 빼는 이유는
+  // <html>·<body> 가 알려주는 게 없어서고, 근처에서도 빼야 하는 이유는 따로
+  // 있다 — 반투명 모달 백드롭(inset:0)의 중심은 뷰포트 중심과 거의 같아 클릭
+  // 지점과도 가깝다. 골격 필터만 있으면 이 상자가 근처 랭킹 1위로 올라오고,
+  // 힌트는 배열 순서대로 그려지는 데다 미리보기가 반투명으로 칠하므로
+  // (apps/admin/src/pages/pages.css:1084) 맨 나중에 그려져 미리보기 전체를 덮는다.
   const viewportArea = viewport.width * viewport.height;
-  const skeleton = boxes
-    .filter((candidate) => candidate.area < viewportArea * SKELETON_MAX_VIEWPORT_RATIO)
-    .sort((left, right) => right.area - left.area);
+  const withinViewportRatio = boxes.filter(
+    (candidate) => candidate.area < viewportArea * SKELETON_MAX_VIEWPORT_RATIO,
+  );
+
+  // 골격: 면적 큰 순.
+  const skeleton = [...withinViewportRatio].sort((left, right) => right.area - left.area);
   for (const candidate of skeleton) {
     if (hints.length >= SKELETON_HINTS) break;
     push(candidate.element, candidate.rect);
   }
 
   // 클릭 근처: 중심 거리 가까운 순. 남은 칸을 채운다. 한쪽이 부족하면 다른 쪽이 메운다.
-  const nearby = [...boxes].sort((left, right) => left.distance - right.distance);
+  const nearby = [...withinViewportRatio].sort((left, right) => left.distance - right.distance);
   for (const candidate of nearby) {
     if (hints.length >= MAX_LAYOUT_HINTS) break;
     push(candidate.element, candidate.rect);
