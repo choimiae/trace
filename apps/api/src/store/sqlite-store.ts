@@ -3,6 +3,7 @@ import { screenContextSchema } from "@trace/shared";
 import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
+import { elementKey } from "../detection/element-identity.js";
 import { buildDashboardSummary } from "./dashboard-summary.js";
 import {
   normalizeAllowedDomains,
@@ -465,8 +466,9 @@ export class SqliteStore implements TraceStore {
       `INSERT OR IGNORE INTO events
          (event_id, project_id, session_id, page_id, timestamp, received_at, type, url_path, url_query_redacted,
           title_masked, element_selector_hash, element_role, element_text_masked_or_limited,
-          x, y, viewport_x, viewport_y, metadata, screen_context, error_name, error_source, error_line)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          x, y, viewport_x, viewport_y, metadata, screen_context, error_name, error_source, error_line,
+          element_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertAll = this.db.transaction((events: TraceEvent[]) => {
@@ -494,6 +496,7 @@ export class SqliteStore implements TraceStore {
           event.errorName ?? null,
           event.errorSource ?? null,
           event.errorLine ?? null,
+          elementKey(event) ?? null,
         );
       }
     });
@@ -519,8 +522,8 @@ export class SqliteStore implements TraceStore {
       `INSERT OR REPLACE INTO issues
          (issue_id, project_id, issue_type, title, summary, affected_sessions_count, affected_users_count,
           severity_score, first_seen_at, last_seen_at, trend, related_url_path, related_feature_id,
-          example_session_ids, status, related_error_signature)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          example_session_ids, status, related_error_signature, element_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const upsertAll = this.db.transaction((records: Issue[]) => {
@@ -543,6 +546,7 @@ export class SqliteStore implements TraceStore {
           JSON.stringify(issue.exampleSessionIds ?? []),
           issue.status,
           issue.relatedErrorSignature ?? null,
+          issue.elementKey ?? null,
         );
       }
     });
@@ -706,6 +710,7 @@ export class SqliteStore implements TraceStore {
       exampleSessionIds: JSON.parse(row.example_session_ids as string) as string[],
       status: row.status as Issue["status"],
       relatedErrorSignature: row.related_error_signature as string | null,
+      elementKey: row.element_key as string | null,
     }) as Issue;
   }
 
@@ -729,6 +734,18 @@ export class SqliteStore implements TraceStore {
     }
     if (!hasColumn(this.db, "issues", "related_error_signature")) {
       this.db.exec("ALTER TABLE issues ADD COLUMN related_error_signature TEXT");
+    }
+
+    // 조회 시점에 SQL 로 요소를 거르기 위한 저장 컬럼이다. SQLite 에는 hash64Hex 가
+    // 없어 WHERE 절에서 키를 만들어 낼 수 없다.
+    //
+    // 백필하지 않는다. user_version = 1 마이그레이션이 기존 이벤트의
+    // element_selector_hash 를 이미 NULL 로 만들었으므로 옛 이벤트의 요소 키는
+    // 어차피 undefined 다 — NULL 이 정확히 맞는 값이다.
+    for (const table of ["events", "issues"]) {
+      if (!hasColumn(this.db, table, "element_key")) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN element_key TEXT`);
+      }
     }
 
     // 요소 지문 규칙이 바뀌었다. 과거 이벤트는 옛 규칙 지문을 들고 있고

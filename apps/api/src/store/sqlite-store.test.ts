@@ -340,4 +340,49 @@ describe("SqliteStore 요소 신원 마이그레이션", () => {
       migrated.close();
     }
   });
+
+  it("컬럼이 없는 기존 DB 를 열면 element_key 가 생기고, 두 번 열어도 안전하다", () => {
+    const dbPath = createTempDbPath();
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE events (event_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        page_id TEXT NOT NULL, timestamp TEXT NOT NULL, type TEXT NOT NULL, url_path TEXT NOT NULL,
+        metadata TEXT NOT NULL DEFAULT '{}');
+      CREATE TABLE issues (issue_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, issue_type TEXT NOT NULL,
+        title TEXT NOT NULL, summary TEXT NOT NULL, affected_sessions_count INTEGER NOT NULL,
+        affected_users_count INTEGER NOT NULL, severity_score INTEGER NOT NULL, first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL, trend TEXT NOT NULL, example_session_ids TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL);
+      INSERT INTO issues (issue_id, project_id, issue_type, title, summary, affected_sessions_count,
+        affected_users_count, severity_score, first_seen_at, last_seen_at, trend, status)
+      VALUES ('issue_old', 'proj_1', 'rage_click', '제목', '요약', 1, 1, 70,
+        '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:01.000Z', 'flat', 'new');
+      -- user_version 을 1로 미리 찍어 둔다: 지문 정리 마이그레이션(userVersion < 1 블록)은
+      -- 이 태스크 이전에 이미 존재했고, element_selector_hash 컬럼이 있는 이벤트 테이블과
+      -- "|{key}|{issue_type}" 형태의 issue_id 를 전제로 짠 별개의 일회성 정리다. 이 테스트가
+      -- 검증하려는 것은 element_key 컬럼 추가의 멱등성이지 그 정리 로직이 아니므로, 이미
+      -- 한 번 지나간 것으로 표시해 이번 케이스와 무관한 정리가 끼어들지 않게 한다.
+      PRAGMA user_version = 1;
+    `);
+    legacy.close();
+
+    // 두 번 여는 것이 마이그레이션을 두 번 돌리는 것이다. hasColumn 검사가
+    // 없으면 두 번째에서 "duplicate column name" 으로 던진다.
+    const first = new SqliteStore(dbPath);
+    first.close();
+    const second = new SqliteStore(dbPath);
+    second.close();
+
+    const inspector = new Database(dbPath);
+    const columns = (table: string) =>
+      (inspector.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
+        .map((column) => column.name);
+
+    expect(columns("events")).toContain("element_key");
+    expect(columns("issues")).toContain("element_key");
+
+    // 기존 이슈 행이 살아 있어야 한다. 트래픽이 있으면 다음 배치에서 키가 채워진다.
+    expect(inspector.prepare("SELECT issue_id FROM issues").all()).toEqual([{ issue_id: "issue_old" }]);
+    inspector.close();
+  });
 });

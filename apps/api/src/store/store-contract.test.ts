@@ -1258,6 +1258,59 @@ function describeTraceStoreContract(
       expect(issues[0]?.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
     });
 
+    // INSERT OR REPLACE 의 컬럼 목록·플레이스홀더·run() 인자 셋이 어긋나도
+    // 타입 오류가 아니라 실행 시점 오류다. 왕복으로 잡는다.
+    it("이슈의 요소 키가 저장 후 그대로 돌아온다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      await store.upsertIssues(project.projectId, [
+        {
+          issueId: "issue__settings|0fd2102e520470ad|rage_click",
+          projectId: project.projectId,
+          issueType: "rage_click",
+          title: "제목",
+          summary: "요약",
+          affectedSessionsCount: 1,
+          affectedUsersCount: 1,
+          severityScore: 70,
+          firstSeenAt: "2026-09-04T00:00:00.000Z",
+          lastSeenAt: "2026-09-04T00:00:01.000Z",
+          trend: "flat",
+          relatedUrlPath: "/settings",
+          exampleSessionIds: ["sess_1"],
+          status: "new",
+          elementKey: "0fd2102e520470ad",
+        },
+        {
+          issueId: "issue__settings|page|error_friction",
+          projectId: project.projectId,
+          issueType: "error_friction",
+          title: "오류",
+          summary: "요약",
+          affectedSessionsCount: 1,
+          affectedUsersCount: 1,
+          severityScore: 60,
+          firstSeenAt: "2026-09-04T00:00:00.000Z",
+          lastSeenAt: "2026-09-04T00:00:00.000Z",
+          trend: "flat",
+          relatedUrlPath: "/settings",
+          exampleSessionIds: ["sess_1"],
+          status: "new",
+        },
+      ]);
+
+      const issues = await store.listIssues(project.projectId);
+      const rage = issues.find((issue) => issue.issueType === "rage_click");
+      const error = issues.find((issue) => issue.issueType === "error_friction");
+
+      expect(rage?.elementKey).toBe("0fd2102e520470ad");
+      expect(error?.elementKey).toBeUndefined();
+    });
+
     it("preserves screen context in session timeline events", async () => {
       const store = open();
       const project = await store.createProject({

@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS events (
   screen_context TEXT,
   error_name TEXT,
   error_source TEXT,
-  error_line INTEGER
+  error_line INTEGER,
+  element_key TEXT
 );
 
 CREATE INDEX IF NOT EXISTS events_project_timestamp ON events (project_id, timestamp);
@@ -55,7 +56,8 @@ CREATE TABLE IF NOT EXISTS issues (
   related_feature_id TEXT,
   example_session_ids TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL,
-  related_error_signature TEXT
+  related_error_signature TEXT,
+  element_key TEXT
 );
 
 CREATE INDEX IF NOT EXISTS issues_project_severity ON issues (project_id, severity_score DESC);
