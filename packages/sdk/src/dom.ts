@@ -295,8 +295,23 @@ function buildLayoutHint(
 
   // 호출부가 이미 rect 를 계산했으면 다시 읽지 않는다. iframe 내부 요소는 부모
   // 문서 좌표로 보정된 값이라 여기서 다시 읽으면 프레임 기준으로 되돌아간다.
-  const rect = precomputedRect ?? rectFromDomRect(element.getBoundingClientRect());
-  if (!intersectsViewportRect(rect, viewport)) return undefined;
+  let rect: ScreenRect;
+  if (precomputedRect !== undefined) {
+    // 상자 경로. scanBoxes·scanFrameBoxes 가 이미 원시 좌표로 뷰포트 게이트를
+    // 통과시킨 값이다. 여기서 한 번 더 보는 것은 값이 어디서 왔든 뷰포트 밖이
+    // 저장되지 않게 하는 보루다.
+    if (!intersectsViewportRect(precomputedRect, viewport)) return undefined;
+    rect = precomputedRect;
+  } else {
+    // 랜드마크 경로. 클램프 전 원시 DOMRect 로 판정한다 — rectFromDomRect 가
+    // x/y 를 0 으로 접은 뒤에 보면 화면 위·왼쪽으로 완전히 벗어난 <header>·
+    // <nav> 가 뷰포트 안으로 잘못 판정돼 미리보기에 유령 상자로 그려지고,
+    // 랜드마크 몫 4칸을 진짜 랜드마크에서 빼앗는다. 저장용 rect 의 클램프는
+    // 그대로 둔다 — 걸친 랜드마크는 잘린 채 담기는 것이 맞다.
+    const domRect = element.getBoundingClientRect();
+    if (!domRectIntersectsViewport(domRect, viewport, { x: 0, y: 0 })) return undefined;
+    rect = rectFromDomRect(domRect);
+  }
 
   // getElementMetadata 를 부르지 않는다. 힌트는 selectorHash 를 쓰지 않고, 무엇보다
   // 텍스트를 쓸지 정하기 전에 텍스트를 뽑아 버리면 랜드마크(<main> 등)에서 화면 전체

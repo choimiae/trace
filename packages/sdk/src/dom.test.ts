@@ -1117,6 +1117,62 @@ describe("근사 중복 상자는 힌트에 한 번만 담긴다", () => {
   });
 });
 
+describe("화면 밖 랜드마크는 힌트에 담기지 않는다", () => {
+  // rectFromDomRect 는 x/y 를 0 으로 클램프한다. 그 값으로 겹침을 보면 화면
+  // 위쪽으로 완전히 벗어난 <header> 가 y:0 으로 접혀 뷰포트 안으로 판정되고,
+  // 미리보기 맨 위에 실제로는 보이지 않는 상자가 그려진다. 긴 목록을 스크롤한
+  // 뒤 클릭하는 흔한 경로가 이 모양이다.
+  it("스크롤로 위로 벗어난 header 는 힌트에 없다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <header id="top"></header>
+      <button id="go">저장</button>
+    `;
+    stubRect(document.querySelector("#top")!, { x: 0, y: -200, width: 1000, height: 100 });
+    stubRect(document.querySelector("#go")!, { x: 100, y: 300, width: 96, height: 40 });
+
+    const context = getScreenContext(document.querySelector("#go")!)!;
+
+    expect(context.layoutHints.find((hint) => hint.tagName === "header")).toBeUndefined();
+  });
+
+  it("left:-9999px 로 숨긴 nav 는 힌트에 없다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <nav id="drawer"></nav>
+      <button id="go">저장</button>
+    `;
+    stubRect(document.querySelector("#drawer")!, { x: -9999, y: 0, width: 200, height: 600 });
+    stubRect(document.querySelector("#go")!, { x: 100, y: 300, width: 96, height: 40 });
+
+    const context = getScreenContext(document.querySelector("#go")!)!;
+
+    expect(context.layoutHints.find((hint) => hint.tagName === "nav")).toBeUndefined();
+  });
+
+  // 저장 rect 의 클램프는 그대로 둔다. 게이트만 원시 좌표로 옮기는 변경이라,
+  // 걸친 랜드마크는 지금처럼 잘린 채 담겨야 한다. 이 테스트는 수정 전에도
+  // 통과한다 — 게이트를 옮기면서 클램프까지 걷어내는 실수를 막는 가드다.
+  it("절반만 걸친 header 는 y:0 으로 잘려 담긴다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <header id="top"></header>
+      <button id="go">저장</button>
+    `;
+    stubRect(document.querySelector("#top")!, { x: 0, y: -50, width: 1000, height: 200 });
+    stubRect(document.querySelector("#go")!, { x: 100, y: 300, width: 96, height: 40 });
+
+    const context = getScreenContext(document.querySelector("#go")!)!;
+    const header = context.layoutHints.find((hint) => hint.tagName === "header");
+
+    expect(header).toBeDefined();
+    expect(header?.rect).toEqual({ x: 0, y: 0, width: 1000, height: 200 });
+  });
+});
+
 // 실측 회귀 재현: 실제 앱(후보 574개)에서 budgetedCandidates 가 면적 상위 절반을
 // 먼저 골라 그 다음에야 isPaintedBox 를 적용하면, 면적 상위가 아무것도 그리지
 // 않는 중첩 래퍼로 가득 차 예산이 그 안에서 소진된다. 위 비시맨틱 픽스처(11개
