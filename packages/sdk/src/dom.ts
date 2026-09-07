@@ -505,7 +505,7 @@ function dropNearParent(candidates: BoxCandidate[]): BoxCandidate[] {
 
 function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLayoutHint[] {
   const targetRect = rectFromDomRect(target.getBoundingClientRect());
-  const seen = new Set<string>();
+  const pushedRects: ScreenRect[] = [];
   const hints: ScreenLayoutHint[] = [];
 
   // 힌트 하나가 던져도 화면 맥락 전체를 잃지 않는다. getScreenContext 의 바깥
@@ -519,9 +519,15 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
       return;
     }
     if (!built) return;
-    const key = `${built.rect.x}:${built.rect.y}:${built.rect.width}:${built.rect.height}`;
-    if (seen.has(key)) return;
-    seen.add(key);
+    // 정확 일치가 아니라 4px 근접으로 본다. dropNearParent 가 부모만 버리는
+    // 규칙이라 부모를 꽉 채우는 자식이 둘이면 둘 다 살아남고, 그 둘의 rect 가
+    // 정확히 같지 않으면 정확 키로는 걸러지지 않아 겹친 상자가 두 번 그려진다.
+    // 접기 단계가 아니라 여기서 보는 이유: 이 지점은 칠해짐 판정이 끝난 뒤라
+    // 어느 쪽을 남겨도 "칠해진 상자를 버리고 투명한 것을 남기는" 사고가 없다.
+    // 먼저 담긴 쪽이 남는다 — 랜드마크 → 골격(면적 큰 순) → 근처(거리 순) 순서다.
+    const builtRect = built.rect;
+    if (pushedRects.some((pushed) => isNearSameRect(pushed, builtRect))) return;
+    pushedRects.push(builtRect);
     hints.push(built.hint);
   };
 

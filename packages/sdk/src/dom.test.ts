@@ -521,8 +521,11 @@ describe("getScreenContext", () => {
     const buttons = Array.from({ length: 80 }, (_unused, index) => `<button id="b${index}">버튼${index}</button>`).join("");
     document.body.innerHTML = `<main id="page">${buttons}<button id="go">저장</button></main>`;
     stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
+    // 8px 씩 벌린다. 1px 간격이면 80개가 전부 서로 4px 미만 — 근사 중복 판정의
+    // 한 무리라서, 이 테스트가 재는 것이 "상한 20" 이 아니라 "중복 제거가 남기는
+    // 대표 개수" 로 바뀐다. 인덱스 79 도 x=632·y=632 라 1440×900 안에 있다.
     for (let index = 0; index < 80; index += 1) {
-      stubRect(document.querySelector(`#b${index}`)!, { x: index, y: index, width: 40, height: 20 });
+      stubRect(document.querySelector(`#b${index}`)!, { x: index * 8, y: index * 8, width: 40, height: 20 });
     }
     stubRect(document.querySelector("#go")!, { x: 10, y: 10, width: 96, height: 40 });
 
@@ -1054,6 +1057,63 @@ describe("근접-동일 rect 접기는 칠해지는 안쪽을 남긴다", () => 
 
     expect(hint).toBeDefined();
     expect(hint?.tagName).toBe("div");
+  });
+});
+
+describe("근사 중복 상자는 힌트에 한 번만 담긴다", () => {
+  // dropNearParent 는 "근접-동일 자식이 있으면 부모를 버린다" 라서, 부모를 꽉
+  // 채우는 자식이 둘이면 부모만 죽고 자식이 둘 다 남는다. 두 자식의 rect 가
+  // 정확히 같지 않으면 정확 일치 비교로는 걸러지지 않아 같은 자리에 상자가
+  // 두 번 그려진다. 아이콘+배지처럼 둘 다 셀을 채우는 마크업이 이 모양이다.
+  it("부모를 꽉 채우는 형제 둘이 2px 어긋나 있어도 상자는 하나만 담긴다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="cell"><span id="icon"></span><div id="fill"></div></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#cell")!, { x: 20, y: 20, width: 80, height: 30 });
+    stubRect(document.querySelector("#icon")!, { x: 20, y: 20, width: 80, height: 30 });
+    stubRect(document.querySelector("#fill")!, { x: 22, y: 20, width: 78, height: 30 });
+    stubStyle(document.querySelector("#icon")!, { backgroundColor: "rgb(200, 200, 200)" });
+    stubStyle(document.querySelector("#fill")!, { backgroundColor: "rgb(238, 238, 238)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const nearCell = context.layoutHints.filter(
+      (hint) =>
+        Math.abs(hint.rect.x - 20) < 4 &&
+        Math.abs(hint.rect.y - 20) < 4 &&
+        Math.abs(hint.rect.width - 80) < 4 &&
+        Math.abs(hint.rect.height - 30) < 4,
+    );
+
+    expect(nearCell).toHaveLength(1);
+  });
+
+  // 반대 방향 가드. 문턱이 넓어지면 진짜로 다른 상자가 조용히 사라진다.
+  // 이 테스트는 수정 전에도 통과한다 — 목적은 재현이 아니라 고정이다.
+  it("4px 이상 벌어진 두 상자는 둘 다 담긴다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="left"></div>
+      <div id="right"></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#left")!, { x: 20, y: 20, width: 80, height: 30 });
+    stubRect(document.querySelector("#right")!, { x: 20, y: 26, width: 80, height: 30 });
+    stubStyle(document.querySelector("#left")!, { backgroundColor: "rgb(200, 200, 200)" });
+    stubStyle(document.querySelector("#right")!, { backgroundColor: "rgb(238, 238, 238)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const ys = context.layoutHints
+      .filter((hint) => hint.rect.x === 20 && hint.rect.width === 80 && hint.rect.height === 30)
+      .map((hint) => hint.rect.y)
+      .sort((left, right) => left - right);
+
+    expect(ys).toEqual([20, 26]);
   });
 });
 
