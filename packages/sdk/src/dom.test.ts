@@ -521,9 +521,10 @@ describe("getScreenContext", () => {
     const buttons = Array.from({ length: 80 }, (_unused, index) => `<button id="b${index}">버튼${index}</button>`).join("");
     document.body.innerHTML = `<main id="page">${buttons}<button id="go">저장</button></main>`;
     stubRect(document.querySelector("#page")!, { x: 0, y: 0, width: 1440, height: 900 });
-    // 8px 씩 벌린다. 1px 간격이면 80개가 전부 서로 4px 미만 — 근사 중복 판정의
-    // 한 무리라서, 이 테스트가 재는 것이 "상한 20" 이 아니라 "중복 제거가 남기는
-    // 대표 개수" 로 바뀐다. 인덱스 79 도 x=632·y=632 라 1440×900 안에 있다.
+    // 8px 씩 벌린다. 1px 간격이면 근사 중복 판정이 4px 미만 무리마다 대표 하나만
+    // 남겨, 이 테스트가 재는 것이 "상한 20" 이 아니라 "중복 제거가 남기는 대표
+    // 개수" 가 된다 — 1px×80개에서는 그 대표 수가 마침 20이라 통과하지만 상한
+    // 때문이 아니다. 인덱스 79 도 x=632·y=632 라 1440×900 안에 있다.
     for (let index = 0; index < 80; index += 1) {
       stubRect(document.querySelector(`#b${index}`)!, { x: index * 8, y: index * 8, width: 40, height: 20 });
     }
@@ -1093,6 +1094,8 @@ describe("근사 중복 상자는 힌트에 한 번만 담긴다", () => {
 
   // 반대 방향 가드. 문턱이 넓어지면 진짜로 다른 상자가 조용히 사라진다.
   // 이 테스트는 수정 전에도 통과한다 — 목적은 재현이 아니라 고정이다.
+  // isNearSameRect 의 문턱을 `< 4` 에서 `< 8` 로 넓히면(예: 6px 어긋난 두 상자를
+  // 근사 중복으로 오판) 이 테스트가 잡아낸다 — 확인했다.
   it("4px 이상 벌어진 두 상자는 둘 다 담긴다", () => {
     window.innerWidth = 1000;
     window.innerHeight = 700;
@@ -1153,9 +1156,12 @@ describe("화면 밖 랜드마크는 힌트에 담기지 않는다", () => {
   });
 
   // 저장 rect 의 클램프는 그대로 둔다. 게이트만 원시 좌표로 옮기는 변경이라,
-  // 걸친 랜드마크는 지금처럼 잘린 채 담겨야 한다. 이 테스트는 수정 전에도
-  // 통과한다 — 게이트를 옮기면서 클램프까지 걷어내는 실수를 막는 가드다.
-  it("절반만 걸친 header 는 y:0 으로 잘려 담긴다", () => {
+  // 걸친 랜드마크는 지금처럼 잘리는 게 아니라 y:0 으로 밀려 담겨야 한다 —
+  // width/height 는 그대로라 저장된 상자는 요소의 실제 아래쪽 경계를 넘어선다.
+  // 이 테스트는 수정 전에도 통과한다 — 게이트를 옮기면서 랜드마크 분기의
+  // rectFromDomRect 호출까지 걷어내 버리는(그래서 클램프 없는 raw rect 를
+  // 그대로 저장하는) 실수를 잡아내는 것으로 확인했다.
+  it("절반만 걸친 header 는 y:0 으로 밀려 담긴다", () => {
     window.innerWidth = 1000;
     window.innerHeight = 700;
     document.body.innerHTML = `
@@ -1170,6 +1176,61 @@ describe("화면 밖 랜드마크는 힌트에 담기지 않는다", () => {
 
     expect(header).toBeDefined();
     expect(header?.rect).toEqual({ x: 0, y: 0, width: 1000, height: 200 });
+  });
+
+  // 유령 랜드마크가 배제되는 것만으로는 절반이다. 나머지 절반은 그것이
+  // MAX_LANDMARK_HINTS(4) 칸을 먹지 않는 것이다 — 문서 순서상 화면 밖
+  // 랜드마크가 앞에 있으면, 게이트가 클램프된 rect 를 보던 시절에는 그 넷이
+  // 4칸을 다 채우고 진짜 랜드마크가 한 칸도 못 받았다. 네 유령의 height 를
+  // 서로 4px 이상씩 벌려 둔다 — y 는 음수라 클램프되면 넷 다 0 으로 접히므로,
+  // rect 가 완전히 같으면 push 시점의 근사 중복 제거(isNearSameRect)가 먼저
+  // 셋을 걸러내 버려 옛 게이트의 "4칸 다 먹는" 증상 자체가 재현되지 않는다.
+  it("화면 밖 랜드마크 4개가 랜드마크 몫을 먹지 않고 진짜 랜드마크가 담긴다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <header id="ghost1"></header>
+      <nav id="ghost2"></nav>
+      <aside id="ghost3"></aside>
+      <div id="ghost4" role="banner"></div>
+      <main id="real1"></main>
+      <div id="real2" role="complementary"></div>
+      <button id="go">저장</button>
+    `;
+    const ghostHeights: Record<string, number> = { ghost1: 60, ghost2: 70, ghost3: 80, ghost4: 90 };
+    for (const [id, height] of Object.entries(ghostHeights)) {
+      stubRect(document.querySelector(`#${id}`)!, { x: 0, y: -400, width: 900, height });
+    }
+    stubRect(document.querySelector("#real1")!, { x: 20, y: 100, width: 700, height: 400 });
+    stubRect(document.querySelector("#real2")!, { x: 740, y: 100, width: 200, height: 400 });
+    stubRect(document.querySelector("#go")!, { x: 100, y: 550, width: 96, height: 40 });
+
+    const context = getScreenContext(document.querySelector("#go")!)!;
+    const rects = context.layoutHints.map((hint) => `${hint.rect.x},${hint.rect.y},${hint.rect.width},${hint.rect.height}`);
+
+    expect(rects).toContain("20,100,700,400");
+    expect(rects).toContain("740,100,200,400");
+  });
+
+  // domRectIntersectsViewport 는 width<=0 이거나 height<=0 이면 가장자리를 보기도
+  // 전에 거절한다. 클램프된 rect 로 게이트를 보던 시절에는 이 판정이 없어, raw
+  // {x:10, y:200, width:0, height:50} 인 랜드마크도 뷰포트 안이라고 통과시켰다 —
+  // 폭 0인 힌트라도 admin 렌더러는 min-width:18px 로 그려 보이는 유령 상자가
+  // 된다(상자 경로의 #zero 픽스처, dom.test.ts:502 근처와 같은 문제의 랜드마크
+  // 쪽 짝).
+  it("너비가 0인 랜드마크는 힌트에 담기지 않는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <aside id="empty"></aside>
+      <button id="go">저장</button>
+    `;
+    stubRect(document.querySelector("#empty")!, { x: 10, y: 200, width: 0, height: 50 });
+    stubRect(document.querySelector("#go")!, { x: 100, y: 300, width: 96, height: 40 });
+
+    const context = getScreenContext(document.querySelector("#go")!)!;
+
+    expect(context.layoutHints.find((hint) => hint.tagName === "aside")).toBeUndefined();
   });
 });
 

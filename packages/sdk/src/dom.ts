@@ -298,8 +298,12 @@ function buildLayoutHint(
   let rect: ScreenRect;
   if (precomputedRect !== undefined) {
     // 상자 경로. scanBoxes·scanFrameBoxes 가 이미 원시 좌표로 뷰포트 게이트를
-    // 통과시킨 값이다. 여기서 한 번 더 보는 것은 값이 어디서 왔든 뷰포트 밖이
-    // 저장되지 않게 하는 보루다.
+    // 통과시킨 값이다. 그런데도 여기서 한 번 더 보는 이유는 그 사이의 반올림이
+    // 게이트를 통과한 값을 게이트 밖으로 밀어낼 수 있어서다 — 뷰포트 1000px
+    // 에서 raw left:999.6 은 scanBoxes 의 원시 게이트(999.6 < 1000)를 통과하지만,
+    // offsetRect 가 저장용으로 x 를 반올림해 1000 으로 만든다. 이 재검사가
+    // 없으면 그 상자가 x:1000 으로 저장돼 미리보기 오른쪽 경계 밖에 최소
+    // 너비짜리 유령 상자로 그려진다.
     if (!intersectsViewportRect(precomputedRect, viewport)) return undefined;
     rect = precomputedRect;
   } else {
@@ -307,7 +311,10 @@ function buildLayoutHint(
     // x/y 를 0 으로 접은 뒤에 보면 화면 위·왼쪽으로 완전히 벗어난 <header>·
     // <nav> 가 뷰포트 안으로 잘못 판정돼 미리보기에 유령 상자로 그려지고,
     // 랜드마크 몫 4칸을 진짜 랜드마크에서 빼앗는다. 저장용 rect 의 클램프는
-    // 그대로 둔다 — 걸친 랜드마크는 잘린 채 담기는 것이 맞다.
+    // 그대로 둔다 — 걸친 랜드마크는 잘리는 게 아니라 x/y 가 0 으로 밀려
+    // 담긴다. width/height 는 손대지 않으므로 저장된 상자는 요소의 실제
+    // 아래쪽(또는 오른쪽) 경계를 넘어서까지 그려진다 — 상자 경로에서
+    // offsetRect 가 x/y 만 접고 width/height 는 그대로 두는 것과 같은 모양이다.
     const domRect = element.getBoundingClientRect();
     if (!domRectIntersectsViewport(domRect, viewport, { x: 0, y: 0 })) return undefined;
     rect = rectFromDomRect(domRect);
