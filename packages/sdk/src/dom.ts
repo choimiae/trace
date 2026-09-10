@@ -320,11 +320,13 @@ function buildLayoutHint(
     // 랜드마크 경로. 클램프 전 원시 DOMRect 로 판정한다 — rectFromDomRect 가
     // x/y 를 0 으로 접은 뒤에 보면 화면 위·왼쪽으로 완전히 벗어난 <header>·
     // <nav> 가 뷰포트 안으로 잘못 판정돼 미리보기에 유령 상자로 그려지고,
-    // 랜드마크 몫 4칸을 진짜 랜드마크에서 빼앗는다. 저장용 rect 의 클램프는
-    // 그대로 둔다 — 걸친 랜드마크는 잘리는 게 아니라 x/y 가 0 으로 밀려
-    // 담긴다. width/height 는 손대지 않으므로 저장된 상자는 요소의 실제
-    // 아래쪽(또는 오른쪽) 경계를 넘어서까지 그려진다 — 상자 경로에서
-    // offsetRect 가 x/y 만 접고 width/height 는 그대로 두는 것과 같은 모양이다.
+    // 랜드마크 몫 4칸을 진짜 랜드마크에서 빼앗는다.
+    //
+    // 저장용 rect 의 x/y 0 클램프는 그대로 둔다 — 걸친 랜드마크는 잘리는 게
+    // 아니라 밀려 담기고, 그래서 저장된 상자가 요소의 실제 **위쪽** 경계를
+    // 넘어 그려지는 성질도 유지된다. 상자 경로에서 offsetRect 가 x/y 만 접는
+    // 것과 같은 모양이다. 아래·오른쪽 끝은 다르다 — 두 갈래가 합류한 뒤
+    // clampRectToViewport 가 뷰포트 경계에서 자른다.
     const domRect = element.getBoundingClientRect();
     if (!domRectIntersectsViewport(domRect, viewport, { x: 0, y: 0 })) return undefined;
     rect = rectFromDomRect(domRect);
