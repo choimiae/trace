@@ -330,6 +330,11 @@ function buildLayoutHint(
     rect = rectFromDomRect(domRect);
   }
 
+  // 두 갈래(상자 경로·랜드마크 경로)가 여기서 합류한다. 자르기를 이 한 지점에
+  // 두어야 같은 모양의 요소가 태그에 따라 다르게 저장되지 않는다.
+  rect = clampRectToViewport(rect, viewport);
+  if (rect.width < MIN_BOX_SIDE || rect.height < MIN_BOX_SIDE) return undefined;
+
   // getElementMetadata 를 부르지 않는다. 힌트는 selectorHash 를 쓰지 않고, 무엇보다
   // 텍스트를 쓸지 정하기 전에 텍스트를 뽑아 버리면 랜드마크(<main> 등)에서 화면 전체
   // 문자열을 만들었다가 그대로 버린다.
@@ -368,6 +373,22 @@ function offsetRect(rect: DOMRect | ClientRect, offset: { x: number; y: number }
     y: clampRectValue((rect.y ?? rect.top) + offset.y),
     width: clampRectValue(rect.width),
     height: clampRectValue(rect.height),
+  };
+}
+
+// 뷰포트 밖으로 뻗는 부분은 미리보기에 그릴 수 없다. 자르지 않으면 화면 높이의
+// 10배짜리 상자가 그대로 저장돼(실측: 왼쪽 레일 ul 이 48x7894) 미리보기 한쪽을
+// 통째로 덮는다. 풀뷰포트 제외 가드는 면적 기준이라 얇고 긴 상자를 못 잡는다.
+//
+// x/y 의 0 클램프는 그대로 둔다 — 위·왼쪽으로 걸친 요소는 여전히 밀려 담기고,
+// 그래서 저장된 상자가 요소의 실제 위쪽 경계를 넘어 그려지는 성질도 그대로다.
+// 이 함수가 바꾸는 것은 아래·오른쪽 끝뿐이다.
+function clampRectToViewport(rect: ScreenRect, viewport: ScreenViewport): ScreenRect {
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: Math.min(rect.width, Math.max(0, viewport.width - rect.x)),
+    height: Math.min(rect.height, Math.max(0, viewport.height - rect.y)),
   };
 }
 

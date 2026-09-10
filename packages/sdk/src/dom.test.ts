@@ -1357,6 +1357,66 @@ describe("화면 밖 랜드마크는 힌트에 담기지 않는다", () => {
   });
 });
 
+describe("뷰포트를 넘는 상자는 잘려 담긴다", () => {
+  // 실측(2026-09-10, 요소 2,459개 화면): 왼쪽 레일 ul 이 48x7894 로 담겼다 —
+  // 뷰포트 높이의 10.2배다. 풀뷰포트 제외 가드는 면적 기준(뷰포트 면적의 90%)
+  // 이라 얇고 긴 상자를 못 잡는다(48x7894 는 33.7%).
+  it("뷰포트보다 긴 상자 경로 rect 는 아래 경계에서 잘린다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="rail"></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#rail")!, { x: 0, y: 50, width: 48, height: 7894 });
+    stubStyle(document.querySelector("#rail")!, { backgroundColor: "rgb(238, 238, 238)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const rail = context.layoutHints.find((hint) => hint.rect.x === 0 && hint.rect.width === 48);
+
+    expect(rail).toBeDefined();
+    expect(rail!.rect.height).toBe(650); // 700 - 50
+  });
+
+  // 랜드마크는 rect 를 자기 힘으로 읽는 별도 갈래다. 한쪽만 고치면 두 경로가
+  // 갈려서, 같은 모양의 요소가 태그에 따라 다르게 저장된다.
+  it("뷰포트보다 넓은 랜드마크 rect 도 오른쪽 경계에서 잘린다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <header id="top"></header>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#top")!, { x: 200, y: 0, width: 3000, height: 60 });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const top = context.layoutHints.find((hint) => hint.tagName === "header");
+
+    expect(top).toBeDefined();
+    expect(top!.rect.width).toBe(800); // 1000 - 200
+  });
+
+  // 자른 뒤 사람 눈에 상자가 아니게 되는 것은 담지 않는다. 뷰포트 겹침 게이트는
+  // 1px 만 걸쳐도 통과시키므로, 자르면 두께가 0에 가까운 조각이 남을 수 있다.
+  it("잘린 뒤 8px 미만이 되는 상자는 담기지 않는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="sliver"></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#sliver")!, { x: 0, y: 697, width: 400, height: 200 });
+    stubStyle(document.querySelector("#sliver")!, { backgroundColor: "rgb(238, 238, 238)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+
+    expect(context.layoutHints.some((hint) => hint.rect.width === 400)).toBe(false);
+  });
+});
+
 // 실측 회귀 재현: 실제 앱(후보 574개)에서 budgetedCandidates 가 면적 상위 절반을
 // 먼저 골라 그 다음에야 isPaintedBox 를 적용하면, 면적 상위가 아무것도 그리지
 // 않는 중첩 래퍼로 가득 차 예산이 그 안에서 소진된다. 위 비시맨틱 픽스처(11개
