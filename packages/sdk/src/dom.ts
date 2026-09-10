@@ -17,9 +17,9 @@ const SAFE_TAG_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 // 이 export 는 dom.ts 에서 직접 소비되지 않고 테스트에서만 쓰이므로(dist/index.ts
 // 가 재수출하지 않는 한) 런타임 번들 크기에 영향이 없다 — 값이 이미 번들에 들어
 // 있고, export 키워드만으로는 iife 산출물에 바이트가 늘지 않는다.
-export const MAX_LAYOUT_HINTS = 20;
-// 골격 몫. 나머지(20 - 12 = 8)는 클릭 근처가 쓴다. 골격에는 랜드마크가 먼저 들어간다.
-const SKELETON_HINTS = 12;
+export const MAX_LAYOUT_HINTS = 50;
+// 골격 몫. 나머지(50 - 30 = 20)는 클릭 근처가 쓴다. 골격에는 랜드마크가 먼저 들어간다.
+const SKELETON_HINTS = 30;
 // 랜드마크가 골격 칸을 다 먹지 않게 한다. 랜드마크가 20개인 문서도 있다.
 const MAX_LANDMARK_HINTS = 4;
 // getComputedStyle 호출 예산이다. 2,360 요소 화면에서 전체를 훑으면 13ms,
@@ -162,6 +162,16 @@ type ScreenLayoutHint = ScreenContext["layoutHints"][number];
 // 선택이 아니라 필수다.
 function redactScreenText(value: string): string {
   return redactText(redactText(value));
+}
+
+// 이벤트마다 읽는다. 페이지 로드 시 한 번만 읽으면 SPA 라우트가 바뀐 뒤에도 옛
+// 제목이 남는다. redactScreenText(= redactText 두 번)를 쓰는 이유는
+// textMaskedOrLimited 와 같다 — redactText 가 자체 slice(0,120) 때문에 멱등이
+// 아니라, 한 번만 돌린 값은 계약의 safeScreenTextSchema(redactText(v) === v)에서
+// 떨어지고 배치 전체가 400 이 된다.
+function screenTitle(doc: Document): string | undefined {
+  const masked = redactScreenText((doc.title || "").trim()).trim();
+  return masked.length === 0 ? undefined : masked;
 }
 
 function clampRectValue(value: number): number {
@@ -310,15 +320,22 @@ function buildLayoutHint(
     // 랜드마크 경로. 클램프 전 원시 DOMRect 로 판정한다 — rectFromDomRect 가
     // x/y 를 0 으로 접은 뒤에 보면 화면 위·왼쪽으로 완전히 벗어난 <header>·
     // <nav> 가 뷰포트 안으로 잘못 판정돼 미리보기에 유령 상자로 그려지고,
-    // 랜드마크 몫 4칸을 진짜 랜드마크에서 빼앗는다. 저장용 rect 의 클램프는
-    // 그대로 둔다 — 걸친 랜드마크는 잘리는 게 아니라 x/y 가 0 으로 밀려
-    // 담긴다. width/height 는 손대지 않으므로 저장된 상자는 요소의 실제
-    // 아래쪽(또는 오른쪽) 경계를 넘어서까지 그려진다 — 상자 경로에서
-    // offsetRect 가 x/y 만 접고 width/height 는 그대로 두는 것과 같은 모양이다.
+    // 랜드마크 몫 4칸을 진짜 랜드마크에서 빼앗는다.
+    //
+    // 저장용 rect 의 x/y 0 클램프는 그대로 둔다 — 걸친 랜드마크는 잘리는 게
+    // 아니라 밀려 담기고, 그래서 저장된 상자가 요소의 실제 **위쪽** 경계를
+    // 넘어 그려지는 성질도 유지된다. 상자 경로에서 offsetRect 가 x/y 만 접는
+    // 것과 같은 모양이다. 아래·오른쪽 끝은 다르다 — 두 갈래가 합류한 뒤
+    // clampRectToViewport 가 뷰포트 경계에서 자른다.
     const domRect = element.getBoundingClientRect();
     if (!domRectIntersectsViewport(domRect, viewport, { x: 0, y: 0 })) return undefined;
     rect = rectFromDomRect(domRect);
   }
+
+  // 두 갈래(상자 경로·랜드마크 경로)가 여기서 합류한다. 자르기를 이 한 지점에
+  // 두어야 같은 모양의 요소가 태그에 따라 다르게 저장되지 않는다.
+  rect = clampRectToViewport(rect, viewport);
+  if (rect.width < MIN_BOX_SIDE || rect.height < MIN_BOX_SIDE) return undefined;
 
   // getElementMetadata 를 부르지 않는다. 힌트는 selectorHash 를 쓰지 않고, 무엇보다
   // 텍스트를 쓸지 정하기 전에 텍스트를 뽑아 버리면 랜드마크(<main> 등)에서 화면 전체
@@ -358,6 +375,22 @@ function offsetRect(rect: DOMRect | ClientRect, offset: { x: number; y: number }
     y: clampRectValue((rect.y ?? rect.top) + offset.y),
     width: clampRectValue(rect.width),
     height: clampRectValue(rect.height),
+  };
+}
+
+// 뷰포트 밖으로 뻗는 부분은 미리보기에 그릴 수 없다. 자르지 않으면 화면 높이의
+// 10배짜리 상자가 그대로 저장돼(실측: 왼쪽 레일 ul 이 48x7894) 미리보기 한쪽을
+// 통째로 덮는다. 풀뷰포트 제외 가드는 면적 기준이라 얇고 긴 상자를 못 잡는다.
+//
+// x/y 의 0 클램프는 그대로 둔다 — 위·왼쪽으로 걸친 요소는 여전히 밀려 담기고,
+// 그래서 저장된 상자가 요소의 실제 위쪽 경계를 넘어 그려지는 성질도 그대로다.
+// 이 함수가 바꾸는 것은 아래·오른쪽 끝뿐이다.
+function clampRectToViewport(rect: ScreenRect, viewport: ScreenViewport): ScreenRect {
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: Math.min(rect.width, Math.max(0, viewport.width - rect.x)),
+    height: Math.min(rect.height, Math.max(0, viewport.height - rect.y)),
   };
 }
 
@@ -624,9 +657,17 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   return hints;
 }
 
-// 페이지 제목은 수집하지 않는다. 업무 화면의 title 은 "김철수 - 고객 상세" 처럼
-// 레코드 주체를 담는 일이 많고, redactText 는 이메일·전화·9자리+ 숫자만 지우므로
-// 이름·주소를 걸러내지 못한다. 미리보기는 urlPath 폴백으로 화면을 표시한다.
+// 페이지 제목을 수집한다. 2026-09-10 이전에는 수집하지 않았다 — 업무 화면의
+// title 은 "김철수 - 고객 상세" 처럼 레코드 주체를 담는 일이 많고, redactText 는
+// 이메일·전화·9자리+ 숫자만 지워 이름·주소를 걸러내지 못하기 때문이다.
+//
+// 그 판단을 뒤집었다. 실제 업무 화면(요소 2,459개·랜드마크 0)에서 미리보기가
+// 어느 화면인지 알아볼 수 없었고, 제목줄은 해시 라우팅 SPA 의 홈에서 "/" 만
+// 보여줬다. 화면 이름 하나가 이번 범위에서 얻을 수 있는 유일한 식별 단서다.
+//
+// 대가는 그대로다 — 제목에 든 사람 이름은 저장된다. README 의 개인정보 표에
+// 그 사실을 적었고, 끄는 방법은 아직 없다.
+// 설계: docs/superpowers/specs/2026-09-10-screen-hint-density-design.md §1
 export function getScreenContext(element: Element): ScreenContext | undefined {
   try {
     const viewport: ScreenViewport = {
@@ -634,9 +675,11 @@ export function getScreenContext(element: Element): ScreenContext | undefined {
       height: clampViewportValue(window.innerHeight || document.documentElement.clientHeight || 1),
     };
     const target = buildScreenTarget(element, viewport);
+    const titleMasked = screenTitle(element.ownerDocument);
 
     return {
       viewport,
+      ...(titleMasked ? { titleMasked } : {}),
       ...(target ? { target } : {}),
       layoutHints: collectLayoutHints(element, viewport),
     };

@@ -200,7 +200,11 @@ const screenLayoutHintSchema = screenElementSchema
 
 // 화면 힌트 상한. 계약과 수집 API 가 같은 값을 봐야 한다 — 두 벌로 갈라 두었더니
 // 계약만 넓히고 수집 API 가 조용히 12개로 잘라내 기능 전체가 막혔다.
-export const MAX_SCREEN_LAYOUT_HINTS = 20;
+//
+// 20 → 50 (2026-09-10). 실제 업무 화면(요소 2,459개) 실측에서 쓸 수 있는 후보가
+// 55개인데 20개만 담고 있었다. 20 은 3×3 격자의 7칸만 덮고 하단 아이콘 줄을
+// 상자 하나로 대표했다. 50 이면 8칸·4개다.
+export const MAX_SCREEN_LAYOUT_HINTS = 50;
 
 export const screenContextSchema = z.object({
   titleMasked: safeScreenTextSchema.optional(),
@@ -209,9 +213,14 @@ export const screenContextSchema = z.object({
     height: z.number().int().min(1).max(10000),
   }),
   target: screenElementSchema.optional(),
-  // 20은 실측으로 정했다. 실제 화면 좌표로 12·20·30 예산의 미리보기를 그려 비교한
-  // 결과 결정적 차이는 3→12 였고 20→30 은 거의 무의미했다. 20 은 12에서 넘은
-  // 문턱에 여유를 둔 값이다. 힌트 하나가 약 90B 라 20개면 screenContext 약 2.2KB 다.
+  // 처음엔 20이었다. 실제 화면 좌표로 12·20·30 예산의 미리보기를 그려 비교한 결과
+  // 결정적 차이는 3→12 였고 20→30 은 거의 무의미해, 12에서 넘은 문턱에 여유를 둔
+  // 값으로 20을 골랐다.
+  //
+  // 2026-09-10 에 훨씬 복잡한 화면(요소 2,459개)에서 다시 재고 50으로 올렸다 — 그
+  // 화면은 쓸 수 있는 후보가 55개인데 20칸으로는 3×3 격자의 7칸만 덮고 하단 아이콘
+  // 줄을 상자 하나로 대표했다. 힌트 하나가 약 90B 라 50개면 screenContext 약 5.5KB,
+  // 분노 클릭 8연타 44KB, 배치 100건 550KB 로 Fastify 기본 1MB 안이다.
   layoutHints: screenLayoutHintSchema.array().max(MAX_SCREEN_LAYOUT_HINTS).default([]),
 });
 

@@ -6,6 +6,9 @@ import { getElementMetadata, getScreenContext, isPaintedBox, scanBoxes } from ".
 // 재현 불가능한 통과/실패가 생긴다. 매 테스트를 빈 body 에서 시작한다.
 beforeEach(() => {
   document.body.innerHTML = "";
+  // title 도 비운다. body 와 달리 jsdom 이 자동으로 되돌리지 않아, 한 테스트가
+  // 설정한 제목이 이후 모든 테스트의 screenContext 에 실린다.
+  document.title = "";
 });
 
 function stubRect(
@@ -280,6 +283,7 @@ describe("getScreenContext", () => {
 
     expect(context).toEqual({
       viewport: { width: 1440, height: 900 },
+      titleMasked: "설정",
       target: {
         tagName: "button",
         role: "button",
@@ -515,7 +519,7 @@ describe("getScreenContext", () => {
     expect(texts).toContain("가까운 버튼");
   });
 
-  it("후보가 많아도 힌트는 정확히 20개로 잘린다", () => {
+  it("후보가 많아도 힌트는 정확히 50개로 잘린다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
     const buttons = Array.from({ length: 80 }, (_unused, index) => `<button id="b${index}">버튼${index}</button>`).join("");
@@ -533,8 +537,8 @@ describe("getScreenContext", () => {
     const context = expectValidScreenContext(document.querySelector("#go")!);
 
     // 80개의 버튼 + main 랜드마크가 모두 뷰포트 안에 있으므로 개수는 상한
-    // 20으로 결정적이다. <= 20 만 보면 생산자가 조용히 힌트를 덜 채워도 통과한다.
-    expect(context.layoutHints.length).toBe(20);
+    // 50으로 결정적이다. <= 50 만 보면 생산자가 조용히 힌트를 덜 채워도 통과한다.
+    expect(context.layoutHints.length).toBe(50);
   });
 
   it("랜드마크가 없는 문서에서도 안전하게 동작한다", () => {
@@ -874,9 +878,10 @@ describe("getScreenContext 소비자 계약", () => {
     expect(context.target).toBeUndefined();
   });
 
-  it("페이지 제목은 수집하지 않는다", () => {
-    // 업무 화면의 title 은 레코드 주체(이름)를 담는 일이 많고 redactText 는
-    // 이메일·전화·9자리+ 숫자만 지운다. 미리보기는 urlPath 폴백을 쓴다.
+  it("페이지 제목을 마스킹해 수집한다", () => {
+    // 업무 화면의 title 은 레코드 주체(이름)를 담는 일이 많고 redactScreenText 는
+    // 이메일·전화·9자리+ 숫자만 지운다. 사람 이름은 마스킹되지 않지만
+    // 미리보기 제목줄이 /list 같은 URL 폴백에서 벗어나는 이득이 있어 수집한다.
     document.title = "김철수 - 고객 상세";
     window.innerWidth = 1440;
     window.innerHeight = 900;
@@ -886,9 +891,7 @@ describe("getScreenContext 소비자 계약", () => {
 
     const context = expectValidScreenContext(element);
 
-    expect(context).not.toHaveProperty("titleMasked");
-    expect(JSON.stringify(context)).not.toContain("김철수");
-    document.title = "설정";
+    expect(context.titleMasked).toBe("김철수 - 고객 상세");
   });
 
   it("숫자 뒤에 글자가 붙은 120자 초과 대상 텍스트도 이미 마스킹된 값으로 만든다", () => {
@@ -1354,6 +1357,66 @@ describe("화면 밖 랜드마크는 힌트에 담기지 않는다", () => {
   });
 });
 
+describe("뷰포트를 넘는 상자는 잘려 담긴다", () => {
+  // 실측(2026-09-10, 요소 2,459개 화면): 왼쪽 레일 ul 이 48x7894 로 담겼다 —
+  // 뷰포트 높이의 10.2배다. 풀뷰포트 제외 가드는 면적 기준(뷰포트 면적의 90%)
+  // 이라 얇고 긴 상자를 못 잡는다(48x7894 는 33.7%).
+  it("뷰포트보다 긴 상자 경로 rect 는 아래 경계에서 잘린다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="rail"></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#rail")!, { x: 0, y: 50, width: 48, height: 7894 });
+    stubStyle(document.querySelector("#rail")!, { backgroundColor: "rgb(238, 238, 238)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const rail = context.layoutHints.find((hint) => hint.rect.x === 0 && hint.rect.width === 48);
+
+    expect(rail).toBeDefined();
+    expect(rail!.rect.height).toBe(650); // 700 - 50
+  });
+
+  // 랜드마크는 rect 를 자기 힘으로 읽는 별도 갈래다. 한쪽만 고치면 두 경로가
+  // 갈려서, 같은 모양의 요소가 태그에 따라 다르게 저장된다.
+  it("뷰포트보다 넓은 랜드마크 rect 도 오른쪽 경계에서 잘린다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <header id="top"></header>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#top")!, { x: 200, y: 0, width: 3000, height: 60 });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const top = context.layoutHints.find((hint) => hint.tagName === "header");
+
+    expect(top).toBeDefined();
+    expect(top!.rect.width).toBe(800); // 1000 - 200
+  });
+
+  // 자른 뒤 사람 눈에 상자가 아니게 되는 것은 담지 않는다. 뷰포트 겹침 게이트는
+  // 1px 만 걸쳐도 통과시키므로, 자르면 두께가 0에 가까운 조각이 남을 수 있다.
+  it("잘린 뒤 8px 미만이 되는 상자는 담기지 않는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="sliver"></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#sliver")!, { x: 0, y: 697, width: 400, height: 200 });
+    stubStyle(document.querySelector("#sliver")!, { backgroundColor: "rgb(238, 238, 238)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+
+    expect(context.layoutHints.some((hint) => hint.rect.width === 400)).toBe(false);
+  });
+});
+
 // 실측 회귀 재현: 실제 앱(후보 574개)에서 budgetedCandidates 가 면적 상위 절반을
 // 먼저 골라 그 다음에야 isPaintedBox 를 적용하면, 면적 상위가 아무것도 그리지
 // 않는 중첩 래퍼로 가득 차 예산이 그 안에서 소진된다. 위 비시맨틱 픽스처(11개
@@ -1744,5 +1807,68 @@ describe("iframe", () => {
       .sort((left, right) => left - right);
 
     expect(innerYs).toEqual([10, 80, 150, 220]);
+  });
+});
+
+describe("화면 제목", () => {
+  // titleMasked 는 계약(screenContextSchema)·서버 정제(sanitizeScreenText)·저장
+  // (events.title_masked)·미리보기 제목줄(ScreenContextPreview.tsx:39)이 모두
+  // 만들어져 있는데 SDK 가 채우지 않아 통째로 잠들어 있었다. 제목줄이 언제나
+  // URL 경로로 폴백해, 해시 라우팅 SPA 의 홈에서 "/" 만 보였다.
+  it("화면 제목을 마스킹해 담는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.title = "결재함 - 더존비즈온";
+    document.body.innerHTML = `<div id="click"></div>`;
+    stubRect(document.querySelector("#click")!, { x: 10, y: 10, width: 40, height: 20 });
+
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+
+    expect(context.titleMasked).toBe("결재함 - 더존비즈온");
+  });
+
+  it("제목이 비어 있으면 titleMasked 를 넣지 않는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.title = "   ";
+    document.body.innerHTML = `<div id="click"></div>`;
+    stubRect(document.querySelector("#click")!, { x: 10, y: 10, width: 40, height: 20 });
+
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+
+    // safeScreenTextSchema 가 min(1) 이라 빈 문자열을 넣으면 계약에서 떨어지고
+    // 배치 전체가 400 이 된다. 속성 자체를 넣지 않아야 한다.
+    //
+    // 다만 이 테스트는 그 성질을 정밀하게 지키는 가드가 아니라, 빈 제목 처리가
+    // 통째로 사라지는 회귀를 잡는 스모크 테스트다. 방어가 코드에 여러 겹이라
+    // 한 겹씩 무너뜨려서는 빨개지지 않는다 — 실측(2026-09-10):
+    //   1) HTML 명세상 document.title 게터가 이미 앞뒤 공백을 지우고 접는다.
+    //      그래서 이 픽스처의 "   " 는 screenTitle 에 "" 로 들어온다 — 트림 두 개를
+    //      다 지워도 이 테스트는 통과한다(dom.test.ts 88개 전부 통과 확인).
+    //   2) screenTitle 의 `masked.length === 0 → undefined`
+    //   3) 호출부의 `...(titleMasked ? ... : {})` truthy 스프레드
+    // 2)만 지우면 3)이, 3)만 바꾸면 2)가 막는다. 둘을 함께 무너뜨리면 빨개지지만
+    // 그때는 빈 제목을 쓰는 다른 테스트 수십 개가 같이 빨개진다.
+    expect(context).not.toHaveProperty("titleMasked");
+  });
+
+  // 판별력 있는 픽스처다. redactText 는 패턴을 치환한 뒤 slice(0,120) 을 하므로
+  // 멱등이 아니다 — 12자리 숫자 뒤에 영문자가 붙어 있으면 1회차에는 \b 경계가
+  // 없어 매치되지 않는데, 120자에서 잘려 숫자가 문자열 끝에 오면 2회차에 비로소
+  // 매치된다. 그래서 한 번만 마스킹한 값은 계약의 "이미 마스킹된 값" 검증
+  // (redactText(v) === v) 을 통과하지 못한다. 실측: 1회 → 120자, 끝이 생숫자.
+  // 2회 → 118자, 끝이 [redacted].
+  it("제목은 두 번 마스킹해야 계약을 통과한다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.title = `${"가".repeat(108)}123456789012abc`;
+    document.body.innerHTML = `<div id="click"></div>`;
+    stubRect(document.querySelector("#click")!, { x: 10, y: 10, width: 40, height: 20 });
+
+    // expectValidScreenContext 가 screenContextSchema 로 파싱하므로, 한 번만
+    // 마스킹한 구현이면 여기서 떨어진다.
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+
+    expect(context.titleMasked).toBe(`${"가".repeat(108)}[redacted]`);
   });
 });
