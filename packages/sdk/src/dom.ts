@@ -634,9 +634,17 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
   return hints;
 }
 
-// 페이지 제목은 수집하지 않는다. 업무 화면의 title 은 "김철수 - 고객 상세" 처럼
-// 레코드 주체를 담는 일이 많고, redactText 는 이메일·전화·9자리+ 숫자만 지우므로
-// 이름·주소를 걸러내지 못한다. 미리보기는 urlPath 폴백으로 화면을 표시한다.
+// 페이지 제목을 수집한다. 2026-09-10 이전에는 수집하지 않았다 — 업무 화면의
+// title 은 "김철수 - 고객 상세" 처럼 레코드 주체를 담는 일이 많고, redactText 는
+// 이메일·전화·9자리+ 숫자만 지워 이름·주소를 걸러내지 못하기 때문이다.
+//
+// 그 판단을 뒤집었다. 실제 업무 화면(요소 2,459개·랜드마크 0)에서 미리보기가
+// 어느 화면인지 알아볼 수 없었고, 제목줄은 해시 라우팅 SPA 의 홈에서 "/" 만
+// 보여줬다. 화면 이름 하나가 이번 범위에서 얻을 수 있는 유일한 식별 단서다.
+//
+// 대가는 그대로다 — 제목에 든 사람 이름은 저장된다. README 의 개인정보 표에
+// 그 사실을 적었고, 끄는 방법은 아직 없다.
+// 설계: docs/superpowers/specs/2026-09-10-screen-hint-density-design.md §1
 export function getScreenContext(element: Element): ScreenContext | undefined {
   try {
     const viewport: ScreenViewport = {

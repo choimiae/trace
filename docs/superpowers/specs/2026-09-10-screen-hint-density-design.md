@@ -42,7 +42,7 @@
 
 **뷰포트를 넘는 상자가 그대로 저장된다.** 왼쪽 레일 `ul` 이 `48×7894` 로 담긴다 — 뷰포트 높이의 10.2배다. 풀뷰포트 제외 가드가 **면적** 기준(뷰포트 면적의 90%)이라 얇고 긴 상자는 통과한다(33.7%).
 
-**`titleMasked` 파이프라인이 통째로 잠들어 있다.** 계약(`screenContextSchema.titleMasked`)·서버 정제(`sanitizeScreenText`)·저장(`events.title_masked`)·미리보기 제목줄(`ScreenContextPreview.tsx:39`)·hero headline(`IssueDashboardOverview.tsx:67`)이 전부 만들어져 있는데, **SDK 에 `document.title` 을 읽는 코드가 없다.** 그래서 제목줄이 언제나 URL 경로로 폴백한다 — 해시 라우팅 SPA 의 홈에서는 `/` 다.
+**`titleMasked` 파이프라인이 통째로 잠들어 있다.** 계약(`screenContextSchema.titleMasked`)·서버 정제(`sanitizeScreenText`)·저장(`events.title_masked`)·미리보기 제목줄(`ScreenContextPreview.tsx:39`)·hero headline(`IssueDashboardOverview.tsx:67`)이 전부 만들어져 있는데, **SDK 에 `document.title` 을 읽는 코드가 없다.** 그래서 제목줄이 언제나 URL 경로로 폴백한다 — 해시 라우팅 SPA 의 홈에서는 `/` 다. **정정(2026-09-10):** 이것은 미완성이 아니라 의도된 결정이었다. `getScreenContext` 위 주석이 이유를 적고 있었다 — 업무 화면의 title 은 레코드 주체를 담는 일이 많고 `redactText` 가 이름·주소를 걸러내지 못한다. 아래 §1 개인정보는 그 대가를 다시 유도한 것이고, 이 설계는 대가를 알고 결정을 뒤집는다.
 
 ## 목표
 
