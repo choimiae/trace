@@ -17,9 +17,9 @@ const SAFE_TAG_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 // 이 export 는 dom.ts 에서 직접 소비되지 않고 테스트에서만 쓰이므로(dist/index.ts
 // 가 재수출하지 않는 한) 런타임 번들 크기에 영향이 없다 — 값이 이미 번들에 들어
 // 있고, export 키워드만으로는 iife 산출물에 바이트가 늘지 않는다.
-export const MAX_LAYOUT_HINTS = 20;
-// 골격 몫. 나머지(20 - 12 = 8)는 클릭 근처가 쓴다. 골격에는 랜드마크가 먼저 들어간다.
-const SKELETON_HINTS = 12;
+export const MAX_LAYOUT_HINTS = 50;
+// 골격 몫. 나머지(50 - 30 = 20)는 클릭 근처가 쓴다. 골격에는 랜드마크가 먼저 들어간다.
+const SKELETON_HINTS = 30;
 // 랜드마크가 골격 칸을 다 먹지 않게 한다. 랜드마크가 20개인 문서도 있다.
 const MAX_LANDMARK_HINTS = 4;
 // getComputedStyle 호출 예산이다. 2,360 요소 화면에서 전체를 훑으면 13ms,

@@ -200,7 +200,11 @@ const screenLayoutHintSchema = screenElementSchema
 
 // 화면 힌트 상한. 계약과 수집 API 가 같은 값을 봐야 한다 — 두 벌로 갈라 두었더니
 // 계약만 넓히고 수집 API 가 조용히 12개로 잘라내 기능 전체가 막혔다.
-export const MAX_SCREEN_LAYOUT_HINTS = 20;
+//
+// 20 → 50 (2026-09-10). 실제 업무 화면(요소 2,459개) 실측에서 쓸 수 있는 후보가
+// 55개인데 20개만 담고 있었다. 20 은 3×3 격자의 7칸만 덮고 하단 아이콘 줄을
+// 상자 하나로 대표했다. 50 이면 8칸·4개다.
+export const MAX_SCREEN_LAYOUT_HINTS = 50;
 
 export const screenContextSchema = z.object({
   titleMasked: safeScreenTextSchema.optional(),

@@ -460,7 +460,7 @@ describe("screenContextSchema", () => {
   });
 
   it("limits layout hints to keep payloads small", () => {
-    const layoutHints = Array.from({ length: 21 }, (_, index) => ({
+    const layoutHints = Array.from({ length: 51 }, (_, index) => ({
       tagName: "button",
       role: "button",
       textMaskedOrLimited: `버튼 ${index}`,
@@ -786,8 +786,8 @@ describe("screenContextSchema layoutHints 상한", () => {
   });
 
   // 상한이 없으면 페이로드가 무한정 커진다. 넓히되 열어 두지는 않는다.
-  it("21개를 거절한다", () => {
-    expect(() => screenContextSchema.parse(context(21))).toThrow();
+  it("51개를 거절한다", () => {
+    expect(() => screenContextSchema.parse(context(51))).toThrow();
   });
 
   // 넓히는 방향이라 기존에 저장된 12개짜리 데이터가 그대로 유효해야 한다.

@@ -519,7 +519,7 @@ describe("getScreenContext", () => {
     expect(texts).toContain("가까운 버튼");
   });
 
-  it("후보가 많아도 힌트는 정확히 20개로 잘린다", () => {
+  it("후보가 많아도 힌트는 정확히 50개로 잘린다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
     const buttons = Array.from({ length: 80 }, (_unused, index) => `<button id="b${index}">버튼${index}</button>`).join("");
@@ -537,8 +537,8 @@ describe("getScreenContext", () => {
     const context = expectValidScreenContext(document.querySelector("#go")!);
 
     // 80개의 버튼 + main 랜드마크가 모두 뷰포트 안에 있으므로 개수는 상한
-    // 20으로 결정적이다. <= 20 만 보면 생산자가 조용히 힌트를 덜 채워도 통과한다.
-    expect(context.layoutHints.length).toBe(20);
+    // 50으로 결정적이다. <= 50 만 보면 생산자가 조용히 힌트를 덜 채워도 통과한다.
+    expect(context.layoutHints.length).toBe(50);
   });
 
   it("랜드마크가 없는 문서에서도 안전하게 동작한다", () => {
