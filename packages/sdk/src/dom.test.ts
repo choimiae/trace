@@ -6,6 +6,9 @@ import { getElementMetadata, getScreenContext, isPaintedBox, scanBoxes } from ".
 // 재현 불가능한 통과/실패가 생긴다. 매 테스트를 빈 body 에서 시작한다.
 beforeEach(() => {
   document.body.innerHTML = "";
+  // title 도 비운다. body 와 달리 jsdom 이 자동으로 되돌리지 않아, 한 테스트가
+  // 설정한 제목이 이후 모든 테스트의 screenContext 에 실린다.
+  document.title = "";
 });
 
 function stubRect(
@@ -280,6 +283,7 @@ describe("getScreenContext", () => {
 
     expect(context).toEqual({
       viewport: { width: 1440, height: 900 },
+      titleMasked: "설정",
       target: {
         tagName: "button",
         role: "button",
@@ -874,9 +878,10 @@ describe("getScreenContext 소비자 계약", () => {
     expect(context.target).toBeUndefined();
   });
 
-  it("페이지 제목은 수집하지 않는다", () => {
-    // 업무 화면의 title 은 레코드 주체(이름)를 담는 일이 많고 redactText 는
-    // 이메일·전화·9자리+ 숫자만 지운다. 미리보기는 urlPath 폴백을 쓴다.
+  it("페이지 제목을 마스킹해 수집한다", () => {
+    // 업무 화면의 title 은 레코드 주체(이름)를 담는 일이 많고 redactScreenText 는
+    // 이메일·전화·9자리+ 숫자만 지운다. 사람 이름은 마스킹되지 않지만
+    // 미리보기 제목줄이 /list 같은 URL 폴백에서 벗어나는 이득이 있어 수집한다.
     document.title = "김철수 - 고객 상세";
     window.innerWidth = 1440;
     window.innerHeight = 900;
@@ -886,9 +891,7 @@ describe("getScreenContext 소비자 계약", () => {
 
     const context = expectValidScreenContext(element);
 
-    expect(context).not.toHaveProperty("titleMasked");
-    expect(JSON.stringify(context)).not.toContain("김철수");
-    document.title = "설정";
+    expect(context.titleMasked).toBe("김철수 - 고객 상세");
   });
 
   it("숫자 뒤에 글자가 붙은 120자 초과 대상 텍스트도 이미 마스킹된 값으로 만든다", () => {
@@ -1744,5 +1747,55 @@ describe("iframe", () => {
       .sort((left, right) => left - right);
 
     expect(innerYs).toEqual([10, 80, 150, 220]);
+  });
+
+  // titleMasked 는 계약(screenContextSchema)·서버 정제(sanitizeScreenText)·저장
+  // (events.title_masked)·미리보기 제목줄(ScreenContextPreview.tsx:39)이 모두
+  // 만들어져 있는데 SDK 가 채우지 않아 통째로 잠들어 있었다. 제목줄이 언제나
+  // URL 경로로 폴백해, 해시 라우팅 SPA 의 홈에서 "/" 만 보였다.
+  it("화면 제목을 마스킹해 담는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.title = "결재함 - 더존비즈온";
+    document.body.innerHTML = `<div id="click"></div>`;
+    stubRect(document.querySelector("#click")!, { x: 10, y: 10, width: 40, height: 20 });
+
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+
+    expect(context.titleMasked).toBe("결재함 - 더존비즈온");
+  });
+
+  it("제목이 비어 있으면 titleMasked 를 넣지 않는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.title = "   ";
+    document.body.innerHTML = `<div id="click"></div>`;
+    stubRect(document.querySelector("#click")!, { x: 10, y: 10, width: 40, height: 20 });
+
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+
+    // safeScreenTextSchema 가 min(1) 이라 빈 문자열을 넣으면 계약에서 떨어지고
+    // 배치 전체가 400 이 된다. 속성 자체를 넣지 않아야 한다.
+    expect(context).not.toHaveProperty("titleMasked");
+  });
+
+  // 판별력 있는 픽스처다. redactText 는 패턴을 치환한 뒤 slice(0,120) 을 하므로
+  // 멱등이 아니다 — 12자리 숫자 뒤에 영문자가 붙어 있으면 1회차에는 \b 경계가
+  // 없어 매치되지 않는데, 120자에서 잘려 숫자가 문자열 끝에 오면 2회차에 비로소
+  // 매치된다. 그래서 한 번만 마스킹한 값은 계약의 "이미 마스킹된 값" 검증
+  // (redactText(v) === v) 을 통과하지 못한다. 실측: 1회 → 120자, 끝이 생숫자.
+  // 2회 → 118자, 끝이 [redacted].
+  it("제목은 두 번 마스킹해야 계약을 통과한다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.title = `${"가".repeat(108)}123456789012abc`;
+    document.body.innerHTML = `<div id="click"></div>`;
+    stubRect(document.querySelector("#click")!, { x: 10, y: 10, width: 40, height: 20 });
+
+    // expectValidScreenContext 가 screenContextSchema 로 파싱하므로, 한 번만
+    // 마스킹한 구현이면 여기서 떨어진다.
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+
+    expect(context.titleMasked).toBe(`${"가".repeat(108)}[redacted]`);
   });
 });

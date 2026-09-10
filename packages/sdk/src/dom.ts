@@ -164,6 +164,16 @@ function redactScreenText(value: string): string {
   return redactText(redactText(value));
 }
 
+// 이벤트마다 읽는다. 페이지 로드 시 한 번만 읽으면 SPA 라우트가 바뀐 뒤에도 옛
+// 제목이 남는다. redactScreenText(= redactText 두 번)를 쓰는 이유는
+// textMaskedOrLimited 와 같다 — redactText 가 자체 slice(0,120) 때문에 멱등이
+// 아니라, 한 번만 돌린 값은 계약의 safeScreenTextSchema(redactText(v) === v)에서
+// 떨어지고 배치 전체가 400 이 된다.
+function screenTitle(document: Document): string | undefined {
+  const masked = redactScreenText((document.title || "").trim()).trim();
+  return masked.length === 0 ? undefined : masked;
+}
+
 function clampRectValue(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(MAX_SCREEN_RECT, Math.max(0, Math.round(value)));
@@ -634,9 +644,11 @@ export function getScreenContext(element: Element): ScreenContext | undefined {
       height: clampViewportValue(window.innerHeight || document.documentElement.clientHeight || 1),
     };
     const target = buildScreenTarget(element, viewport);
+    const titleMasked = screenTitle(element.ownerDocument);
 
     return {
       viewport,
+      ...(titleMasked ? { titleMasked } : {}),
       ...(target ? { target } : {}),
       layoutHints: collectLayoutHints(element, viewport),
     };
