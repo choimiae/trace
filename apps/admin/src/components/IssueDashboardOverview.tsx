@@ -89,7 +89,7 @@ export function IssueDashboardOverview({
 
   return (
     <>
-      <section className="friction-hero" aria-labelledby="friction-hero-eyebrow">
+      <Card as="section" className="friction-hero" aria-labelledby="friction-hero-eyebrow">
         {/* 읽는 순서: 1 문장 → 2 미리보기 → 3 근거 표 → 4 다음 액션 */}
         <div className="friction-hero__intro">
           <p className="friction-hero__eyebrow" id="friction-hero-eyebrow">
@@ -154,7 +154,7 @@ export function IssueDashboardOverview({
             <dd>해당 화면의 클릭 후 반응, 성공 피드백, 오류 노출 상태를 우선 점검합니다.</dd>
           </dl>
         </div>
-      </section>
+      </Card>
       <Card as="section" className="dashboard-overview" aria-label="문제 한눈에 보기">
         <div className="section-heading">
           <h2>한눈에 보기</h2>

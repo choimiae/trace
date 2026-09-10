@@ -45,6 +45,20 @@ const issue = (overrides: Partial<Issue>): Issue => ({
 });
 
 describe("IssueDashboardOverview", () => {
+  // 첫 화면의 다른 블록(한눈에 보기·지표·차트 패널)은 모두 Card 표면 위에 있는데
+  // 이 hero 만 페이지 배경 위의 맨 section 이었다. 가장 먼저 읽어야 할 블록이
+  // 시각적으로 가장 약해지는 역전이라, 표면을 갖는 것을 못박는다.
+  it("가장 먼저 볼 막힘 블록은 카드 표면 위에 놓인다", () => {
+    render(
+      <IssueDashboardOverview
+        summary={summary}
+        issues={[issue({ issueId: "top", title: "설정 저장 버튼 반복 클릭", severityScore: 92 })]}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "가장 먼저 볼 사용자 막힘" })).toHaveClass("card");
+  });
+
   it("가장 심각한 문제와 주요 분포를 한 화면에 보여준다", () => {
     render(
       <IssueDashboardOverview
