@@ -1120,6 +1120,126 @@ describe("근사 중복 상자는 힌트에 한 번만 담긴다", () => {
   });
 });
 
+describe("근사 중복이 겹칠 때 masked 요소를 남긴다", () => {
+  // 장식용 채움과 입력 요소가 형제로 같은 자리를 차지하면, dropNearParent 가
+  // 부모(.field)를 버리고 둘은 서로의 부모가 아니라 둘 다 살아남는다. 그 다음
+  // push 의 근사 중복 판정이 먼저 담긴 쪽(면적 큰 .bg)을 남기고 input 을
+  // 버려서, 미리보기가 마스킹 사선(pages.css) 대신 평범한 상자를 그린다.
+  // 인셋은 1px 이어야 한다 — 2px 면 Δwidth 가 4 라 문턱 `< 4` 를 통과하지
+  // 못해 둘 다 담기고, 이 테스트가 수정 전에도 통과해 판별력을 잃는다.
+  it("장식용 형제가 1px 감싸도 남는 힌트는 입력 쪽이다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="field"><div id="bg"></div><input id="name" /></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#field")!, { x: 20, y: 20, width: 200, height: 40 });
+    stubRect(document.querySelector("#bg")!, { x: 20, y: 20, width: 200, height: 40 });
+    stubRect(document.querySelector("#name")!, { x: 21, y: 21, width: 198, height: 38 });
+    stubStyle(document.querySelector("#bg")!, { backgroundColor: "rgb(238, 238, 238)" });
+    stubStyle(document.querySelector("#name")!, { borderTopWidth: "1px" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const atField = context.layoutHints.filter(
+      (hint) => Math.abs(hint.rect.x - 20) < 4 && Math.abs(hint.rect.y - 20) < 4,
+    );
+
+    expect(atField).toHaveLength(1);
+    expect(atField[0]!.tagName).toBe("input");
+    expect(atField[0]!.masked).toBe(true);
+  });
+
+  // 인셋 0px 은 이 접기가 만든 손실이 아니다 — 정확 일치 비교 시절에도 두 번째가
+  // 버려졌다. 같은 한 줄이 두 대역을 함께 닫는다는 것을 못박는다. rect 가 완전히
+  // 같아 담기는 순서가 뒤집혀도 결과는 같다(먼저면 그대로, 나중이면 교체).
+  it("장식용 형제와 rect 가 완전히 같아도 남는 힌트는 입력 쪽이다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="field"><div id="bg"></div><input id="name" /></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#field")!, { x: 20, y: 20, width: 200, height: 40 });
+    stubRect(document.querySelector("#bg")!, { x: 20, y: 20, width: 200, height: 40 });
+    stubRect(document.querySelector("#name")!, { x: 20, y: 20, width: 200, height: 40 });
+    stubStyle(document.querySelector("#bg")!, { backgroundColor: "rgb(238, 238, 238)" });
+    stubStyle(document.querySelector("#name")!, { borderTopWidth: "1px" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const atField = context.layoutHints.filter(
+      (hint) => Math.abs(hint.rect.x - 20) < 4 && Math.abs(hint.rect.y - 20) < 4,
+    );
+
+    expect(atField).toHaveLength(1);
+    expect(atField[0]!.tagName).toBe("input");
+  });
+
+  // 한 방향만 뒤집는다. masked 가 먼저 담혔으면 뒤에 오는 unmasked 는 지금처럼
+  // 버려진다 — 이 테스트는 수정 전에도 통과하고, 목적은 재현이 아니라 고정이다.
+  // 판정을 "충돌하면 나중 것으로 교체"(masked 조건 없이)로 넘기면 장식용 div 가
+  // 입력을 덮어써서 이 테스트가 잡아낸다 — 확인했다.
+  it("입력 쪽이 먼저 담혔으면 장식용 형제가 밀어내지 못한다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="field"><input id="name" /><div id="bg"></div></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#field")!, { x: 20, y: 20, width: 200, height: 40 });
+    stubRect(document.querySelector("#name")!, { x: 20, y: 20, width: 200, height: 40 });
+    stubRect(document.querySelector("#bg")!, { x: 21, y: 21, width: 198, height: 38 });
+    stubStyle(document.querySelector("#name")!, { borderTopWidth: "1px" });
+    stubStyle(document.querySelector("#bg")!, { backgroundColor: "rgb(238, 238, 238)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+    const atField = context.layoutHints.filter(
+      (hint) => Math.abs(hint.rect.x - 20) < 4 && Math.abs(hint.rect.y - 20) < 4,
+    );
+
+    expect(atField).toHaveLength(1);
+    expect(atField[0]!.tagName).toBe("input");
+  });
+
+  // 미리보기는 힌트를 배열 순서대로 겹쳐 그린다. 교체를 "지우고 뒤에 다시 담기"
+  // 로 구현하면 입력 상자가 배열 끝으로 밀려나 골격 위에 덧그려진다. 제자리
+  // 교체는 골격이 잡아둔 자리를 그대로 물려준다. splice + push 로 바꾸면 순서가
+  // ["div","div","input"] 이 되어 이 테스트가 잡아낸다 — 확인했다.
+  //
+  // 픽스처의 함정: #note 의 면적(7,800)이 #bg(8,000)와 #name(7,524) **사이** 여야
+  // 한다. 골격은 면적 큰 순이라 그래야 교체가 일어난 뒤에 #note 가 담기고, 두
+  // 구현의 순서가 갈린다. #note 를 더 작게 두면 교체가 #note 보다 먼저 끝나
+  // 양쪽 다 ["div","input","div"] 가 나와 판별력이 없다 — 처음 이렇게 썼다가
+  // 변이가 통과하는 것을 보고 고쳤다.
+  it("교체된 힌트는 골격이 잡아둔 자리를 그대로 지킨다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <div id="hero"></div>
+      <div id="field"><div id="bg"></div><input id="name" /></div>
+      <div id="note"></div>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#hero")!, { x: 0, y: 0, width: 600, height: 300 });
+    stubRect(document.querySelector("#field")!, { x: 20, y: 400, width: 200, height: 40 });
+    stubRect(document.querySelector("#bg")!, { x: 20, y: 400, width: 200, height: 40 });
+    stubRect(document.querySelector("#name")!, { x: 21, y: 401, width: 198, height: 38 });
+    stubRect(document.querySelector("#note")!, { x: 300, y: 500, width: 130, height: 60 });
+    stubStyle(document.querySelector("#hero")!, { backgroundColor: "rgb(200, 200, 200)" });
+    stubStyle(document.querySelector("#bg")!, { backgroundColor: "rgb(238, 238, 238)" });
+    stubStyle(document.querySelector("#name")!, { borderTopWidth: "1px" });
+    stubStyle(document.querySelector("#note")!, { backgroundColor: "rgb(220, 220, 220)" });
+
+    const context = getScreenContext(document.querySelector("#click")!)!;
+
+    expect(context.layoutHints.map((hint) => hint.tagName)).toEqual(["div", "input", "div"]);
+  });
+});
+
 describe("화면 밖 랜드마크는 힌트에 담기지 않는다", () => {
   // rectFromDomRect 는 x/y 를 0 으로 클램프한다. 그 값으로 겹침을 보면 화면
   // 위쪽으로 완전히 벗어난 <header> 가 y:0 으로 접혀 뷰포트 안으로 판정되고,
