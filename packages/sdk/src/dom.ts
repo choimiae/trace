@@ -547,8 +547,28 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
     // 접기 단계가 아니라 여기서 보는 이유: 이 지점은 칠해짐 판정이 끝난 뒤라
     // 어느 쪽을 남겨도 "칠해진 상자를 버리고 투명한 것을 남기는" 사고가 없다.
     // 먼저 담긴 쪽이 남는다 — 랜드마크 → 골격(면적 큰 순) → 근처(거리 순) 순서다.
+    // 예외는 masked 한 방향뿐이다. 장식용 채움과 입력 요소가 형제로 같은 자리를
+    // 차지하면(부모는 dropNearParent 가 이미 버렸고 형제끼리는 서로를 못 버린다)
+    // 면적이 큰 채움이 먼저 담겨 입력이 버려지고, 미리보기가 마스킹 사선
+    // (apps/admin/src/pages/pages.css) 대신 평범한 상자를 그린다. 그래서 이미
+    // 담긴 것이 masked 가 아닐 때 masked 후보가 그 자리를 가져간다.
+    //
+    // 자리를 "가져간다" 는 것이 중요하다 — 지우고 뒤에 다시 담으면 힌트가
+    // 배열 끝으로 밀려나고, 미리보기는 배열 순서대로 겹쳐 그리므로 입력 상자가
+    // 골격 위에 덧그려진다. 제자리 교체는 개수도 순서도 바꾸지 않는다.
+    //
+    // 반대 방향은 뒤집지 않는다. masked 가 먼저 담혔으면 뒤에 오는 unmasked 는
+    // 지금처럼 버려진다.
     const builtRect = built.rect;
-    if (pushedRects.some((pushed) => isNearSameRect(pushed, builtRect))) return;
+    const collision = pushedRects.findIndex((pushed) => isNearSameRect(pushed, builtRect));
+    if (collision >= 0) {
+      // pushedRects 와 hints 는 같은 push 로만 자라는 평행 배열이라 인덱스가 같다.
+      if (built.hint.masked && !hints[collision]!.masked) {
+        pushedRects[collision] = builtRect;
+        hints[collision] = built.hint;
+      }
+      return;
+    }
     pushedRects.push(builtRect);
     hints.push(built.hint);
   };
