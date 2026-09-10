@@ -325,7 +325,7 @@ describe("ingestion routes", () => {
     expect(timeline[1]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
   });
 
-  // 계약(screenContextSchema)은 layoutHints 를 20개까지 받는데, 수집 API 가 한때
+  // 계약(screenContextSchema)은 layoutHints 를 50개까지 받는데, 수집 API 가 한때
   // 자신만의 사본 상수로 12개에서 잘랐다. 두 벌로 갈라 둔 상한이 계약만 넓히고
   // 수집 API 는 조용히 좁은 채로 남는 drift 를 낳았던 회귀를 고정한다.
   it("화면 힌트 50개를 계약 상한 그대로 저장한다 (계약-수집 API 상한 drift 회귀 고정)", async () => {

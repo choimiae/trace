@@ -780,9 +780,9 @@ describe("screenContextSchema layoutHints 상한", () => {
     layoutHints: Array.from({ length: count }, (_, index) => hint(index)),
   });
 
-  it("20개를 받는다", () => {
-    const parsed = screenContextSchema.parse(context(20));
-    expect(parsed.layoutHints).toHaveLength(20);
+  it("50개를 받는다", () => {
+    const parsed = screenContextSchema.parse(context(50));
+    expect(parsed.layoutHints).toHaveLength(50);
   });
 
   // 상한이 없으면 페이로드가 무한정 커진다. 넓히되 열어 두지는 않는다.
