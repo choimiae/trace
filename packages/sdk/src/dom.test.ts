@@ -1808,7 +1808,9 @@ describe("iframe", () => {
 
     expect(innerYs).toEqual([10, 80, 150, 220]);
   });
+});
 
+describe("화면 제목", () => {
   // titleMasked 는 계약(screenContextSchema)·서버 정제(sanitizeScreenText)·저장
   // (events.title_masked)·미리보기 제목줄(ScreenContextPreview.tsx:39)이 모두
   // 만들어져 있는데 SDK 가 채우지 않아 통째로 잠들어 있었다. 제목줄이 언제나
@@ -1836,6 +1838,17 @@ describe("iframe", () => {
 
     // safeScreenTextSchema 가 min(1) 이라 빈 문자열을 넣으면 계약에서 떨어지고
     // 배치 전체가 400 이 된다. 속성 자체를 넣지 않아야 한다.
+    //
+    // 다만 이 테스트는 그 성질을 정밀하게 지키는 가드가 아니라, 빈 제목 처리가
+    // 통째로 사라지는 회귀를 잡는 스모크 테스트다. 방어가 코드에 여러 겹이라
+    // 한 겹씩 무너뜨려서는 빨개지지 않는다 — 실측(2026-09-10):
+    //   1) HTML 명세상 document.title 게터가 이미 앞뒤 공백을 지우고 접는다.
+    //      그래서 이 픽스처의 "   " 는 screenTitle 에 "" 로 들어온다 — 트림 두 개를
+    //      다 지워도 이 테스트는 통과한다(dom.test.ts 88개 전부 통과 확인).
+    //   2) screenTitle 의 `masked.length === 0 → undefined`
+    //   3) 호출부의 `...(titleMasked ? ... : {})` truthy 스프레드
+    // 2)만 지우면 3)이, 3)만 바꾸면 2)가 막는다. 둘을 함께 무너뜨리면 빨개지지만
+    // 그때는 빈 제목을 쓰는 다른 테스트 수십 개가 같이 빨개진다.
     expect(context).not.toHaveProperty("titleMasked");
   });
 
