@@ -30,23 +30,42 @@ export function installTriggers(
 
   let lastTarget: EventTarget | null = null;
   let clickTimes: number[] = [];
-  let deadClickTimer: ReturnType<typeof setTimeout> | undefined;
-  let mutatedSinceClick = false;
   let disposed = false;
 
-  const clearDeadClickTimer = () => {
-    if (deadClickTimer !== undefined) {
-      clearTimeout(deadClickTimer);
-      deadClickTimer = undefined;
+  // 클릭마다 독립된 반응-없는-클릭 타이머를 요소별로 쥔다. 다른 요소를
+  // 누른다고 이 요소의 대기를 지우면 안 되므로(그러면 A 를 누르고 2초 안에
+  // B 를 눌렀을 때 A 가 반응 없었다는 사실 자체가 사라진다) 단일 타이머가
+  // 아니라 요소를 키로 삼는다.
+  //
+  // 다만 DOM 변경은 어떤 클릭이 일으켰는지 알 수 없다 - rrweb 은 "무엇이
+  // 바뀌었는지" 가 아니라 "바뀌었다" 만 알려준다. 그래서 notifyMutation() 은
+  // 그 시점에 대기 중인 타이머를 전부 지운다. 잔여 한계: A 를 누르고 반응이
+  // 없는 채로 B 를 눌렀는데 B 가 (A 와 무관하게) 뭔가를 바꾸면, 그 변경이
+  // A 의 대기까지 함께 지운다 - A 도 반응 없는 클릭이었다는 사실을 놓친다.
+  // 이 클릭이 무엇을 바꿨는지 rrweb 이 알려주지 않는 한 고칠 수 없는 설계
+  // 상의 한계라 그대로 둔다.
+  const pendingDeadClicks = new Map<EventTarget, ReturnType<typeof setTimeout>>();
+
+  const cancelDeadClick = (el: EventTarget) => {
+    const timer = pendingDeadClicks.get(el);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      pendingDeadClicks.delete(el);
     }
+  };
+
+  const cancelAllDeadClicks = () => {
+    for (const timer of pendingDeadClicks.values()) clearTimeout(timer);
+    pendingDeadClicks.clear();
   };
 
   const onClick = (event: Event) => {
     if (disposed) return;
     const at = now();
+    const clickedTarget = event.target;
 
-    if (event.target !== lastTarget) {
-      lastTarget = event.target;
+    if (clickedTarget !== lastTarget) {
+      lastTarget = clickedTarget;
       clickTimes = [];
     }
     clickTimes = clickTimes.filter((time) => at - time < RAGE_CLICK_WINDOW_MS);
@@ -54,14 +73,25 @@ export function installTriggers(
     if (clickTimes.length >= RAGE_CLICK_COUNT) {
       clickTimes = [];
       options.onTrigger("rage_click");
+      // onTrigger 는 동기 호출이다 - 그 안에서 소비자가 dispose() 를 부를 수
+      // 있다. 그러면 여기서 다시 확인해야 한다 - 안 그러면 죽은 뒤에도 반응
+      // 없는 클릭 타이머 하나가 새로 걸려 DEAD_CLICK_TIMEOUT_MS 만큼 더
+      // 살아남는다(스스로 disposed 를 봐 트리거는 안 하지만, 타이머 자체가
+      // dispose() 의 "즉시 정리" 계약을 어긴다).
+      if (disposed) return;
     }
 
-    mutatedSinceClick = false;
-    clearDeadClickTimer();
-    deadClickTimer = setTimeout(() => {
-      deadClickTimer = undefined;
-      if (!disposed && !mutatedSinceClick) options.onTrigger("dead_click");
-    }, DEAD_CLICK_TIMEOUT_MS);
+    if (clickedTarget !== null) {
+      // 같은 요소를 다시 누르면 그 요소에 걸린 이전 대기를 스스로 대체한다.
+      // 다른 요소를 누르는 것은 취소 사유가 아니다 - 그 요소 몫의 타이머는
+      // 위 Map 에 따로 걸려 있으므로 손대지 않는다.
+      cancelDeadClick(clickedTarget);
+      const timer = setTimeout(() => {
+        pendingDeadClicks.delete(clickedTarget);
+        if (!disposed) options.onTrigger("dead_click");
+      }, DEAD_CLICK_TIMEOUT_MS);
+      pendingDeadClicks.set(clickedTarget, timer);
+    }
   };
 
   const onError = () => {
@@ -75,11 +105,16 @@ export function installTriggers(
 
   return {
     notifyMutation() {
-      mutatedSinceClick = true;
+      cancelAllDeadClicks();
     },
     dispose() {
       disposed = true;
-      clearDeadClickTimer();
+      cancelAllDeadClicks();
+      // lastTarget 을 놓지 않으면 이 핸들을 쥔 쪽(예: Task 13, 모듈 수명
+      // 내내 보관)이 살아 있는 한 마지막으로 클릭한 DOM 요소도 계속
+      // 살아 있는다 - 페이지에서 이미 제거된 요소라도.
+      lastTarget = null;
+      clickTimes = [];
       target.removeEventListener("click", onClick, true);
       target.removeEventListener("error", onError);
     },
