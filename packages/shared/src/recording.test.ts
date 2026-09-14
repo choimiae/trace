@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_RECORDING_CHUNK_EVENTS } from "./recording-limits.js";
 import { recordingChunkSchema, replayConfigSchema } from "./recording.js";
 
 const validChunk = {
@@ -46,5 +47,13 @@ describe("recordingChunkSchema", () => {
 
   it("프로젝트 식별자 모양을 검증한다", () => {
     expect(() => recordingChunkSchema.parse({ ...validChunk, projectId: "sess_abc" })).toThrow();
+  });
+
+  // 이벤트 내부 구조는 안 보지만 개수 상한은 계약이 직접 막는다. 실제 rrweb
+  // 이벤트를 5만 개 만들 필요는 없다 - events 는 z.unknown() 이라 자리채움으로
+  // 충분하다.
+  it("이벤트 개수가 상한을 넘으면 거절한다", () => {
+    const tooMany = Array.from({ length: MAX_RECORDING_CHUNK_EVENTS + 1 }, () => null);
+    expect(() => recordingChunkSchema.parse({ ...validChunk, events: tooMany })).toThrow();
   });
 });

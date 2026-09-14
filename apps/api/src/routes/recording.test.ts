@@ -1,4 +1,5 @@
 import { gzipSync } from "node:zlib";
+import { MAX_RECORDING_CHUNK_BYTES } from "@trace/shared/recording-limits";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { MemoryStore } from "../store/memory-store.js";
@@ -131,6 +132,19 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ error: "invalid_recording_chunk" });
+  });
+
+  // bodyLimit 은 gunzip 을 타기도 전, Fastify 가 요청을 받는 첫 관문이다. 이
+  // 가드가 없으면 gzip 여부와 무관하게 임의로 큰 본문이 그대로 핸들러까지
+  // 들어온다.
+  it("본문이 상한을 넘으면 413 으로 거절한다", async () => {
+    const store = new MemoryStore();
+    await replayProject(store);
+    const app = createApp({ store });
+
+    const response = await post(app, Buffer.alloc(MAX_RECORDING_CHUNK_BYTES + 1, 0x61));
+
+    expect(response.statusCode).toBe(413);
   });
 
   it("세션 식별자 모양을 검증한다", async () => {
