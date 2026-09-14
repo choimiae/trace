@@ -1,5 +1,5 @@
-import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
-import { screenContextSchema } from "@trace/shared";
+import type { DashboardSummary, EventBatch, Issue, ReplayConfig, TraceEvent } from "@trace/shared";
+import { DEFAULT_REPLAY_CONFIG, replayConfigSchema, screenContextSchema } from "@trace/shared";
 import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
@@ -23,6 +23,7 @@ import type {
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
   ScreenContextEventQuery,
+  SessionRecordingChunk,
   TraceStore,
   UpdateProjectInput,
   UpsertAdminUserFromGoogleInput,
@@ -32,6 +33,18 @@ type Row = Record<string, unknown>;
 
 function compact<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null && v !== undefined)) as T;
+}
+
+// 저장된 값이 깨졌거나 예전 형식이면 꺼진 설정으로 돌아간다. 여기서 던지면
+// 프로젝트 조회가 통째로 실패해 수집까지 멈춘다 — 리플레이가 꺼지는 쪽이 낫다.
+function parseReplayConfig(value: unknown): ReplayConfig {
+  if (typeof value !== "string") return DEFAULT_REPLAY_CONFIG;
+  try {
+    const parsed = replayConfigSchema.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : DEFAULT_REPLAY_CONFIG;
+  } catch {
+    return DEFAULT_REPLAY_CONFIG;
+  }
 }
 
 function hasColumn(db: Database.Database, tableName: string, columnName: string): boolean {
@@ -66,19 +79,21 @@ export class SqliteStore implements TraceStore {
       name: input.name,
       allowedDomains: input.allowedDomains,
       privacyConfig: { strictMasking: true, queryRedaction: true, inputCapture: false },
+      replay: DEFAULT_REPLAY_CONFIG,
       createdAt: new Date().toISOString(),
     };
 
     this.db
       .prepare(
-        `INSERT INTO projects (project_id, name, allowed_domains, privacy_config, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO projects (project_id, name, allowed_domains, privacy_config, replay_config, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(
         project.projectId,
         project.name,
         JSON.stringify(project.allowedDomains),
         JSON.stringify(project.privacyConfig),
+        JSON.stringify(project.replay),
         project.createdAt,
       );
 
@@ -94,6 +109,7 @@ export class SqliteStore implements TraceStore {
       name: row.name as string,
       allowedDomains: JSON.parse(row.allowed_domains as string) as string[],
       privacyConfig: JSON.parse(row.privacy_config as string) as ProjectRecord["privacyConfig"],
+      replay: parseReplayConfig(row.replay_config),
       createdAt: row.created_at as string,
     };
   }
@@ -102,15 +118,17 @@ export class SqliteStore implements TraceStore {
     const existing = await this.getProject(projectId);
     if (!existing) return undefined;
     const allowedDomains = normalizeAllowedDomains(input.allowedDomains);
+    const replay = input.replay ?? existing.replay;
 
     this.db
-      .prepare(`UPDATE projects SET name = ?, allowed_domains = ? WHERE project_id = ?`)
-      .run(input.name, JSON.stringify(allowedDomains), projectId);
+      .prepare(`UPDATE projects SET name = ?, allowed_domains = ?, replay_config = ? WHERE project_id = ?`)
+      .run(input.name, JSON.stringify(allowedDomains), JSON.stringify(replay), projectId);
 
     return {
       ...existing,
       name: input.name,
       allowedDomains,
+      replay,
     };
   }
 
@@ -625,6 +643,52 @@ export class SqliteStore implements TraceStore {
     return buildDashboardSummary(await this.listIssues(projectId), row.total);
   }
 
+  async saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO session_recordings
+           (session_id, project_id, seq, started_at, received_at, event_count, bytes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        chunk.sessionId,
+        chunk.projectId,
+        chunk.seq,
+        chunk.startedAt,
+        chunk.receivedAt,
+        chunk.eventCount,
+        Buffer.from(chunk.bytes),
+      );
+  }
+
+  async listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, project_id, seq, started_at, received_at, event_count, bytes
+           FROM session_recordings
+          WHERE project_id = ? AND session_id = ?
+          ORDER BY seq ASC`,
+      )
+      .all(projectId, sessionId) as Row[];
+
+    return rows.map((row) => ({
+      sessionId: row.session_id as string,
+      projectId: row.project_id as string,
+      seq: row.seq as number,
+      startedAt: row.started_at as string,
+      receivedAt: row.received_at as string,
+      eventCount: row.event_count as number,
+      bytes: new Uint8Array(row.bytes as Buffer),
+    }));
+  }
+
+  // started_at 이 아니라 received_at 이다. started_at 은 브라우저 시계가 적어
+  // 보낸 값이라, 시계가 어긋난 기기 하나가 보존 창을 무한정 늘리거나(2999년)
+  // 방금 받은 기록을 같은 요청 안에서 지워 버린다(과거 날짜).
+  async deleteSessionRecordingsBefore(cutoff: string): Promise<number> {
+    return this.db.prepare(`DELETE FROM session_recordings WHERE received_at < ?`).run(cutoff).changes;
+  }
+
   private getProjectMembershipSync(projectId: string, adminUserId: string): ProjectMembershipRecord | undefined {
     const row = this.db
       .prepare(
@@ -717,6 +781,11 @@ export class SqliteStore implements TraceStore {
   }
 
   private migrate(): void {
+    if (!hasColumn(this.db, "projects", "replay_config")) {
+      this.db.exec(
+        `ALTER TABLE projects ADD COLUMN replay_config TEXT NOT NULL DEFAULT '{"enabled":false,"maskSelectors":[]}'`,
+      );
+    }
     if (!hasColumn(this.db, "events", "received_at")) {
       this.db.exec(`
         ALTER TABLE events ADD COLUMN received_at TEXT;

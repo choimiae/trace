@@ -16,6 +16,10 @@
     "./hash": {
       "types": "./dist/hash.d.ts",
       "default": "./dist/hash.js"
+    },
+    "./recording-limits": {
+      "types": "./dist/recording-limits.d.ts",
+      "default": "./dist/recording-limits.js"
     }
   },
   "scripts": {

@@ -1,4 +1,5 @@
 import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
+import { DEFAULT_REPLAY_CONFIG } from "@trace/shared";
 import { nanoid } from "nanoid";
 import { elementKey } from "../detection/element-identity.js";
 import { buildDashboardSummary } from "./dashboard-summary.js";
@@ -20,6 +21,7 @@ import type {
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
   ScreenContextEventQuery,
+  SessionRecordingChunk,
   TraceStore,
   UpdateProjectInput,
   UpsertAdminUserFromGoogleInput,
@@ -36,6 +38,7 @@ export class MemoryStore implements TraceStore {
   private adminSessions = new Map<string, AdminSessionRecord>();
   private projectMemberships = new Map<string, ProjectMembershipRecord>();
   private auditLogs = new Map<string, AuditLogRecord>();
+  private sessionRecordings = new Map<string, SessionRecordingChunk>();
 
   async createProject(input: CreateProjectInput): Promise<ProjectRecord> {
     const project: ProjectRecord = {
@@ -43,6 +46,7 @@ export class MemoryStore implements TraceStore {
       name: input.name,
       allowedDomains: input.allowedDomains,
       privacyConfig: { strictMasking: true, queryRedaction: true, inputCapture: false },
+      replay: DEFAULT_REPLAY_CONFIG,
       createdAt: new Date().toISOString(),
     };
     this.projects.set(project.projectId, project);
@@ -61,6 +65,7 @@ export class MemoryStore implements TraceStore {
       ...existing,
       name: input.name,
       allowedDomains: normalizeAllowedDomains(input.allowedDomains),
+      replay: input.replay ?? existing.replay,
     };
     this.projects.set(projectId, updated);
     return updated;
@@ -349,5 +354,30 @@ export class MemoryStore implements TraceStore {
   async getDashboardSummary(projectId: string): Promise<DashboardSummary> {
     const [issues, events] = await Promise.all([this.listIssues(projectId), this.listEvents(projectId)]);
     return buildDashboardSummary(issues, events.length);
+  }
+
+  async saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void> {
+    const key = `${chunk.sessionId}:${chunk.seq}`;
+    if (this.sessionRecordings.has(key)) return;
+    this.sessionRecordings.set(key, { ...chunk, bytes: new Uint8Array(chunk.bytes) });
+  }
+
+  async listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]> {
+    return Array.from(this.sessionRecordings.values())
+      .filter((chunk) => chunk.projectId === projectId && chunk.sessionId === sessionId)
+      .sort((a, b) => a.seq - b.seq);
+  }
+
+  // SqliteStore 와 같은 열을 본다 - received_at 이다. startedAt 으로 판정하면
+  // 브라우저 시계 하나가 보존 창을 무한정 늘리거나 방금 받은 기록을 지운다.
+  async deleteSessionRecordingsBefore(cutoff: string): Promise<number> {
+    let deleted = 0;
+    for (const [key, chunk] of this.sessionRecordings) {
+      if (chunk.receivedAt < cutoff) {
+        this.sessionRecordings.delete(key);
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

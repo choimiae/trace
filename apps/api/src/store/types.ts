@@ -1,10 +1,11 @@
-import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
+import type { DashboardSummary, EventBatch, Issue, ReplayConfig, TraceEvent } from "@trace/shared";
 
 export interface ProjectRecord {
   projectId: string;
   name: string;
   allowedDomains: string[];
   privacyConfig: { strictMasking: true; queryRedaction: true; inputCapture: false };
+  replay: ReplayConfig;
   createdAt: string;
 }
 
@@ -16,6 +17,9 @@ export interface CreateProjectInput {
 export interface UpdateProjectInput {
   name: string;
   allowedDomains: string[];
+  // 넘기지 않으면 기존 설정을 유지한다. 관리자 화면이 리플레이 항목을 보내지
+  // 않는 동안 이름만 고친 요청이 기록을 꺼 버리지 않게 하기 위한 것이다.
+  replay?: ReplayConfig;
 }
 
 export function normalizeAllowedDomains(domains: string[]): string[] {
@@ -125,6 +129,30 @@ export interface StoredSession {
   endedAt?: string;
 }
 
+export interface SessionRecordingChunk {
+  sessionId: string;
+  projectId: string;
+  seq: number;
+  /**
+   * 기록이 시작된 시각. **브라우저 시계가 적어 보낸 값이다** — 봉투 검증은
+   * "날짜 문자열이다" 까지만 본다. 재생 타임라인에만 쓰고 보존 판정에는 쓰지
+   * 않는다.
+   */
+  startedAt: string;
+  /**
+   * 서버가 청크를 받은 시각. 보존 스윕이 보는 유일한 시각이다.
+   *
+   * 라우트가 자기 시계로 채운다 — 클라이언트가 보낸 값을 여기에 넣으면 안 된다.
+   * startedAt 으로 판정하던 시절에는 시계가 미래로 어긋난 기기의 기록이 7일
+   * 창을 영원히 살아남고, 과거로 어긋난 기기의 기록은 저장되자마자 같은 요청
+   * 안의 스윕에 지워져 202 를 받고도 아무것도 남지 않았다.
+   */
+  receivedAt: string;
+  eventCount: number;
+  /** gzip 된 봉투 그대로. 서버는 검증을 위해 풀어 볼 뿐 풀어서 저장하지 않는다. */
+  bytes: Uint8Array;
+}
+
 export interface TraceStore {
   readonly isDurable?: boolean;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
@@ -188,6 +216,12 @@ export interface TraceStore {
    */
   findScreenContextEvents(query: ScreenContextEventQuery): Promise<TraceEvent[]>;
   getDashboardSummary(projectId: string): Promise<DashboardSummary>;
+  /** 같은 (sessionId, seq) 가 이미 있으면 무시한다 — 재전송이 구간을 중복시키지 않게. */
+  saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void>;
+  /** seq 오름차순. 재생은 이 순서로 이어 붙인다. */
+  listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]>;
+  /** `receivedAt` 이 cutoff 이전인 청크를 지운다. startedAt 은 보지 않는다. */
+  deleteSessionRecordingsBefore(cutoff: string): Promise<number>;
 }
 
 export function assertDeployableTraceStore(store: TraceStore, env: NodeJS.ProcessEnv): void {

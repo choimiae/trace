@@ -1820,6 +1820,158 @@ function describeTraceStoreContract(
         "https://app.example.com",
       ]);
     });
+
+    it("새 프로젝트는 리플레이가 꺼진 채로 시작한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      expect(project.replay).toEqual({ enabled: false, maskSelectors: [] });
+      expect((await store.getProject(project.projectId))?.replay).toEqual({
+        enabled: false,
+        maskSelectors: [],
+      });
+    });
+
+    it("리플레이를 켜고 마스킹 셀렉터를 저장한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      const updated = await store.updateProject(project.projectId, {
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+        replay: { enabled: true, maskSelectors: [".customer-name"] },
+      });
+
+      expect(updated?.replay).toEqual({ enabled: true, maskSelectors: [".customer-name"] });
+      expect((await store.getProject(project.projectId))?.replay.enabled).toBe(true);
+    });
+
+    // 관리자 화면은 아직 리플레이 항목을 보내지 않는다. 이름만 고치는 요청이
+    // 리플레이를 조용히 꺼 버리면 기록이 그 순간 멈춘다.
+    it("replay 를 빼고 수정하면 기존 설정이 남는다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      await store.updateProject(project.projectId, {
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+        replay: { enabled: true, maskSelectors: [".customer-name"] },
+      });
+
+      const renamed = await store.updateProject(project.projectId, {
+        name: "Demo 2",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      expect(renamed?.name).toBe("Demo 2");
+      expect(renamed?.replay).toEqual({ enabled: true, maskSelectors: [".customer-name"] });
+    });
+
+    it("세션 기록 청크를 seq 순서로 돌려준다", async () => {
+      const store = open();
+      const chunk = (seq: number, startedAt: string) => ({
+        sessionId: "sess_1",
+        projectId: "proj_1",
+        seq,
+        startedAt,
+        receivedAt: "2026-09-14T00:05:00.000Z",
+        eventCount: 2,
+        bytes: new Uint8Array([seq, 9, 9]),
+      });
+
+      await store.saveSessionRecordingChunk(chunk(1, "2026-09-14T00:02:00.000Z"));
+      await store.saveSessionRecordingChunk(chunk(0, "2026-09-14T00:00:00.000Z"));
+
+      const stored = await store.listSessionRecordingChunks("proj_1", "sess_1");
+      expect(stored.map((item) => item.seq)).toEqual([0, 1]);
+      expect(Array.from(stored[0]!.bytes)).toEqual([0, 9, 9]);
+      expect(stored[0]!.eventCount).toBe(2);
+    });
+
+    // 재전송은 네트워크가 불안정하면 평범하게 일어난다. 두 번 저장하면 재생할 때
+    // 같은 구간이 두 번 나온다.
+    it("같은 seq 를 다시 보내면 무시한다", async () => {
+      const store = open();
+      const chunk = {
+        sessionId: "sess_1",
+        projectId: "proj_1",
+        seq: 0,
+        startedAt: "2026-09-14T00:00:00.000Z",
+        receivedAt: "2026-09-14T00:00:01.000Z",
+        eventCount: 1,
+        bytes: new Uint8Array([1, 2, 3]),
+      };
+
+      await store.saveSessionRecordingChunk(chunk);
+      await store.saveSessionRecordingChunk({ ...chunk, bytes: new Uint8Array([4, 5, 6]) });
+
+      const stored = await store.listSessionRecordingChunks("proj_1", "sess_1");
+      expect(stored).toHaveLength(1);
+      expect(Array.from(stored[0]!.bytes)).toEqual([1, 2, 3]);
+    });
+
+    it("다른 세션의 청크를 섞지 않는다", async () => {
+      const store = open();
+      const base = {
+        projectId: "proj_1",
+        seq: 0,
+        startedAt: "2026-09-14T00:00:00.000Z",
+        receivedAt: "2026-09-14T00:00:01.000Z",
+        eventCount: 1,
+        bytes: new Uint8Array([1]),
+      };
+      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_1" });
+      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_2" });
+
+      expect(await store.listSessionRecordingChunks("proj_1", "sess_1")).toHaveLength(1);
+    });
+
+    // 보존 스윕은 **서버가 받은 시각**으로 판정한다. startedAt 은 브라우저 시계가
+    // 적어 보낸 값이고 봉투 검증은 "날짜 문자열이다" 까지만 본다. 그 값으로
+    // 판정하면 두 가지가 실제로 일어난다 - 시계가 미래로 어긋난 기기의 기록은
+    // 7일 창을 영원히 살아남고, 과거로 어긋난 기기의 기록은 저장되자마자 같은
+    // 요청 안의 스윕에 지워져 202 를 받고도 아무것도 남지 않는다(조용한 유실).
+    it("보존 기한을 서버가 받은 시각으로 판정한다", async () => {
+      const store = open();
+      const base = {
+        projectId: "proj_1",
+        sessionId: "sess_1",
+        eventCount: 1,
+        bytes: new Uint8Array([1]),
+      };
+      // 시계가 미래로 어긋난 기기. 오래전에 받았으니 지워져야 한다.
+      await store.saveSessionRecordingChunk({
+        ...base,
+        seq: 0,
+        startedAt: "2999-01-01T00:00:00.000Z",
+        receivedAt: "2026-09-01T00:00:00.000Z",
+      });
+      // 시계가 과거로 어긋난 기기. 방금 받았으니 남아야 한다.
+      await store.saveSessionRecordingChunk({
+        ...base,
+        seq: 1,
+        startedAt: "2020-01-01T00:00:00.000Z",
+        receivedAt: "2026-09-13T00:00:00.000Z",
+      });
+
+      const deleted = await store.deleteSessionRecordingsBefore("2026-09-07T00:00:00.000Z");
+
+      expect(deleted).toBe(1);
+      const kept = await store.listSessionRecordingChunks("proj_1", "sess_1");
+      expect(kept.map((chunk) => chunk.seq)).toEqual([1]);
+      // 두 시각을 접지 않고 각각 돌려줘야 한다 - 재생은 startedAt 을 쓰고
+      // 보존은 receivedAt 을 쓴다.
+      expect(kept[0]!.startedAt).toBe("2020-01-01T00:00:00.000Z");
+      expect(kept[0]!.receivedAt).toBe("2026-09-13T00:00:00.000Z");
+    });
   });
 }
 

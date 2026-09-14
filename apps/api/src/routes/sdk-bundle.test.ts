@@ -5,9 +5,9 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { registerSdkBundleRoutes } from "./sdk-bundle.js";
 
-async function createBundleFile(contents: string): Promise<string> {
+async function createBundleFile(contents: string, name = "trace.js"): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "trace-bundle-"));
-  const bundlePath = path.join(directory, "trace.js");
+  const bundlePath = path.join(directory, name);
   await writeFile(bundlePath, contents, "utf8");
   return bundlePath;
 }
@@ -47,6 +47,47 @@ describe("GET /trace.js", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: "sdk_bundle_not_built" });
+    await app.close();
+  });
+});
+
+describe("GET /trace-replay.js", () => {
+  it("리플레이 번들을 JavaScript content type 으로 내려준다", async () => {
+    const replayBundlePath = await createBundleFile("window.__replay=1;", "trace-replay.js");
+    const app = Fastify({ logger: false });
+    await app.register(registerSdkBundleRoutes, { replayBundlePath });
+
+    const response = await app.inject({ method: "GET", url: "/trace-replay.js" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/javascript");
+    expect(response.body).toBe("window.__replay=1;");
+    await app.close();
+  });
+
+  it("번들이 없으면 404 와 빌드 안내 코드를 반환한다", async () => {
+    const app = Fastify({ logger: false });
+    await app.register(registerSdkBundleRoutes, {
+      replayBundlePath: path.join(tmpdir(), "trace-missing", "trace-replay.js"),
+    });
+
+    const response = await app.inject({ method: "GET", url: "/trace-replay.js" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "replay_bundle_not_built" });
+    await app.close();
+  });
+
+  // CDN 을 쓰지 않는 이유가 여기 걸려 있다. 리플레이 번들이 trace.js 와 같은
+  // 출처에서 오므로 고객의 CSP 에 새로 추가할 항목이 없다.
+  it("기본 번들과 같은 출처에서 서빙한다", async () => {
+    const bundlePath = await createBundleFile("window.trace={};");
+    const replayBundlePath = await createBundleFile("window.__replay=1;", "trace-replay.js");
+    const app = Fastify({ logger: false });
+    await app.register(registerSdkBundleRoutes, { bundlePath, replayBundlePath });
+
+    expect((await app.inject({ method: "GET", url: "/trace.js" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/trace-replay.js" })).statusCode).toBe(200);
     await app.close();
   });
 });

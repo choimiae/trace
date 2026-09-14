@@ -5,14 +5,16 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -b --force tsconfig.json && npm run build:bundle",
+    "build": "tsc -b --force tsconfig.json && npm run build:bundle && npm run build:replay",
     "build:bundle": "esbuild src/index.ts --bundle --format=iife --minify --platform=browser --outfile=dist/trace.js",
+    "build:replay": "esbuild src/replay/index.ts --bundle --format=iife --minify --platform=browser --outfile=dist/trace-replay.js",
     "pretest": "npm run build --workspace @trace/shared",
     "test": "vitest run"
   },
   "dependencies": {
     "@trace/shared": "0.1.0",
-    "nanoid": "^5.0.9"
+    "nanoid": "^5.0.9",
+    "rrweb": "2.0.0-alpha.4"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

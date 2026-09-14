@@ -379,7 +379,13 @@ export async function registerAdminProxyRoutes(
     const parsed = updateProjectSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_project_settings" });
 
-    const updated = await options.store.updateProject(projectId, parsed.data);
+    const updated = await options.store.updateProject(projectId, {
+      name: parsed.data.name,
+      allowedDomains: parsed.data.allowedDomains,
+      // exactOptionalPropertyTypes: replay 를 아예 안 보낸 요청과 구분하려면
+      // 값이 없을 때 키 자체를 빼야 한다(undefined 를 값으로 넣으면 안 됨).
+      ...(parsed.data.replay === undefined ? {} : { replay: parsed.data.replay }),
+    });
     if (!updated) return reply.code(404).send({ error: "project_not_found" });
 
     await options.store.createAuditLog({
@@ -391,10 +397,12 @@ export async function registerAdminProxyRoutes(
         before: {
           name: access.project.name,
           allowedDomains: access.project.allowedDomains,
+          replay: access.project.replay,
         },
         after: {
           name: updated.name,
           allowedDomains: updated.allowedDomains,
+          replay: updated.replay,
         },
       },
     });
@@ -657,6 +665,7 @@ function toProjectSettingsResponse(
     projectId: project.projectId,
     name: project.name,
     allowedDomains: project.allowedDomains,
+    replay: project.replay,
     role,
   };
 }

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL,
   allowed_domains TEXT NOT NULL,
   privacy_config TEXT NOT NULL,
+  replay_config TEXT NOT NULL DEFAULT '{"enabled":false,"maskSelectors":[]}',
   created_at TEXT NOT NULL
 );
 
@@ -102,4 +103,19 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 
 CREATE INDEX IF NOT EXISTS audit_logs_project_created ON audit_logs (project_id, created_at DESC, audit_log_id DESC);
+
+CREATE TABLE IF NOT EXISTS session_recordings (
+  session_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  event_count INTEGER NOT NULL,
+  bytes BLOB NOT NULL,
+  PRIMARY KEY (session_id, seq)
+);
+
+CREATE INDEX IF NOT EXISTS session_recordings_project_session ON session_recordings (project_id, session_id, seq);
+-- 보존 스윕이 보는 열은 received_at 이다(started_at 은 브라우저 시계 값이라 쓰지 않는다).
+CREATE INDEX IF NOT EXISTS session_recordings_received ON session_recordings (received_at);
 `;
