@@ -361,6 +361,17 @@ describe("RecordingUploader", () => {
     expect(uploader.pendingCount).toBe(1);
   });
 
+  // status 0 은 불투명 응답이나 전송 실패지 서버의 영구 거절이 아니다 -
+  // undefined 와 같은 안전한 쪽으로 처리해야 한다.
+  it("status 0 은 안전한 쪽(재시도)으로 처리한다", async () => {
+    const fetcher = vi.fn(async () => ({ ok: false, status: 0 }));
+    const uploader = createUploader(fetcher);
+    uploader.enqueue([event(1)]);
+
+    expect(await uploader.flush()).toBe(false);
+    expect(uploader.pendingCount).toBe(1);
+  });
+
   it("압축 후 크기가 상한을 넘으면 보내지 않고 버린다", async () => {
     const oversized = new Uint8Array(MAX_RECORDING_CHUNK_BYTES + 1);
     const fetcher = vi.fn();
@@ -453,5 +464,140 @@ describe("RecordingUploader", () => {
     const body = bodyOf(fetcher.mock.calls[0]!);
     expect(body.url).toBe(window.location.origin);
     expect(body.url).not.toContain("SECRET");
+  });
+
+  // --- 리뷰 라운드 2: 발견 1 재작업 (실패 경로에서 겹친 flush 가 seq 를 뒤섞는다) ---
+  //
+  // 1라운드의 in-flight 체인은 성공 경로만 고쳤다. seq 를 send 시점에 읽고
+  // (this.seq), requeue() 가 실패한 배치를 pending 맨 앞에 되돌리는 한,
+  // 겹친 flush 사이에 실패가 끼면 두 배치가 seq 를 나눠 갖지 못하고 하나로
+  // 뭉개지거나 같은 seq 를 두 번 쓴다. 아래 세 테스트가 그 경로를 직접
+  // 겨냥한다 - 현재 코드에서 실패하는 것을 먼저 확인했다.
+
+  it("겹친 flush 에서 먼저 것이 재시도 가능하게 실패해도 seq 가 뒤섞이지 않는다", async () => {
+    let resolveFirst!: (value: { ok: boolean; status?: number }) => void;
+    const firstResponse = new Promise<{ ok: boolean; status?: number }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(() => firstResponse)
+      .mockImplementation(async () => ({ ok: true, status: 202 }));
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([event(1)]);
+    const firstFlush = uploader.flush();
+    uploader.enqueue([event(2)]);
+    const secondFlush = uploader.flush();
+
+    resolveFirst({ ok: false, status: 500 }); // 첫 배치(e1)가 재시도 가능하게 실패한다.
+    await Promise.all([firstFlush, secondFlush]);
+
+    const bodies = fetcher.mock.calls.map((call) => bodyOf(call));
+    const bodiesWith = (timestamp: number) =>
+      bodies.filter((body) => (body.events as RecordedEvent[]).some((e) => e.timestamp === timestamp));
+    const e1Bodies = bodiesWith(1);
+    const e2Bodies = bodiesWith(2);
+
+    // e1 은 실패와 재시도를 통틀어 언제나 같은 seq 를 쓴다.
+    expect(e1Bodies.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(e1Bodies.map((b) => b.seq)).size).toBe(1);
+    // e2(더 최신)는 e1(더 오래된)보다 큰 seq 를 쓴다 - 절대 더 작은 값으로
+    // 나가지 않는다.
+    expect(e2Bodies.length).toBe(1);
+    expect(e2Bodies[0]!.seq as number).toBeGreaterThan(e1Bodies[0]!.seq as number);
+    // 어떤 청크도 e1 과 e2 를 함께 담지 않는다 - 서로 다른 seq 를 가져야 할
+    // 두 배치가 하나로 뭉개지지 않는다.
+    for (const body of bodies) {
+      const events = body.events as RecordedEvent[];
+      const hasBoth = events.some((e) => e.timestamp === 1) && events.some((e) => e.timestamp === 2);
+      expect(hasBoth).toBe(false);
+    }
+  });
+
+  it("겹친 flush 에서 먼저 것이 던져도 seq 가 뒤섞이지 않는다", async () => {
+    let rejectFirst!: (error: unknown) => void;
+    const firstResponse = new Promise<{ ok: boolean; status?: number }>((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(() => firstResponse)
+      .mockImplementation(async () => ({ ok: true, status: 202 }));
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([event(1)]);
+    const firstFlush = uploader.flush();
+    uploader.enqueue([event(2)]);
+    const secondFlush = uploader.flush();
+
+    rejectFirst(new Error("offline")); // 첫 배치(e1)의 fetch 자체가 던진다.
+    await Promise.all([firstFlush, secondFlush]);
+
+    const bodies = fetcher.mock.calls.map((call) => bodyOf(call));
+    const bodiesWith = (timestamp: number) =>
+      bodies.filter((body) => (body.events as RecordedEvent[]).some((e) => e.timestamp === timestamp));
+    const e1Bodies = bodiesWith(1);
+    const e2Bodies = bodiesWith(2);
+
+    expect(e1Bodies.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(e1Bodies.map((b) => b.seq)).size).toBe(1);
+    expect(e2Bodies.length).toBe(1);
+    expect(e2Bodies[0]!.seq as number).toBeGreaterThan(e1Bodies[0]!.seq as number);
+    for (const body of bodies) {
+      const events = body.events as RecordedEvent[];
+      const hasBoth = events.some((e) => e.timestamp === 1) && events.some((e) => e.timestamp === 2);
+      expect(hasBoth).toBe(false);
+    }
+  });
+
+  it("재시도되는 배치는 원래 seq 를, 그 뒤에 claim 된 배치는 자신의 seq 를 그대로 지킨다", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValue({ ok: true, status: 202 });
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([event(1)]);
+    expect(await uploader.flush()).toBe(false); // e1: seq 0 배정, 실패.
+
+    uploader.enqueue([event(2)]);
+    // 이 한 번의 flush() 호출이 밀린 e1 재시도와 새로 claim 된 e2 를 모두
+    // 실어 나른다 - 둘은 서로 다른 seq 를 쓴다.
+    expect(await uploader.flush()).toBe(true);
+
+    expect(fetcher.mock.calls.length).toBe(3);
+    const bodies = fetcher.mock.calls.map((call) => bodyOf(call));
+    expect(bodies[0]!.seq).toBe(0);
+    expect((bodies[0]!.events as RecordedEvent[])[0]!.timestamp).toBe(1);
+    expect(bodies[1]!.seq).toBe(0); // 재시도 - 같은 seq.
+    expect((bodies[1]!.events as RecordedEvent[])[0]!.timestamp).toBe(1);
+    expect(bodies[2]!.seq).toBe(1); // 새로 claim 된 배치 - 자신의 seq.
+    expect((bodies[2]!.events as RecordedEvent[])[0]!.timestamp).toBe(2);
+  });
+
+  // 재작업 과정에서 스스로 세운 불변식(4번: claim 되어 아직 전송되지 않은
+  // 배치 안의 이벤트도 트리밍 보호 대상이다) 검증 - 요청받은 3개 테스트에는
+  // 없지만, capPending() 이 이제 outstanding 청크 경계를 넘나들므로 직접
+  // 확인한다.
+  it("claim 되어 아직 전송되지 않은 배치 속 스냅샷도 트리밍이 그 경계를 넘어 보존한다", async () => {
+    const fetcher = vi.fn(async () => ({ ok: false, status: 500 }));
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([snapshot(0, { marker: "anchor" })]);
+    // claim 되어 outstanding 에 들어가지만(seq 0), 전송은 실패해 그대로
+    // 남는다 - 이제 이 스냅샷은 unclaimed 가 아니라 claim 된 배치 안에 있다.
+    expect(await uploader.flush()).toBe(false);
+
+    uploader.enqueue(Array.from({ length: MAX_PENDING_EVENTS + 100 }, (_, i) => event(i + 1)));
+
+    fetcher.mockResolvedValue({ ok: true, status: 202 });
+    await uploader.flush();
+
+    // calls[0] = 첫 실패 시도(스냅샷만). calls[1] = 그 배치의 재시도(성공) -
+    // 트리밍이 배치 경계를 몰랐다면 이 스냅샷이 통째로 사라졌을 자리다.
+    const retriedEvents = bodyOf(fetcher.mock.calls[1]!).events as Record<string, unknown>[];
+    expect(retriedEvents).toHaveLength(1);
+    expect(retriedEvents[0]!.marker).toBe("anchor");
   });
 });

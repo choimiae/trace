@@ -52,20 +52,32 @@ function safeCurrentUrl(rawUrl: string): string {
 }
 
 function isRetryableStatus(status: number | undefined): boolean {
-  // status 를 모르면(fetcher 구현이 안 실어 준 경우) 안전한 쪽 - 재시도 -
-  // 로 처리한다. 408(Request Timeout)·429(Too Many Requests)는 다시
-  // 보내면 성공할 수 있는 일시적 상태라 재시도 대상에 남긴다. 그 밖의
+  // status 를 모르거나(fetcher 구현이 안 실어 준 경우) 0 이면(불투명
+  // 응답이거나 전송 자체가 실패한 경우 - 서버의 판단이 아니다) 안전한 쪽 -
+  // 재시도 - 로 처리한다. 408(Request Timeout)·429(Too Many Requests)는
+  // 다시 보내면 성공할 수 있는 일시적 상태라 재시도 대상에 남긴다. 그 밖의
   // 4xx(403 replay_disabled/domain_not_allowed, 404 project_not_found,
   // 400 invalid_recording_chunk, 413 본문 초과 등)는 같은 청크를 다시
   // 보내도 서버가 항상 같은 이유로 거절하므로 영구 실패로 다룬다.
-  if (status === undefined) return true;
+  if (status === undefined || status === 0) return true;
   if (status >= 500) return true;
   return status === 408 || status === 429;
 }
 
+interface Chunk {
+  readonly seq: number;
+  events: RecordedEvent[];
+  readonly keepalive: boolean;
+}
+
 export class RecordingUploader {
-  private pending: RecordedEvent[] = [];
-  private seq = 0;
+  // enqueue() 로 들어왔지만 아직 어떤 flush() 호출에도 claim 되지 않은
+  // 이벤트 - 아직 seq 가 없다.
+  private unclaimed: RecordedEvent[] = [];
+  // claim 된(=seq 를 이미 받은) 배치들의 큐, 오래된 것이 앞이다. 아직
+  // 서버에 확인받지 못한 것만 남는다 - 성공하면 즉시 빠진다.
+  private outstanding: Chunk[] = [];
+  private nextSeq = 0;
   private readonly compress: (bytes: Uint8Array) => Promise<Uint8Array>;
   private readonly fetcher: Fetcher;
   private readonly currentUrl: () => string;
@@ -74,8 +86,7 @@ export class RecordingUploader {
   // 꼴이 되어, 그 요청이 이 두 번째 호출의 keepalive 옵션을 갖지 못한다 -
   // 페이지 이탈 시의 마지막 flush 가 keepalive 없이 나간 요청 뒤에 묻히면
   // 페이지가 닫히는 순간 함께 끊길 수 있다. chain 은 이전 것이 끝난 뒤에
-  // 이번 호출만의 실제 요청을 새로 만들어 보낸다 - 그래야 같은 seq 를 두
-  // 번 쓰는 일도, keepalive 를 잃는 일도 없다.
+  // 이번 호출만의 실제 요청을 새로 만들어 보낸다.
   private inFlight: Promise<boolean> | null = null;
 
   constructor(
@@ -94,32 +105,39 @@ export class RecordingUploader {
   }
 
   get pendingCount(): number {
-    return this.pending.length;
+    return this.outstanding.reduce((sum, chunk) => sum + chunk.events.length, 0) + this.unclaimed.length;
   }
 
   enqueue(events: RecordedEvent[]): void {
     if (events.length === 0) return;
-    this.pending.push(...events);
+    this.unclaimed.push(...events);
     this.capPending();
   }
 
   async flush(options: { keepalive?: boolean } = {}): Promise<boolean> {
-    if (this.pending.length === 0) return true;
+    // 새로 쌓인 이벤트가 있으면 지금 이 호출의 몫으로 배치를 하나 확정한다.
+    // seq 는 여기서, 지금, 이 배치에 단 한 번만 부여된다 - claim 은 반드시
+    // 동기적이어야 한다. 뒤의 체인(.then)에 미루면 그 사이에 들어오는
+    // enqueue() 가 이번 호출이 아니라 다음 flush() 호출의 몫으로 새치기해
+    // 들어가 두 호출이 서로의 이벤트를 나눠 갖게 된다.
+    //
+    // keepalive 도 이 배치에 그대로 실어 둔다 - sendOne() 은 이 값을
+    // this.currentUrl() 같은 인스턴스 상태가 아니라 배치 자신에게서 읽는다.
+    // 그래야 이 배치가 나중에 다른 flush() 호출의 진행 중(pump)에 얹혀
+    // 나가더라도 keepalive 를 잃지 않는다 - 반대로 "누가 지금 보내고
+    // 있느냐" 의 keepalive 를 빌려 쓰면, 원래 keepalive 없이 나갈 배치가
+    // keepalive 호출에 얹혀 나갈 때 옵션을 잃는 문제도, 그 반대도 생긴다.
+    if (this.unclaimed.length > 0) {
+      this.outstanding.push({ seq: this.nextSeq++, events: this.unclaimed, keepalive: !!options.keepalive });
+      this.unclaimed = [];
+    }
 
-    // 이 호출 시점의 대기열만 이 flush 몫이다 - 스냅샷은 반드시 동기적으로
-    // 떠야 한다. 아래 체인(.then)에 미루면 그 사이에 들어오는 enqueue() 가
-    // 이번 호출이 아니라 다음 flush() 호출의 몫으로 새치기해 들어가
-    // 두 호출이 서로의 이벤트를 나눠 갖게 된다 - 겹친 flush 테스트가 바로
-    // 이 순서 착오를 잡아낸다. 실제로 미룰 것은 "언제 내보내느냐" 뿐이다.
-    const events = this.pending;
-    this.pending = [];
+    if (this.outstanding.length === 0) return true;
 
-    const runNext = () => this.sendChunk(events, options);
-    // 이전 체인이 성공했든 실패했든(sendChunk 는 내부에서 항상 boolean 으로
+    const runNext = () => this.pump();
+    // 이전 체인이 어떻게 끝났든(pump() 는 내부에서 항상 boolean 으로
     // 정리하므로 reject 는 사실상 일어나지 않지만, 방어적으로 두 콜백 모두
-    // runNext 를 잇는다) 이번 호출의 실제 요청은 그 뒤에 실행된다 - 그래야
-    // this.seq 를 이전 호출이 올린 뒤의 값으로 읽고, 서로 다른 요청의
-    // keepalive 를 잃지 않는다.
+    // runNext 를 잇는다) 이번 호출의 실제 전송 시도는 그 뒤에 실행된다.
     const chained: Promise<boolean> = (this.inFlight ?? Promise.resolve(true)).then(runNext, runNext);
     this.inFlight = chained;
 
@@ -131,15 +149,43 @@ export class RecordingUploader {
     }
   }
 
-  private async sendChunk(events: RecordedEvent[], options: { keepalive?: boolean }): Promise<boolean> {
+  /**
+   * 큐 맨 앞(가장 오래된, 가장 작은 seq)부터 순서대로 하나씩 전송을
+   * 시도한다. 성공하거나(영구 실패로 판단해) 버린 배치는 큐에서 빼고 다음
+   * 배치로 계속 진행한다 - 겹친 flush() 호출이 쌓아 둔 뒤쪽 배치까지 이
+   * 한 번의 pump 가 이어서 처리할 수 있다. 각 배치가 자신의 seq 와
+   * keepalive 를 스스로 들고 있으므로 안전하다(둘 다 claim 시점에 고정되고
+   * 다시 읽지 않는다).
+   *
+   * 재시도 가능한 실패를 만나면 그 배치를 큐 맨 앞에 그대로 둔 채 멈춘다 -
+   * 지금 당장 또 두드려 봐야 결과가 달라질 리 없으니, 다음 flush() 호출을
+   * 기다린다. 그 배치는 다음에도 같은 seq 로 재시도된다.
+   */
+  private async pump(): Promise<boolean> {
+    while (this.outstanding.length > 0) {
+      const chunk = this.outstanding[0]!;
+      const outcome = await this.sendOne(chunk);
+
+      if (outcome === "retry") return false;
+
+      // 성공했거나 버렸다 - 큐에서 뺀다. capPending() 이 이 사이(await 중)
+      // 이 배치를 이미 지웠을 수도 있으니 위치가 아니라 seq 로 찾는다 -
+      // 못 찾아도 이미 처리된 것이니 안전하게 넘어간다.
+      const index = this.outstanding.findIndex((candidate) => candidate.seq === chunk.seq);
+      if (index !== -1) this.outstanding.splice(index, 1);
+    }
+    return true;
+  }
+
+  private async sendOne(chunk: Chunk): Promise<"delivered" | "dropped" | "retry"> {
     try {
       const body = JSON.stringify({
         projectId: this.options.projectId,
-        seq: this.seq,
-        startedAt: startedAt(events[0]!),
+        seq: chunk.seq,
+        startedAt: startedAt(chunk.events[0]!),
         url: safeCurrentUrl(this.currentUrl()),
         sdkVersion: this.options.sdkVersion,
-        events,
+        events: chunk.events,
       });
 
       const compressed = await this.compress(new TextEncoder().encode(body));
@@ -147,10 +193,9 @@ export class RecordingUploader {
       if (compressed.byteLength > MAX_RECORDING_CHUNK_BYTES) {
         // 서버가 413 으로 거절할 것을 알면서 보내지 않는다 - 보내도 같은
         // 결과가 반복될 뿐이고(발견 3), 압축까지 마친 뒤에야 알 수 있으니
-        // 여기서 판단한다. 이 청크는 이대로 버린다 - 나눠 보내는 기능은
+        // 여기서 판단한다. 이 배치는 이대로 버린다 - 나눠 보내는 기능은
         // 이 파일의 몫이 아니다.
-        this.seq += 1;
-        return true;
+        return "dropped";
       }
 
       const response = await this.fetcher(this.options.endpoint, {
@@ -160,35 +205,23 @@ export class RecordingUploader {
         // keepalive 는 64 KiB 한도가 있다. 기록 청크는 그보다 크므로 평상시에
         // 쓰면 네트워크 오류로 거절되어 영원히 재시도한다. 페이지를 떠나는
         // 마지막 한 번만 쓴다 - 그때는 보내지 못하는 것보다 잘리는 쪽이 낫다.
-        ...(options.keepalive ? { keepalive: true } : {}),
+        ...(chunk.keepalive ? { keepalive: true } : {}),
       });
 
       if (!response.ok) {
-        if (isRetryableStatus(response.status)) {
-          this.requeue(events);
-          return false;
-        }
+        if (isRetryableStatus(response.status)) return "retry";
         // 영구 실패(예: 403 domain_not_allowed, 404 project_not_found) -
-        // 다시 보내도 서버가 똑같이 거절한다. 큐에 다시 넣으면 이 청크가
-        // 머리에 눌러앉아 그 뒤 모든 flush 가 매번 전체 큐를 다시 gzip 해
-        // 같은 응답을 받는다. 대신 버리고 넘어간다.
-        this.seq += 1;
-        return true;
+        // 다시 보내도 서버가 똑같이 거절한다. 큐에 남기면 이 배치가 머리에
+        // 눌러앉아 그 뒤 모든 flush 가 매번 같은 응답을 받는다. 버린다.
+        return "dropped";
       }
 
-      this.seq += 1;
-      return true;
+      return "delivered";
     } catch {
       // 네트워크 실패(또는 압축 실패)가 고객 사이트 사용자 경험에 영향을
       // 주지 않아야 한다.
-      this.requeue(events);
-      return false;
+      return "retry";
     }
-  }
-
-  private requeue(events: RecordedEvent[]): void {
-    this.pending = events.concat(this.pending);
-    this.capPending();
   }
 
   /**
@@ -210,29 +243,59 @@ export class RecordingUploader {
    * 스냅샷이 하나도 없으면(이미 앵커를 잃었거나, 그 앵커가 이전 flush 로
    * 이미 전달된 뒤라 지금 큐에는 델타만 남은 경우) 보호할 것이 없으니
    * 개수로 자른다.
+   *
+   * claim 되어 아직 전송되지 않은 배치(outstanding)도 unclaimed 와 함께
+   * 하나의 논리적 순서로 본다 - 배치 경계는 flush() 가 호출된 타이밍일
+   * 뿐, 체크포인트 세대와는 무관하므로 세대 하나가 배치 여러 개에 걸쳐
+   * 있을 수 있다. 자르는 지점만 이 논리적 순서에서 계산하고, 실제로
+   * 지우는 동작(dropFirst)이 배치 경계를 넘나든다.
    */
   private capPending(): void {
-    if (this.pending.length <= MAX_PENDING_EVENTS) return;
+    const total =
+      this.outstanding.reduce((sum, chunk) => sum + chunk.events.length, 0) + this.unclaimed.length;
+    if (total <= MAX_PENDING_EVENTS) return;
 
     const generationStarts: number[] = [];
-    for (let i = 0; i < this.pending.length; i++) {
-      if (this.pending[i]!.type === FULL_SNAPSHOT_EVENT_TYPE) generationStarts.push(i);
+    let offset = 0;
+    for (const chunk of this.outstanding) {
+      for (let i = 0; i < chunk.events.length; i++) {
+        if (chunk.events[i]!.type === FULL_SNAPSHOT_EVENT_TYPE) generationStarts.push(offset + i);
+      }
+      offset += chunk.events.length;
+    }
+    for (let i = 0; i < this.unclaimed.length; i++) {
+      if (this.unclaimed[i]!.type === FULL_SNAPSHOT_EVENT_TYPE) generationStarts.push(offset + i);
     }
 
+    let cut: number;
     if (generationStarts.length === 0) {
-      this.pending.splice(0, this.pending.length - MAX_PENDING_EVENTS);
-      return;
-    }
-
-    let cut = generationStarts[generationStarts.length - 1]!;
-    for (const start of generationStarts) {
-      if (this.pending.length - start <= MAX_PENDING_EVENTS) {
-        cut = start;
-        break;
+      cut = total - MAX_PENDING_EVENTS;
+    } else {
+      cut = generationStarts[generationStarts.length - 1]!;
+      for (const start of generationStarts) {
+        if (total - start <= MAX_PENDING_EVENTS) {
+          cut = start;
+          break;
+        }
       }
     }
 
-    if (cut > 0) this.pending.splice(0, cut);
+    this.dropFirst(cut);
+  }
+
+  private dropFirst(count: number): void {
+    let remaining = count;
+    while (remaining > 0 && this.outstanding.length > 0) {
+      const chunk = this.outstanding[0]!;
+      if (chunk.events.length <= remaining) {
+        remaining -= chunk.events.length;
+        this.outstanding.shift();
+      } else {
+        chunk.events.splice(0, remaining);
+        remaining = 0;
+      }
+    }
+    if (remaining > 0) this.unclaimed.splice(0, remaining);
   }
 }
 
