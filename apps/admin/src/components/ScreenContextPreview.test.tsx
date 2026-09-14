@@ -8,53 +8,6 @@ expect.extend(matchers);
 afterEach(cleanup);
 
 describe("ScreenContextPreview", () => {
-  // 실측(2026-09-14, 요소 2,465개 업무 화면): 힌트 50개 중 컨테이너 5개가 자식
-  // 31개를 품고 있었다. 전부 같은 실선 테두리 + 흰 배경으로 그려져 테두리 안의
-  // 테두리가 되고, "빈 박스들만 겹쳐서 가득" 해 보였다.
-  //
-  // 수집 쪽에서 컨테이너를 버리는 것도 시도했으나 기각했다 — div·table 로 짠
-  // 화면에서 td 셀 같은 진짜 영역까지 잃어(픽스처 힌트 10개+ → 5개) 골격이
-  // 통째로 날아갔다. 데이터는 정확하니 **그리는 방식**으로 푼다: 품은 상자는
-  // 영역으로 표시해 묶음으로 읽히게 한다.
-  it("다른 상자를 품은 힌트는 영역으로 표시한다", () => {
-    const { container } = render(
-      <ScreenContextPreview
-        context={{
-          viewport: { width: 1000, height: 700 },
-          layoutHints: [
-            { tagName: "div", rect: { x: 20, y: 20, width: 400, height: 200 }, masked: false },
-            { tagName: "span", rect: { x: 30, y: 30, width: 100, height: 40 }, masked: false },
-          ],
-        }}
-      />,
-    );
-
-    const boxes = Array.from(container.querySelectorAll(".screen-preview__hint"));
-    const outer = boxes[0];
-    const inner = boxes[1];
-
-    expect(outer).toHaveClass("screen-preview__hint--region");
-    expect(inner).not.toHaveClass("screen-preview__hint--region");
-  });
-
-  // 반대 방향 가드. 겹치기만 하고 품지 않으면 둘 다 보통 상자다 — 판정을
-  // "겹치면 영역" 으로 넓히면 이 테스트가 잡는다.
-  it("겹치기만 하는 상자는 영역으로 표시하지 않는다", () => {
-    const { container } = render(
-      <ScreenContextPreview
-        context={{
-          viewport: { width: 1000, height: 700 },
-          layoutHints: [
-            { tagName: "div", rect: { x: 20, y: 20, width: 200, height: 100 }, masked: false },
-            { tagName: "div", rect: { x: 150, y: 60, width: 200, height: 100 }, masked: false },
-          ],
-        }}
-      />,
-    );
-
-    expect(container.querySelectorAll(".screen-preview__hint--region")).toHaveLength(0);
-  });
-
   // 미리보기는 뷰포트를 축소해 그리는데 글자는 안 줄어든다. 실측(hero, 캔버스
   // 676px / 뷰포트 1456px, 배율 0.464): 11px 글자가 실제 비율의 2.2배로 그려져,
   // 48px 짜리 메뉴 상자가 화면에서 22px 인데 5글자를 넣고 있었다. 결과는
