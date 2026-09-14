@@ -76,6 +76,58 @@ describe("loadReplay", () => {
     ).resolves.toBe(false);
   });
 
+  // 두 번째 주입은 rrweb 기록기·업로드 타이머·DOM 리스너를 통째로 하나 더 만든다.
+  // SPA 가 라우트마다 init 을 부르거나 trace.js 태그가 둘이면 실제로 일어난다.
+  it("이미 주입돼 있으면 두 번째 호출은 설정조차 받지 않는다", async () => {
+    const fetcher = configResponse({ replay: true, maskSelectors: [] });
+    const options = { projectId: "proj_1", sessionId: "sess_1", endpoint: ENDPOINT, fetcher };
+
+    expect(await loadReplay(options)).toBe(true);
+    expect(await loadReplay(options)).toBe(false);
+
+    expect(replayScripts()).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  // 모듈 인스턴스가 둘이어도(스크립트 태그 두 개) 문서는 하나다. 그래서 표식을
+  // 문서에서 찾는다 - 모듈 변수였다면 이 경우를 놓친다.
+  it("다른 로더가 붙여 둔 스크립트도 알아본다", async () => {
+    const injected = document.createElement("script");
+    injected.src = "https://trace.example.com/trace-replay.js";
+    injected.dataset.traceReplay = "";
+    document.head.appendChild(injected);
+
+    const fetcher = configResponse({ replay: true, maskSelectors: [] });
+    const started = await loadReplay({
+      projectId: "proj_1",
+      sessionId: "sess_1",
+      endpoint: ENDPOINT,
+      fetcher,
+    });
+
+    expect(started).toBe(false);
+    expect(replayScripts()).toHaveLength(1);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("본문이 JSON 이 아니어도 조용히 멈춘다", async () => {
+    const started = await loadReplay({
+      projectId: "proj_1",
+      sessionId: "sess_1",
+      endpoint: ENDPOINT,
+      fetcher: vi.fn(async () => ({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("Unexpected token < in JSON at position 0");
+        },
+      })),
+    });
+
+    expect(started).toBe(false);
+    expect(replayScripts()).toHaveLength(0);
+    expect(window.__traceReplay).toBeUndefined();
+  });
+
   it("셀렉터가 배열이 아니면 빈 목록으로 둔다", async () => {
     await loadReplay({
       projectId: "proj_1",
