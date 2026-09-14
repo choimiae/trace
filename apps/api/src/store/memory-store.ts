@@ -368,10 +368,12 @@ export class MemoryStore implements TraceStore {
       .sort((a, b) => a.seq - b.seq);
   }
 
+  // SqliteStore 와 같은 열을 본다 - received_at 이다. startedAt 으로 판정하면
+  // 브라우저 시계 하나가 보존 창을 무한정 늘리거나 방금 받은 기록을 지운다.
   async deleteSessionRecordingsBefore(cutoff: string): Promise<number> {
     let deleted = 0;
     for (const [key, chunk] of this.sessionRecordings) {
-      if (chunk.startedAt < cutoff) {
+      if (chunk.receivedAt < cutoff) {
         this.sessionRecordings.delete(key);
         deleted += 1;
       }

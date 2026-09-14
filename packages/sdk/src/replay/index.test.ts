@@ -58,6 +58,26 @@ describe("startReplay", () => {
     expect(options.maskTextSelector).toBe("textarea");
   });
 
+  // 관리자 검증을 통과하고도 CSS 파서가 던지는 문자열이 있다. 그런 항목 하나가
+  // 섞이면 needMaskingText 의 closest 가 모든 텍스트 노드에서 SyntaxError 를
+  // 내고 기록이 통째로 죽는다 - 그러면 남은 멀쩡한 셀렉터도 아무것도 가리지
+  // 못한다. 하나를 버리고 나머지를 살린다.
+  it("컴파일되지 않는 운영자 셀렉터를 버리고 나머지를 쓴다", () => {
+    startReplay({ ...config, maskSelectors: [".customer-name,", "td.amount", ".foo)", "]", ""] });
+
+    const options = record.mock.calls[0]![0] as { maskTextSelector?: string };
+    expect(options.maskTextSelector).toBe("textarea,td.amount");
+  });
+
+  // 전부 버려져도 textarea 는 남아야 한다. 빈 문자열이 되면 rrweb 이
+  // `if (maskTextSelector)` 에서 거짓으로 보고 마스킹 게이트를 통째로 연다.
+  it("운영자 셀렉터가 전부 버려져도 textarea 는 남는다", () => {
+    startReplay({ ...config, maskSelectors: [".customer-name,"] });
+
+    const options = record.mock.calls[0]![0] as { maskTextSelector?: string };
+    expect(options.maskTextSelector).toBe("textarea");
+  });
+
   it("비용이 큰 수집을 모두 끈다", () => {
     startReplay(config);
 

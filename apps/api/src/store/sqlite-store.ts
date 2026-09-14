@@ -655,7 +655,7 @@ export class SqliteStore implements TraceStore {
         chunk.projectId,
         chunk.seq,
         chunk.startedAt,
-        new Date().toISOString(),
+        chunk.receivedAt,
         chunk.eventCount,
         Buffer.from(chunk.bytes),
       );
@@ -664,7 +664,7 @@ export class SqliteStore implements TraceStore {
   async listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]> {
     const rows = this.db
       .prepare(
-        `SELECT session_id, project_id, seq, started_at, event_count, bytes
+        `SELECT session_id, project_id, seq, started_at, received_at, event_count, bytes
            FROM session_recordings
           WHERE project_id = ? AND session_id = ?
           ORDER BY seq ASC`,
@@ -676,13 +676,17 @@ export class SqliteStore implements TraceStore {
       projectId: row.project_id as string,
       seq: row.seq as number,
       startedAt: row.started_at as string,
+      receivedAt: row.received_at as string,
       eventCount: row.event_count as number,
       bytes: new Uint8Array(row.bytes as Buffer),
     }));
   }
 
+  // started_at 이 아니라 received_at 이다. started_at 은 브라우저 시계가 적어
+  // 보낸 값이라, 시계가 어긋난 기기 하나가 보존 창을 무한정 늘리거나(2999년)
+  // 방금 받은 기록을 같은 요청 안에서 지워 버린다(과거 날짜).
   async deleteSessionRecordingsBefore(cutoff: string): Promise<number> {
-    return this.db.prepare(`DELETE FROM session_recordings WHERE started_at < ?`).run(cutoff).changes;
+    return this.db.prepare(`DELETE FROM session_recordings WHERE received_at < ?`).run(cutoff).changes;
   }
 
   private getProjectMembershipSync(projectId: string, adminUserId: string): ProjectMembershipRecord | undefined {

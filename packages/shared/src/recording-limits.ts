@@ -29,7 +29,17 @@ export const MAX_RECORDING_CHUNK_EVENTS = 50_000;
 
 // 셀렉터는 고객 사이트 HTML 에 이미 보이는 클래스·태그명이다. 공개 설정
 // 엔드포인트로 그대로 나가므로, 값의 의미보다 "파서를 흔드는 문자가 없다" 를 본다.
-const MASK_SELECTOR_PATTERN = /^[A-Za-z0-9_\-.#[\]="' :>~+*(),]+$/;
+//
+// **쉼표는 뺀다.** 쉼표를 받으면 목록의 한 항목이 그 자체로 목록이 되고, 그래서
+// 끝에 쉼표가 붙은 ".customer-name," 같은 **컴파일되지 않는** 문자열이 검증을
+// 통과했다. rrweb 은 maskTextSelector 를 모든 텍스트 노드에서 closest 로 맞춰
+// 보므로 SyntaxError 하나가 기록을 통째로 죽인다(실측: Meta 하나만 나가고
+// FullSnapshot 이 없다). 여러 셀렉터는 목록 항목을 여럿 두면 되니 잃는 것이 없다.
+//
+// 이것만으로는 부족하다 - ".foo)" 나 "]" 도 이 패턴을 통과하면서 파서를 던지게
+// 한다. 여기는 저장 전 1차 관문이고, 기록을 실제로 지키는 것은 SDK 쪽의
+// 컴파일 검사다(packages/sdk/src/replay/index.ts 의 compilableSelectors).
+const MASK_SELECTOR_PATTERN = /^[A-Za-z0-9_\-.#[\]="' :>~+*()]+$/;
 
 export function isSafeMaskSelector(value: string): boolean {
   if (value.length === 0 || value.length > MAX_MASK_SELECTOR_LENGTH) return false;

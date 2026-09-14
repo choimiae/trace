@@ -1882,6 +1882,7 @@ function describeTraceStoreContract(
         projectId: "proj_1",
         seq,
         startedAt,
+        receivedAt: "2026-09-14T00:05:00.000Z",
         eventCount: 2,
         bytes: new Uint8Array([seq, 9, 9]),
       });
@@ -1904,6 +1905,7 @@ function describeTraceStoreContract(
         projectId: "proj_1",
         seq: 0,
         startedAt: "2026-09-14T00:00:00.000Z",
+        receivedAt: "2026-09-14T00:00:01.000Z",
         eventCount: 1,
         bytes: new Uint8Array([1, 2, 3]),
       };
@@ -1922,6 +1924,7 @@ function describeTraceStoreContract(
         projectId: "proj_1",
         seq: 0,
         startedAt: "2026-09-14T00:00:00.000Z",
+        receivedAt: "2026-09-14T00:00:01.000Z",
         eventCount: 1,
         bytes: new Uint8Array([1]),
       };
@@ -1931,7 +1934,12 @@ function describeTraceStoreContract(
       expect(await store.listSessionRecordingChunks("proj_1", "sess_1")).toHaveLength(1);
     });
 
-    it("보존 기한을 넘긴 기록을 지운다", async () => {
+    // 보존 스윕은 **서버가 받은 시각**으로 판정한다. startedAt 은 브라우저 시계가
+    // 적어 보낸 값이고 봉투 검증은 "날짜 문자열이다" 까지만 본다. 그 값으로
+    // 판정하면 두 가지가 실제로 일어난다 - 시계가 미래로 어긋난 기기의 기록은
+    // 7일 창을 영원히 살아남고, 과거로 어긋난 기기의 기록은 저장되자마자 같은
+    // 요청 안의 스윕에 지워져 202 를 받고도 아무것도 남지 않는다(조용한 유실).
+    it("보존 기한을 서버가 받은 시각으로 판정한다", async () => {
       const store = open();
       const base = {
         projectId: "proj_1",
@@ -1939,13 +1947,30 @@ function describeTraceStoreContract(
         eventCount: 1,
         bytes: new Uint8Array([1]),
       };
-      await store.saveSessionRecordingChunk({ ...base, seq: 0, startedAt: "2026-09-01T00:00:00.000Z" });
-      await store.saveSessionRecordingChunk({ ...base, seq: 1, startedAt: "2026-09-13T00:00:00.000Z" });
+      // 시계가 미래로 어긋난 기기. 오래전에 받았으니 지워져야 한다.
+      await store.saveSessionRecordingChunk({
+        ...base,
+        seq: 0,
+        startedAt: "2999-01-01T00:00:00.000Z",
+        receivedAt: "2026-09-01T00:00:00.000Z",
+      });
+      // 시계가 과거로 어긋난 기기. 방금 받았으니 남아야 한다.
+      await store.saveSessionRecordingChunk({
+        ...base,
+        seq: 1,
+        startedAt: "2020-01-01T00:00:00.000Z",
+        receivedAt: "2026-09-13T00:00:00.000Z",
+      });
 
       const deleted = await store.deleteSessionRecordingsBefore("2026-09-07T00:00:00.000Z");
 
       expect(deleted).toBe(1);
-      expect(await store.listSessionRecordingChunks("proj_1", "sess_1")).toHaveLength(1);
+      const kept = await store.listSessionRecordingChunks("proj_1", "sess_1");
+      expect(kept.map((chunk) => chunk.seq)).toEqual([1]);
+      // 두 시각을 접지 않고 각각 돌려줘야 한다 - 재생은 startedAt 을 쓰고
+      // 보존은 receivedAt 을 쓴다.
+      expect(kept[0]!.startedAt).toBe("2020-01-01T00:00:00.000Z");
+      expect(kept[0]!.receivedAt).toBe("2026-09-13T00:00:00.000Z");
     });
   });
 }

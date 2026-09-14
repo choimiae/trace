@@ -14,6 +14,39 @@ const UPLOAD_INTERVAL_MS = 10_000;
 const INCREMENTAL_SNAPSHOT = 3;
 const MUTATION_SOURCE = 0;
 
+/**
+ * 실제로 컴파일되는 셀렉터만 남긴다.
+ *
+ * 운영자 셀렉터는 `isSafeMaskSelector` 를 통과해 저장되지만, 그 검사는 "파서를
+ * 흔드는 문자가 없다" 까지다 - ".foo)" · "]" 처럼 문자 집합은 멀쩡하면서
+ * CSS 파서가 던지는 문자열이 남는다. rrweb 의 needMaskingText 는 **모든 텍스트
+ * 노드에서** closest 를 부르므로, 그중 하나가 던지면 스냅샷이 통째로 죽는다 -
+ * 실측으로 나가는 이벤트가 Meta 하나뿐이고 FullSnapshot 도 mutation 도 없다.
+ * 프로젝트 설정 한 줄로 기록이 조용히 멎는데, 마스킹을 보는 단언은 전부
+ * 초록인 실패다.
+ *
+ * 그래서 치명적으로 두지 않고 **버린다.** 셀렉터 하나가 안 걸리는 것과 기록
+ * 전체가 없어지는 것은 비교할 일이 아니다.
+ *
+ * 검사는 여기서 **한 번만** 돈다. 던질 수 있는 것은 `matches` 뿐이고 그것을
+ * try/catch 로 감싼다 - 이 코드는 고객 사이트에서 돌므로 어떤 경로로도 던져
+ * 나가면 안 된다. 문서를 훑는 querySelector 가 아니라 붙지 않은 노드의
+ * `matches` 인 것은 같은 파서를 쓰면서 비용이 없기 때문이다.
+ */
+function compilableSelectors(selectors: string[]): string[] {
+  if (typeof document === "undefined") return [];
+
+  const probe = document.createElement("div");
+  return selectors.filter((selector) => {
+    try {
+      probe.matches(selector);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export interface UploadSink {
   enqueue(events: RecordedEvent[]): void;
   flush(options?: { keepalive?: boolean }): Promise<boolean>;
@@ -132,10 +165,12 @@ export function startReplay(
     // (실측: Meta 이벤트 하나만 나가고 FullSnapshot 이 아예 없다). 기록이
     // 조용히 멎는데 not.toContain(비밀) 류의 단언은 전부 초록인 실패다.
     //
-    // 우리가 앞에 얹는 "textarea" 는 언제나 유효하므로 이 줄이 그 위험을 새로
-    // 만들지는 않는다. 운영자 셀렉터가 검증 없이 들어오는 것은 그 전부터 있던
-    // 문제이고, 막을 자리는 관리자 쪽 셀렉터 검증이다.
-    maskTextSelector: ["textarea", ...config.maskSelectors].join(","),
+    // 우리가 앞에 얹는 "textarea" 는 언제나 유효하다. 운영자 셀렉터는
+    // compilableSelectors 가 걸러 이 자리에 컴파일되는 것만 온다 - 관리자 쪽
+    // 검증(isSafeMaskSelector)은 문자 집합만 보므로 ".foo)" 같은 것이 통과한다.
+    // 전부 걸러져도 "textarea" 가 남아 빈 문자열이 되지 않는다(빈 문자열이면
+    // rrweb 이 `if (maskTextSelector)` 에서 거짓으로 보고 게이트를 통째로 연다).
+    maskTextSelector: ["textarea", ...compilableSelectors(config.maskSelectors)].join(","),
     inlineStylesheet: false,
     recordCanvas: false,
     collectFonts: false,
@@ -169,7 +204,9 @@ export function startReplay(
 }
 
 if (typeof window !== "undefined" && window.__traceReplay) {
-  startReplay(window.__traceReplay);
+  // 정리 함수를 window 에 남긴다. 기본 번들은 이 리플레이 번들을 import 할 수
+  // 없으므로(따로 로드된다), consent.deny() 가 기록을 멈출 다리가 이것뿐이다.
+  window.__traceReplayStop = startReplay(window.__traceReplay);
 }
 
 export type { ReplayBootConfig };

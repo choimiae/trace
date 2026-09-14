@@ -6,6 +6,9 @@
 // 달려 있어서 모킹으로는 검증 자체가 불가능하기 때문이다 - 옆자리 Task 12 가
 // 네 라운드를 초록으로 통과하고도 결함이 살아 있던 이유가 실패하는 모양을
 // 덮는 테스트가 없었다는 것이었다.
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { startReplay } from "./index.js";
 
@@ -59,7 +62,10 @@ function assertCaptured(batch: unknown[] | undefined, required: EventKind = SNAP
 }
 
 /** 페이지를 세우고, 분노 클릭으로 드레인해, 실제로 업로더에 넘어간 것을 돌려준다. */
-function recordAndDrain(html: string): { payload: string; batches: unknown[][] } {
+function recordAndDrain(
+  html: string,
+  maskSelectors: string[] = config.maskSelectors,
+): { payload: string; batches: unknown[][] } {
   const batches: unknown[][] = [];
   const uploader = {
     enqueue: vi.fn((events: unknown[]) => {
@@ -69,7 +75,7 @@ function recordAndDrain(html: string): { payload: string; batches: unknown[][] }
   };
 
   document.body.innerHTML = `${html}<button id="trigger">확인</button>`;
-  const stop = startReplay(config, { uploader });
+  const stop = startReplay({ ...config, maskSelectors }, { uploader });
 
   const button = document.querySelector("#trigger")!;
   for (let index = 0; index < 3; index += 1) {
@@ -447,6 +453,70 @@ describe("startReplay (진짜 rrweb)", () => {
 
     expect(payload).not.toContain("홍길동");
     expect(payload).toContain("메모");
+  });
+
+  // 제품의 다른 모든 경로는 URL 쿼리 **값을 통째로** `[redacted]` 로 바꾼다
+  // (redactUrl). 리플레이의 URL 속성만 그렇지 않다 - 경로를 지키려고 쿼리 구간을
+  // 골라 `redactPatterns` 로만 훑는다. 그래서 패턴이 없는 토큰과 퍼센트 인코딩된
+  // 이메일이 그대로 나간다. 받아들인 구멍이지만, 받아들였다는 것을 운영자가
+  // 알아야 셀렉터를 제대로 고른다 - 그래서 README 의 한계 표에 적혀 있어야 한다.
+  it("URL 쿼리의 토큰·인코딩된 이메일은 남고, 그 사실이 README 표에 적혀 있다", () => {
+    const { payload } = recordAndDrain(
+      '<a href="/pay?token=sk_live_51H8xYzABCdefGH">결제</a>' +
+        '<a href="/contact?email=hong%40example.com">문의</a>',
+    );
+
+    // 이 두 줄이 깨지면 구멍이 막힌 것이다 - 그때는 README 의 행을 지워야 한다.
+    expect(payload).toContain("sk_live_51H8xYzABCdefGH");
+    expect(payload).toContain("hong%40example.com");
+
+    // jsdom 이 URL 전역을 자기 것으로 덮어써서 new URL(...) 이 문서 기준으로
+    // 풀린다. import.meta.url 은 문자열이므로 fileURLToPath 로 직접 푼다.
+    const readme = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../../../../README.md"),
+      "utf8",
+    );
+    const limits = readme.slice(readme.indexOf("## 세션 리플레이가 가리지 못하는 것"));
+    expect(limits).toContain("쿼리스트링");
+  });
+
+  // --- 라운드 7: 컴파일되지 않는 운영자 셀렉터 ---
+  //
+  // isSafeMaskSelector 를 통과하면서 CSS 파서가 던지는 문자열이 있다
+  // (".customer-name," · ".foo)" · "]"). rrweb 의 needMaskingText 는 **모든**
+  // 텍스트 노드에서 closest 를 부르므로 그 SyntaxError 하나가 스냅샷을 통째로
+  // 죽인다 - 실측으로 나가는 이벤트가 [4](Meta) 뿐이고 FullSnapshot 도 mutation 도
+  // 없다. 프로젝트 설정 한 줄로 기록이 조용히 멎는데, 이 파일의
+  // not.toContain(비밀) 단언은 전부 초록인 채다. assertCaptured 가 정확히 이
+  // 모양을 잡으려고 있다.
+  it("쉼표가 붙은 운영자 셀렉터가 기록을 죽이지 않는다", () => {
+    const { payload } = recordAndDrain("<h1>주문 내역</h1>", [".customer-name,"]);
+
+    expect(payload).toContain("주문 내역");
+  });
+
+  it("괄호·대괄호만 남은 셀렉터도 기록을 죽이지 않는다", () => {
+    expect(recordAndDrain("<h1>주문 내역</h1>", [".foo)"]).payload).toContain("주문 내역");
+    expect(recordAndDrain("<h1>주문 내역</h1>", ["]"]).payload).toContain("주문 내역");
+  });
+
+  // 버리는 것이 옆의 멀쩡한 셀렉터를 데려가면 안 된다. 죽는 쪽이든 통째로
+  // 무시하는 쪽이든 결과는 "가려야 할 자리가 원문으로 담긴다" 로 같다.
+  it("한 셀렉터가 깨져도 나머지 셀렉터는 계속 가린다", () => {
+    const { payload } = recordAndDrain(
+      '<table><tr><td class="amount">1,250,000</td></tr></table>',
+      [".customer-name,", "td.amount"],
+    );
+
+    expect(payload).not.toContain("1,250,000");
+  });
+
+  // textarea 게이트는 운영자 설정과 무관한 보장이다. 깨진 셀렉터 하나로 그것까지
+  // 잃으면 서버가 채워 그린 폼 내용이 그대로 나간다.
+  it("셀렉터가 깨져도 textarea 보장은 남는다", () => {
+    const { payload } = recordAndDrain('<textarea name="memo">홍길동 담당자</textarea>', [".customer-name,"]);
+
+    expect(payload).not.toContain("홍길동");
   });
 
   // 스펙 §6 이 가장 중요하다고 적은 항목을, 모킹 없이 네 조각이 배선된 채로 본다.

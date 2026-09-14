@@ -70,21 +70,24 @@ export async function registerRecordingRoutes(
         return reply.code(403).send({ error: "domain_not_allowed" });
       }
 
+      // 보존 판정에 쓰이는 시각은 **여기서** 찍는다. chunk.startedAt 은 브라우저
+      // 시계가 적어 보낸 값이고 봉투 검증은 날짜 문자열 모양까지만 본다.
+      const now = options.now?.() ?? new Date();
+
       // 받은 gzip 바이트를 그대로 넣는다. 풀어서 저장하면 12.8배로 부푼다.
       await options.store.saveSessionRecordingChunk({
         sessionId: params.data.sessionId,
         projectId: chunk.projectId,
         seq: chunk.seq,
         startedAt: chunk.startedAt,
+        receivedAt: now.toISOString(),
         eventCount: chunk.events.length,
         bytes: new Uint8Array(body),
       });
 
-      await runSessionRecordingRetention(
-        options.store,
-        options.sessionRecordingRetentionConfig,
-        options.now?.() ?? new Date(),
-      );
+      // 같은 시각으로 스윕한다. 방금 넣은 청크가 자기 요청 안에서 지워지는 일은
+      // 이제 없다 - receivedAt 이 언제나 cutoff 보다 뒤다.
+      await runSessionRecordingRetention(options.store, options.sessionRecordingRetentionConfig, now);
 
       return reply.code(202).send({ accepted: chunk.events.length });
     },

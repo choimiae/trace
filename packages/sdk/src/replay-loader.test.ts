@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadReplay } from "./replay-loader.js";
+import { loadReplay, stopReplay } from "./replay-loader.js";
 
 const ENDPOINT = "https://trace.example.com/v1/events/batch";
+// 이 파일의 기존 테스트는 동의가 있는 경우를 본다. 동의 게이트 자체는 아래
+// "동의 게이트" 블록에서 따로 확인한다.
+const GRANTED = () => true;
 
 function configResponse(body: unknown, ok = true) {
   return vi.fn(async () => ({ ok, json: async () => body }));
@@ -24,6 +27,7 @@ describe("loadReplay", () => {
       projectId: "proj_1",
       sessionId: "sess_1",
       endpoint: ENDPOINT,
+      isGranted: GRANTED,
       fetcher,
     });
 
@@ -44,6 +48,7 @@ describe("loadReplay", () => {
       projectId: "proj_1",
       sessionId: "sess_1",
       endpoint: ENDPOINT,
+      isGranted: GRANTED,
       fetcher: configResponse({ replay: false, maskSelectors: [] }),
     });
 
@@ -59,6 +64,7 @@ describe("loadReplay", () => {
       projectId: "proj_1",
       sessionId: "sess_1",
       endpoint: ENDPOINT,
+      isGranted: GRANTED,
       fetcher: configResponse({}, false),
     });
 
@@ -72,7 +78,13 @@ describe("loadReplay", () => {
     });
 
     await expect(
-      loadReplay({ projectId: "proj_1", sessionId: "sess_1", endpoint: ENDPOINT, fetcher: fetcher as never }),
+      loadReplay({
+        projectId: "proj_1",
+        sessionId: "sess_1",
+        endpoint: ENDPOINT,
+        isGranted: GRANTED,
+        fetcher: fetcher as never,
+      }),
     ).resolves.toBe(false);
   });
 
@@ -80,7 +92,7 @@ describe("loadReplay", () => {
   // SPA 가 라우트마다 init 을 부르거나 trace.js 태그가 둘이면 실제로 일어난다.
   it("이미 주입돼 있으면 두 번째 호출은 설정조차 받지 않는다", async () => {
     const fetcher = configResponse({ replay: true, maskSelectors: [] });
-    const options = { projectId: "proj_1", sessionId: "sess_1", endpoint: ENDPOINT, fetcher };
+    const options = { projectId: "proj_1", sessionId: "sess_1", endpoint: ENDPOINT, isGranted: GRANTED, fetcher };
 
     expect(await loadReplay(options)).toBe(true);
     expect(await loadReplay(options)).toBe(false);
@@ -102,6 +114,7 @@ describe("loadReplay", () => {
       projectId: "proj_1",
       sessionId: "sess_1",
       endpoint: ENDPOINT,
+      isGranted: GRANTED,
       fetcher,
     });
 
@@ -115,6 +128,7 @@ describe("loadReplay", () => {
       projectId: "proj_1",
       sessionId: "sess_1",
       endpoint: ENDPOINT,
+      isGranted: GRANTED,
       fetcher: vi.fn(async () => ({
         ok: true,
         json: async () => {
@@ -133,9 +147,108 @@ describe("loadReplay", () => {
       projectId: "proj_1",
       sessionId: "sess_1",
       endpoint: ENDPOINT,
+      isGranted: GRANTED,
       fetcher: configResponse({ replay: true, maskSelectors: "전부" }),
     });
 
     expect(window.__traceReplay?.maskSelectors).toEqual([]);
+  });
+});
+
+describe("loadReplay 의 동의 게이트", () => {
+  afterEach(() => {
+    document.head.innerHTML = "";
+    delete window.__traceReplay;
+    delete window.__traceReplayStop;
+  });
+
+  it("동의가 없으면 설정 요청조차 보내지 않는다", async () => {
+    const fetcher = configResponse({ replay: true, maskSelectors: [] });
+
+    const started = await loadReplay({
+      projectId: "proj_1",
+      sessionId: "sess_1",
+      endpoint: ENDPOINT,
+      isGranted: () => false,
+      fetcher,
+    });
+
+    expect(started).toBe(false);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(replayScripts()).toHaveLength(0);
+    expect(window.__traceReplay).toBeUndefined();
+  });
+
+  // 설정이 돌아오는 사이 배너에서 거절을 누르는 것은 평범한 순서다. 첫 검사만
+  // 두면 그 요청이 그대로 기록을 시작시킨다.
+  it("설정을 기다리는 사이 철회하면 주입하지 않는다", async () => {
+    let granted = true;
+    const fetcher = vi.fn(async () => {
+      granted = false;
+      return { ok: true, json: async () => ({ replay: true, maskSelectors: [] }) };
+    });
+
+    const started = await loadReplay({
+      projectId: "proj_1",
+      sessionId: "sess_1",
+      endpoint: ENDPOINT,
+      isGranted: () => granted,
+      fetcher,
+    });
+
+    expect(started).toBe(false);
+    expect(replayScripts()).toHaveLength(0);
+    expect(window.__traceReplay).toBeUndefined();
+  });
+});
+
+describe("stopReplay", () => {
+  afterEach(() => {
+    document.head.innerHTML = "";
+    delete window.__traceReplay;
+    delete window.__traceReplayStop;
+  });
+
+  it("기록기를 멈추고 부트 설정과 표식을 걷는다", async () => {
+    await loadReplay({
+      projectId: "proj_1",
+      sessionId: "sess_1",
+      endpoint: ENDPOINT,
+      isGranted: GRANTED,
+      fetcher: configResponse({ replay: true, maskSelectors: [] }),
+    });
+    const stop = vi.fn();
+    window.__traceReplayStop = stop;
+
+    stopReplay();
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(window.__traceReplay).toBeUndefined();
+    expect(window.__traceReplayStop).toBeUndefined();
+    expect(replayScripts()).toHaveLength(0);
+  });
+
+  // 표식이 남아 있으면 loadReplay 가 "이미 붙어 있다" 로 보고 영영 시작하지 않는다.
+  it("멈춘 뒤에 다시 동의하면 다시 주입한다", async () => {
+    const options = {
+      projectId: "proj_1",
+      sessionId: "sess_1",
+      endpoint: ENDPOINT,
+      isGranted: GRANTED,
+      fetcher: configResponse({ replay: true, maskSelectors: [] }),
+    };
+    await loadReplay(options);
+    stopReplay();
+
+    expect(await loadReplay(options)).toBe(true);
+    expect(replayScripts()).toHaveLength(1);
+  });
+
+  it("정리 함수가 던져도 고객 사이트로 흘리지 않는다", () => {
+    window.__traceReplayStop = () => {
+      throw new Error("기록기가 이미 죽었다");
+    };
+
+    expect(() => stopReplay()).not.toThrow();
   });
 });

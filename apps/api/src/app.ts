@@ -13,6 +13,7 @@ import { registerIngestionRoutes } from "./routes/ingestion.js";
 import { registerProjectConfigRoutes } from "./routes/project-config.js";
 import { registerRecordingRoutes } from "./routes/recording.js";
 import { registerSdkBundleRoutes } from "./routes/sdk-bundle.js";
+import { startSessionRecordingRetentionSweep } from "./retention/sweeper.js";
 import type { TraceStore } from "./store/types.js";
 
 export function createApp(options: {
@@ -24,6 +25,22 @@ export function createApp(options: {
   googleOAuthClient?: GoogleOAuthClient | undefined;
 }) {
   const app = Fastify({ logger: false });
+  const sessionRecordingRetentionConfig = options.sessionRecordingRetentionConfig ?? {
+    sessionRecordingRetentionDays: DEFAULT_SESSION_RECORDING_RETENTION_DAYS,
+  };
+
+  // 보존을 업로드에만 매달아 두면, 운영자가 리플레이를 끈 순간 기록이 그대로
+  // 남는다 - 지워지기를 기대하는 바로 그때다. 앱이 살아 있는 동안 주기적으로
+  // 돈다. onClose 로 걷는 이유는 이 저장소의 테스트가 app 을 만들고 닫기
+  // 때문이다 - 닫힌 앱의 타이머가 닫힌 스토어를 두드려서는 안 된다.
+  const stopRetentionSweep = startSessionRecordingRetentionSweep({
+    store: options.store,
+    config: sessionRecordingRetentionConfig,
+    now: options.now,
+  });
+  app.addHook("onClose", async () => {
+    stopRetentionSweep();
+  });
   app.register(cors, {
     delegator: (request, callback) => {
       const protectedBrowserRoute = request.url.startsWith("/auth/") || request.url.startsWith("/admin/api/");
@@ -54,9 +71,7 @@ export function createApp(options: {
   app.register(registerProjectConfigRoutes, { store: options.store });
   app.register(registerRecordingRoutes, {
     store: options.store,
-    sessionRecordingRetentionConfig: options.sessionRecordingRetentionConfig ?? {
-      sessionRecordingRetentionDays: DEFAULT_SESSION_RECORDING_RETENTION_DAYS,
-    },
+    sessionRecordingRetentionConfig,
     now: options.now,
   });
   app.register(registerSdkBundleRoutes, {});

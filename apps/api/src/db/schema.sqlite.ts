@@ -116,5 +116,6 @@ CREATE TABLE IF NOT EXISTS session_recordings (
 );
 
 CREATE INDEX IF NOT EXISTS session_recordings_project_session ON session_recordings (project_id, session_id, seq);
-CREATE INDEX IF NOT EXISTS session_recordings_started ON session_recordings (started_at);
+-- 보존 스윕이 보는 열은 received_at 이다(started_at 은 브라우저 시계 값이라 쓰지 않는다).
+CREATE INDEX IF NOT EXISTS session_recordings_received ON session_recordings (received_at);
 `;
