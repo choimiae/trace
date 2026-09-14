@@ -147,6 +147,28 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
     expect(response.statusCode).toBe(413);
   });
 
+  // Fastify 의 기본 bodyLimit 은 1 MiB 다. MAX_RECORDING_CHUNK_BYTES(2 MiB)는 그
+  // 기본값 위로 이 라우트만 "올려주는" 옵션이지, 새로 거는 제한이 아니다 -
+  // 그래서 상한을 "넘겨서" 413 을 확인하는 테스트로는 그 옵션이 지워져도 여전히
+  // 413 이 나와 통과해 버린다(1~2 MiB 사이 값은 기본값에도 걸리므로). 이 옵션이
+  // 실제로 살아 있는지는 1~2 MiB 사이(정확히 2 MiB)의 본문이 bodyLimit 을
+  // "통과해" 핸들러까지 들어오는지로만 검증할 수 있다. 정확히
+  // MAX_RECORDING_CHUNK_BYTES 바이트의 비-gzip 본문을 보내 400
+  // invalid_recording_chunk(gunzip 실패)를 기대한다 - 그 코드는 gunzip 을 타야만
+  // 나오므로, bodyLimit 옵션을 지우면 이 요청은 413 으로 막혀 이 테스트가
+  // 실패한다. 나중에 이 테스트를 413 확인으로 "단순화"하면 안 된다 - 그러면
+  // 다시 회귀를 못 잡는다.
+  it("2 MiB 본문은 bodyLimit 을 통과해 핸들러까지 들어온다", async () => {
+    const store = new MemoryStore();
+    await replayProject(store);
+    const app = createApp({ store });
+
+    const response = await post(app, Buffer.alloc(MAX_RECORDING_CHUNK_BYTES, 0x61));
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_recording_chunk" });
+  });
+
   it("세션 식별자 모양을 검증한다", async () => {
     const store = new MemoryStore();
     const project = await replayProject(store);
