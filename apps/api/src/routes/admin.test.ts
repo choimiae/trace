@@ -39,6 +39,23 @@ async function signedInStore() {
   return { store, user, cookie: `${session.cookie.split(";")[0]}; ${session.csrfCookie.split(";")[0]}`, csrfToken: session.csrfToken };
 }
 
+async function createAuthenticatedOwner() {
+  const { store, user, cookie, csrfToken } = await signedInStore();
+  const project = await store.createProject({
+    name: "Demo",
+    allowedDomains: ["https://demo.example.com"],
+  });
+  await store.addProjectMembership({
+    projectId: project.projectId,
+    adminUserId: user.adminUserId,
+    role: "owner",
+    createdAt: "2026-08-27T00:00:00.000Z",
+  });
+  const app = createApp({ store, authConfig });
+  const headers = { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken };
+  return { app, store, project, headers };
+}
+
 class SaveTimeDuplicateStore extends MemoryStore {
   targetAdminUserId: string | undefined;
 
@@ -214,6 +231,7 @@ describe("admin bff routes", () => {
       projectId: project.projectId,
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],
+      replay: { enabled: false, maskSelectors: [] },
       role: "admin",
     });
   });
@@ -1687,6 +1705,7 @@ describe("admin bff routes", () => {
       projectId: project.projectId,
       name: "New",
       allowedDomains: ["https://new.example.com"],
+      replay: { enabled: false, maskSelectors: [] },
       role: "owner",
     });
     expect(await store.getProject(project.projectId)).toMatchObject({
@@ -1699,8 +1718,16 @@ describe("admin bff routes", () => {
         action: "project.updated",
         projectId: project.projectId,
         metadata: {
-          before: { name: "Old", allowedDomains: ["https://old.example.com"] },
-          after: { name: "New", allowedDomains: ["https://new.example.com"] },
+          before: {
+            name: "Old",
+            allowedDomains: ["https://old.example.com"],
+            replay: { enabled: false, maskSelectors: [] },
+          },
+          after: {
+            name: "New",
+            allowedDomains: ["https://new.example.com"],
+            replay: { enabled: false, maskSelectors: [] },
+          },
         },
       }),
     ]));
@@ -1840,6 +1867,71 @@ describe("admin bff routes", () => {
     ]);
 
     expect(responses.map((response) => response.statusCode)).toEqual([400, 400, 400]);
+  });
+
+  it("리플레이를 켜고 마스킹 셀렉터를 저장한다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers,
+      payload: {
+        name: project.name,
+        allowedDomains: project.allowedDomains,
+        replay: { enabled: true, maskSelectors: [".customer-name"] },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().replay).toEqual({ enabled: true, maskSelectors: [".customer-name"] });
+    expect((await store.getProject(project.projectId))?.replay.enabled).toBe(true);
+  });
+
+  it("셀렉터가 아닌 값을 거절한다", async () => {
+    const { app, project, headers } = await createAuthenticatedOwner();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers,
+      payload: {
+        name: project.name,
+        allowedDomains: project.allowedDomains,
+        replay: { enabled: true, maskSelectors: ["body{display:none}"] },
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_project_settings" });
+  });
+
+  // 감사 로그가 "누가 언제 기록을 켰나" 를 남기지 못하면 개인정보 사고를
+  // 추적할 방법이 없다. 리플레이는 이 저장소에서 가장 넓게 수집하는 기능이다.
+  it("리플레이 변경을 감사 로그에 남긴다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+
+    await app.inject({
+      method: "PATCH",
+      url: `/admin/api/projects/${project.projectId}`,
+      headers,
+      payload: {
+        name: project.name,
+        allowedDomains: project.allowedDomains,
+        replay: { enabled: true, maskSelectors: [] },
+      },
+    });
+
+    const logs = await store.listAuditLogs();
+    const updated = logs.find((log) => log.action === "project.updated");
+    expect((updated?.metadata.before as { replay?: unknown }).replay).toEqual({
+      enabled: false,
+      maskSelectors: [],
+    });
+    expect((updated?.metadata.after as { replay?: unknown }).replay).toEqual({
+      enabled: true,
+      maskSelectors: [],
+    });
   });
 
   it("returns 403 when the signed-in admin lacks project membership", async () => {

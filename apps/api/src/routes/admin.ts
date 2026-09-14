@@ -1,10 +1,13 @@
 import { z } from "zod";
+import { replayConfigSchema } from "@trace/shared";
 
 export const projectSettingsSchema = z.object({
   name: z.string().trim().min(1),
   allowedDomains: z.array(z.string().url()).min(1).transform((domains) => Array.from(new Set(
     domains.map((domain) => new URL(domain).origin),
   ))),
+  // 생략 가능하다. 넘기지 않은 요청은 저장된 설정을 그대로 둔다(store 계약).
+  replay: replayConfigSchema.optional(),
 });
 
 export const createProjectSchema = projectSettingsSchema;
