@@ -1102,6 +1102,16 @@
   white-space: nowrap;
 }
 
+/* 다른 상자를 품은 것은 요소가 아니라 영역이다. 실선 테두리와 흰 배경을 빼고
+   옅은 점선만 남겨, 안쪽 상자와 겹칠 때 "중복 상자" 가 아니라 "묶음" 으로
+   읽히게 한다. 배경을 지우는 것이 핵심이다 — 흰 배경이 겹치면 안쪽 상자가
+   가라앉아 보인다. */
+.screen-preview__hint--region {
+  background: none;
+  border-style: dashed;
+  border-color: rgb(100 116 139 / 18%);
+}
+
 .screen-preview__hint--masked {
   border-color: rgb(148 163 184 / 55%);
   background: repeating-linear-gradient(135deg, var(--ink-faint), var(--ink-faint) 6px, var(--surface-sunk) 6px, var(--surface-sunk) 12px);
