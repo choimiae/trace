@@ -49,6 +49,22 @@ describe("CheckpointBuffer", () => {
     expect(buffer.drain().map((item) => item.timestamp)).toEqual([1, 2, 3]);
   });
 
+  // drain 이 비운 자리는 isCheckout 없이 시작하는 세대라 스냅샷 앵커가 없다.
+  // 이 테스트는 그 실제 동작을 고정한다 - 앵커가 없다는 사실 자체를 막지는
+  // 않는다(그 배치를 유실 없이 순서대로 배달하는 책임은 Task 12 업로더에 있다).
+  it("drain 뒤에 쌓인 이벤트는 스냅샷 없는 세대에 그대로 쌓인다", () => {
+    const buffer = new CheckpointBuffer();
+    buffer.push(snapshot(1), true);
+    buffer.push(event(2));
+    buffer.drain();
+
+    buffer.push(event(3));
+    buffer.push(event(4));
+
+    expect(buffer.size).toBe(2);
+    expect(buffer.drain().map((item) => item.timestamp)).toEqual([3, 4]);
+  });
+
   it("size 는 모든 세대의 합이다", () => {
     const buffer = new CheckpointBuffer();
     buffer.push(snapshot(1), true);
