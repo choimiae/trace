@@ -203,7 +203,19 @@ export function startReplay(
   };
 }
 
-if (typeof window !== "undefined" && window.__traceReplay) {
+// `!window.__traceReplayStop` 은 "이미 기록기가 돌고 있으면 시작하지 않는다" 다.
+//
+// 이미 내려받기 시작한 <script> 는 DOM 에서 떼어도 실행이 취소되지 않는다.
+// 그래서 deny() 직후의 grant() 에서는 늦게 도착한 앞 스크립트와 새로 주입한
+// 스크립트가 **둘 다** 실행된다. 뒤엣것이 그대로 시작하면 아래 대입이 앞
+// 기록기의 정리 함수를 덮어써서, 그 기록기를 멈출 방법이 영영 사라진다 -
+// 동의를 철회해도 계속 담고 올리는, 동의 게이트가 조용히 실패하는 그 모양이다.
+// 고아 기록기는 자기 pagehide keepalive 와 seq 0 부터 다시 시작하는 업로더까지
+// 들고 있고, 서버의 (session_id, seq) INSERT OR IGNORE 가 그 중복을 말없이 덮는다.
+//
+// 정당한 재시작은 그대로 산다. stopReplay 는 __traceReplayStop 을 **지운 뒤에**
+// 표식을 걷으므로, deny 다음의 grant 가 주입한 스크립트는 이 검사를 통과한다.
+if (typeof window !== "undefined" && window.__traceReplay && !window.__traceReplayStop) {
   // 정리 함수를 window 에 남긴다. 기본 번들은 이 리플레이 번들을 import 할 수
   // 없으므로(따로 로드된다), consent.deny() 가 기록을 멈출 다리가 이것뿐이다.
   window.__traceReplayStop = startReplay(window.__traceReplay);
