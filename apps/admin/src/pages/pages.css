@@ -1086,6 +1086,22 @@
   font-size: var(--text-xs);
 }
 
+/* 가운데 정렬이면 넘칠 때 앞뒤가 같이 잘려 "시스템설정" 이 "템설" 로 읽힌다.
+   왼쪽에서 시작해 말줄임으로 끝내면 "시스템…" 이 되어 앞에서부터 읽힌다.
+   좁은 상자는 컴포넌트가 아예 글자를 안 그리고 title 로 돌린다. */
+.screen-preview__hint {
+  justify-content: flex-start;
+  padding: 0 2px;
+}
+
+.screen-preview__hint > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .screen-preview__hint--masked {
   border-color: rgb(148 163 184 / 55%);
   background: repeating-linear-gradient(135deg, var(--ink-faint), var(--ink-faint) 6px, var(--surface-sunk) 6px, var(--surface-sunk) 12px);
