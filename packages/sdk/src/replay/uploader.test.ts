@@ -657,4 +657,132 @@ describe("RecordingUploader", () => {
     expect((bodyOf(tailCall).events as RecordedEvent[])[0]!.timestamp).toBe(2);
     expect(initOf(tailCall).keepalive).toBe(true);
   });
+
+  // --- 리뷰 라운드 4: 발견 1 - keepalive 가 한 번 켜지면 꺼지지 않는다 ---
+  //
+  // keepalive 는 "지금 이 순간 페이지가 사라지고 있는가" 의 속성이다(라운드 3
+  // 의 모델). 그런데 라운드 3 은 켜기만 했다. keepalive flush 는 마지막이라는
+  // 보장이 없다 - visibilitychange→hidden(이 저장소 자신의 트리거 패턴,
+  // packages/sdk/src/transport.ts 참고)도, bfcache 의 pagehide 도 페이지를
+  // 살려 둔 채 지나간다. 그 뒤의 평상시 flush 가 backlog 를 계속 keepalive 로
+  // 보내면, 64 KiB 예산을 넘는 본문이 HTTP 상태가 아니라 네트워크 오류로
+  // 거절되어(packages/sdk/src/client.ts 참고) 그 청크는 영원히 머리에
+  // 눌러앉는다.
+
+  it("keepalive flush 뒤의 평상시 flush 는 backlog 를 keepalive 없이 다시 보낸다", async () => {
+    const fetcher = vi.fn(async () => ({ ok: false, status: 503 }));
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([event(1)]);
+    expect(await uploader.flush()).toBe(false); // calls[0]: 평상시, 일시적 503 - backlog 로 남는다.
+
+    await uploader.flush({ keepalive: true }); // calls[1]: 탭이 숨겨졌다 - 지금은 keepalive 가 맞다.
+    await uploader.flush(); // calls[2]: 탭이 다시 보인다 - 페이지는 살아 있다.
+    await uploader.flush(); // calls[3]
+
+    expect(initOf(fetcher.mock.calls[1]!).keepalive).toBe(true);
+    // 페이지가 사라지고 있지 않은 지금, 이 배치는 keepalive 없이 나가야 한다.
+    // 켜고 끄지 않으면 "평상시에는 keepalive 를 쓰지 않는다" 가 이 배치에
+    // 한해 영구히 깨진다.
+    expect(initOf(fetcher.mock.calls[2]!).keepalive).toBeFalsy();
+    expect(initOf(fetcher.mock.calls[3]!).keepalive).toBeFalsy();
+  });
+
+  it("keepalive 로 한 번 거절당한 큰 backlog 도 평상시 flush 로 결국 빠져나간다", async () => {
+    // 브라우저는 keepalive 요청의 본문을 64 KiB 로 제한한다. 넘으면 HTTP
+    // 상태가 아니라 네트워크 오류로 거절하므로 재시도 대상이 되고, pump() 는
+    // 첫 재시도 실패에서 멈추므로 그 뒤 전부가 영구히 막힌다. 106 KiB 는
+    // MAX_RECORDING_CHUNK_BYTES(2 MiB)에는 한참 못 미쳐 평상시 전송에는
+    // 아무 문제가 없는 크기다.
+    const KEEPALIVE_BODY_BUDGET = 64 * 1024;
+    let firstAttempt = true;
+    const fetcher = vi.fn(async (_input: string, init: RequestInit = {}) => {
+      const size = (init.body as Uint8Array).byteLength;
+      if (init.keepalive && size > KEEPALIVE_BODY_BUDGET) throw new TypeError("Failed to fetch");
+      if (firstAttempt) {
+        firstAttempt = false;
+        return { ok: false, status: 503 }; // 일시적 장애 한 번.
+      }
+      return { ok: true, status: 202 };
+    });
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([{ type: 3, timestamp: 1, data: "x".repeat(106 * 1024) } as RecordedEvent]);
+    expect(await uploader.flush()).toBe(false); // 503 - 106 KiB 청크가 backlog 에 남는다.
+    await uploader.flush({ keepalive: true }); // 탭 전환 한 번 - 이 시도는 크기 때문에 거절된다.
+
+    uploader.enqueue([event(2)]);
+    for (let i = 0; i < 4; i++) await uploader.flush(); // 네트워크는 멀쩡한 평상시.
+
+    // keepalive 가 켜진 채로 남으면 이 청크는 매번 네트워크 오류로 거절되고,
+    // 그 뒤의 모든 배치가 머리에서 막혀 대기열이 비지 않는다.
+    expect(uploader.pendingCount).toBe(0);
+  });
+
+  // --- 리뷰 라운드 4: 발견 2 - index += 1 이 capPending() 과 경합한다 ---
+  //
+  // 큐가 상한에 붙어 있으면(지속 장애가 만드는 바로 그 상태) 모든
+  // enqueue() 가 capPending() 을 부른다. 진행 중인 요청의 await 사이에
+  // 트리밍이 index 이하의 배치를 지우면 큐가 왼쪽으로 밀리는데, 위치로
+  // 이어 가면 살아남은 배치를 정확히 하나 건너뛴다. 이탈 경로에서는 그
+  // 배치를 다시 집어 줄 미래의 flush() 가 없다.
+
+  it("이탈 드레인 중 capPending() 이 앞 배치를 잘라내도 살아남은 배치를 건너뛰지 않는다", async () => {
+    let trimmed = false;
+    let uploader!: RecordingUploader;
+    const fetcher = vi.fn(async (_input: string, init: RequestInit = {}) => {
+      if (init.keepalive && !trimmed) {
+        trimmed = true;
+        // 이 요청이 진행 중인 사이에 대기열이 상한을 넘어 맨 앞 배치(seq 0)
+        // 하나만 정확히 잘려 나간다: 총 4 + (MAX-3) = MAX+1 → cut = 1.
+        uploader.enqueue(Array.from({ length: MAX_PENDING_EVENTS - 3 }, (_, i) => event(1000 + i)));
+      }
+      return { ok: false, status: 500 };
+    });
+    uploader = createUploader(fetcher);
+
+    // 평상시 flush 는 첫 재시도 실패에서 멈추므로, claim 만 되고 전송되지
+    // 않은 배치가 뒤에 쌓인다 - 지속 장애의 정상 상태다.
+    for (const timestamp of [1, 2, 3]) {
+      uploader.enqueue([event(timestamp)]);
+      expect(await uploader.flush()).toBe(false);
+    }
+    uploader.enqueue([event(4)]);
+
+    await uploader.flush({ keepalive: true }); // 이탈 드레인.
+
+    const exitSeqs = fetcher.mock.calls.slice(3).map((call) => bodyOf(call).seq);
+    // seq 0 이 잘려 나가며 큐가 왼쪽으로 밀렸다 - 위치로 이어 가면 seq 1 을
+    // 통째로 건너뛰고 seq 2 로 점프한다.
+    expect(exitSeqs).toContain(1);
+    expect(exitSeqs).toContain(2);
+    expect(exitSeqs).toContain(3);
+  });
+
+  it("이탈 드레인에서 잘린 배치 뒤의 꼬리가 마지막 하나여도 시도된다", async () => {
+    let trimmed = false;
+    let uploader!: RecordingUploader;
+    const fetcher = vi.fn(async (_input: string, init: RequestInit = {}) => {
+      if (init.keepalive && !trimmed) {
+        trimmed = true;
+        // 총 2 + (MAX-1) = MAX+1 → cut = 1 - 앞 배치(seq 0)만 잘린다.
+        uploader.enqueue(Array.from({ length: MAX_PENDING_EVENTS - 1 }, (_, i) => event(1000 + i)));
+      }
+      return { ok: false, status: 500 };
+    });
+    uploader = createUploader(fetcher);
+
+    uploader.enqueue([event(1)]);
+    expect(await uploader.flush()).toBe(false); // seq 0 이 backlog 로 남는다.
+
+    uploader.enqueue([event(2)]);
+    await uploader.flush({ keepalive: true }); // seq 1 = 이 페이지의 마지막 꼬리.
+
+    // 잘린 배치 하나 때문에 꼬리를 건너뛰면, 이탈 경로에는 이 꼬리를 다시
+    // 집어 줄 다음 flush() 가 없다 - 라운드 3 이 닫은 바로 그 결과다.
+    const attemptedTail = fetcher.mock.calls.some((call) =>
+      (bodyOf(call).events as RecordedEvent[]).some((e) => e.timestamp === 2),
+    );
+    expect(attemptedTail).toBe(true);
+  });
 });

@@ -125,9 +125,15 @@ export class RecordingUploader {
     // 져야 한다. 그러지 않으면 언로드가 그 배치의 요청을 끊어 버린다. 이미
     // 지나간(과거의) 시도는 되돌릴 수 없으니 건드리지 않는다 - 앞으로 나갈
     // 시도만 바꾼다.
-    if (keepalive) {
-      for (const chunk of this.outstanding) chunk.keepalive = true;
-    }
+    //
+    // 켜는 것과 똑같이 끈다(라운드 4). keepalive flush 는 마지막이라는 보장이
+    // 없다 - visibilitychange→hidden 도(이 SDK 자신의 트리거 패턴,
+    // transport.ts 참고) bfcache 의 pagehide 도 페이지를 살려 둔 채 지나간다.
+    // 한 번 켜고 두면 그 뒤의 평상시 flush 가 backlog 를 계속 keepalive 로
+    // 보내고, 64 KiB 예산을 넘는 본문은 HTTP 상태가 아니라 네트워크 오류로
+    // 거절되어(client.ts 참고) 그 청크가 머리에 영구히 눌러앉는다 - 아래
+    // sendOne 의 주석이 막으려는 바로 그 결과다.
+    for (const chunk of this.outstanding) chunk.keepalive = keepalive;
 
     // 새로 쌓인 이벤트가 있으면 지금 이 호출의 몫으로 배치를 하나 확정한다.
     // seq 는 여기서, 지금, 이 배치에 단 한 번만 부여된다 - claim 은 반드시
@@ -177,10 +183,21 @@ export class RecordingUploader {
    */
   private async pump(keepalive: boolean): Promise<boolean> {
     let delivered = true;
-    let index = 0;
+    // 어디까지 시도했는지를 위치(index)가 아니라 seq 로 기억한다. 위치로
+    // 이어 가면 await 사이에 capPending() 이 이 자리 앞의 배치를 잘라내
+    // 큐가 왼쪽으로 밀렸을 때 살아남은 배치를 정확히 하나 건너뛴다 -
+    // 이탈 드레인에서는 그 배치를 다시 집어 줄 다음 flush() 가 없으므로
+    // 그대로 사라진다. outstanding 은 seq 오름차순이므로(claim 이 뒤에만
+    // 붙이고, 제거는 순서를 바꾸지 않는다) "이 seq 보다 큰 첫 배치" 가
+    // 언제나 다음 대상이고, 이 값은 매 회 반드시 커지므로 루프도 끝난다.
+    let lastSeq = -1;
 
-    while (index < this.outstanding.length) {
+    for (;;) {
+      const index = this.outstanding.findIndex((candidate) => candidate.seq > lastSeq);
+      if (index === -1) break;
+
       const chunk = this.outstanding[index]!;
+      lastSeq = chunk.seq;
       const outcome = await this.sendOne(chunk);
 
       if (outcome === "retry") {
@@ -188,14 +205,12 @@ export class RecordingUploader {
         if (!keepalive) return false;
         // 이 배치는 자리를 지킨다(다음 flush() 가 있다면 그때 같은 seq 로
         // 재시도한다) - 다만 지금은 멈추지 않고 다음 배치로 넘어간다.
-        index += 1;
         continue;
       }
 
       // 성공했거나 버렸다 - 큐에서 뺀다. capPending() 이 이 사이(await 중)
       // 이 배치를 이미 지웠을 수도 있으니 위치가 아니라 seq 로 찾는다 -
-      // 못 찾아도 이미 처리된 것이니 안전하게 넘어간다. 앞이 당겨지므로
-      // index 는 그대로 둔다 - 다음 배치가 같은 자리로 온다.
+      // 못 찾아도 이미 처리된 것이니 안전하게 넘어간다.
       const at = this.outstanding.findIndex((candidate) => candidate.seq === chunk.seq);
       if (at !== -1) this.outstanding.splice(at, 1);
     }
