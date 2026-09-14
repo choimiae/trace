@@ -2,11 +2,16 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import type { AdminAuthConfig } from "./auth/config.js";
 import { createGoogleOAuthClient, type GoogleOAuthClient } from "./auth/google.js";
-import type { EventRetentionConfig, SessionRecordingRetentionConfig } from "./retention/config.js";
+import {
+  DEFAULT_SESSION_RECORDING_RETENTION_DAYS,
+  type EventRetentionConfig,
+  type SessionRecordingRetentionConfig,
+} from "./retention/config.js";
 import { registerAdminProxyRoutes } from "./routes/admin-proxy.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
 import { registerProjectConfigRoutes } from "./routes/project-config.js";
+import { registerRecordingRoutes } from "./routes/recording.js";
 import { registerSdkBundleRoutes } from "./routes/sdk-bundle.js";
 import type { TraceStore } from "./store/types.js";
 
@@ -47,6 +52,13 @@ export function createApp(options: {
     now: options.now,
   });
   app.register(registerProjectConfigRoutes, { store: options.store });
+  app.register(registerRecordingRoutes, {
+    store: options.store,
+    sessionRecordingRetentionConfig: options.sessionRecordingRetentionConfig ?? {
+      sessionRecordingRetentionDays: DEFAULT_SESSION_RECORDING_RETENTION_DAYS,
+    },
+    now: options.now,
+  });
   app.register(registerSdkBundleRoutes, {});
   return app;
 }
