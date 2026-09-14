@@ -16,6 +16,14 @@ const MAX_PENDING_EVENTS = 20_000;
 // Task 13 코드와 같은 관례로 숫자를 그대로 쓴다.
 const FULL_SNAPSHOT_EVENT_TYPE = 2;
 
+// rrweb 의 Meta 이벤트 타입 값. 체크포인트의 isCheckout 플래그는 FullSnapshot 이
+// 아니라 바로 앞의 Meta 에 실린다(rrweb 2.0.0-alpha.4 의 takeFullSnapshot 에서
+// 실측: Meta 는 isCheckout 을 받고, 뒤따르는 FullSnapshot 은 인자 없이 나간다).
+// 그래서 CheckpointBuffer 가 나누는 세대 경계도 Meta 자리이고, 아래 capPending()
+// 이 세대를 셀 때도 같은 자리를 써야 한다. Meta 에는 뷰포트 크기와 href 가
+// 들어 있어서, 여기서 한 칸 늦게 자르면 살아남은 세대가 그것을 잃는다.
+const META_EVENT_TYPE = 4;
+
 export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
   const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -296,17 +304,26 @@ export class RecordingUploader {
       this.outstanding.reduce((sum, chunk) => sum + chunk.events.length, 0) + this.unclaimed.length;
     if (total <= MAX_PENDING_EVENTS) return;
 
+    // 세대는 FullSnapshot 이 아니라 그 바로 앞의 Meta 에서 시작한다. 배치
+    // 경계와 무관한 하나의 논리적 순서로 보므로, 직전 이벤트의 타입도 청크를
+    // 넘나들며 이어서 기억한다. 앞에 Meta 가 없으면(그 Meta 가 이전 flush 로
+    // 이미 나간 경우) FullSnapshot 자체가 세대의 시작이다.
     const generationStarts: number[] = [];
     let offset = 0;
-    for (const chunk of this.outstanding) {
-      for (let i = 0; i < chunk.events.length; i++) {
-        if (chunk.events[i]!.type === FULL_SNAPSHOT_EVENT_TYPE) generationStarts.push(offset + i);
+    let previousType: number | undefined;
+    const scan = (events: RecordedEvent[]): void => {
+      for (let i = 0; i < events.length; i++) {
+        const type = events[i]!.type;
+        if (type === FULL_SNAPSHOT_EVENT_TYPE) {
+          const start = previousType === META_EVENT_TYPE ? offset + i - 1 : offset + i;
+          generationStarts.push(start);
+        }
+        previousType = type;
       }
-      offset += chunk.events.length;
-    }
-    for (let i = 0; i < this.unclaimed.length; i++) {
-      if (this.unclaimed[i]!.type === FULL_SNAPSHOT_EVENT_TYPE) generationStarts.push(offset + i);
-    }
+      offset += events.length;
+    };
+    for (const chunk of this.outstanding) scan(chunk.events);
+    scan(this.unclaimed);
 
     let cut: number;
     if (generationStarts.length === 0) {

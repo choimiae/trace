@@ -38,6 +38,14 @@ const snapshot = (timestamp: number, extra: Record<string, unknown> = {}): Recor
   timestamp,
   ...extra,
 });
+// rrweb 의 Meta 이벤트. 체크포인트의 isCheckout 은 FullSnapshot 이 아니라 바로
+// 앞의 이 이벤트에 실리고(rrweb 2.0.0-alpha.4 의 takeFullSnapshot 에서 실측),
+// 뷰포트 크기와 href 를 담는다.
+const meta = (timestamp: number, extra: Record<string, unknown> = {}): RecordedEvent => ({
+  type: 4,
+  timestamp,
+  ...extra,
+});
 
 describe("RecordingUploader", () => {
   // 이 계획에서 가장 중요한 불변식이다. 트리거가 없으면 아무것도 브라우저를
@@ -228,6 +236,53 @@ describe("RecordingUploader", () => {
     // 오래된 세대(스냅샷 + 델타 MAX_PENDING_EVENTS개)를 통째로 버리고, 새
     // 세대(스냅샷 + 델타 100개 = 101개)만 남아 상한을 훨씬 밑돈다.
     expect(events).toHaveLength(101);
+    expect(events[0]!.marker).toBe("new");
+    expect(events.some((e) => e.marker === "old")).toBe(false);
+  });
+
+  // 세대는 FullSnapshot 이 아니라 그 앞의 Meta 에서 시작한다. CheckpointBuffer 가
+  // isCheckout 으로 나누는 경계와 같은 자리여야 한다 - FullSnapshot 에서 자르면
+  // 살아남은 세대가 자기 Meta 를 잃고, 그 구간은 뷰포트도 href 도 모르는 채
+  // 재생된다(예외도, 실패하는 테스트도 없이).
+  it("세대를 자를 때 그 세대의 Meta 를 함께 남긴다", async () => {
+    const fetcher = vi.fn(async () => ({ ok: true, status: 202 }));
+    const uploader = createUploader(fetcher);
+
+    // 오래된 세대: Meta + 스냅샷 + 상한을 채우는 델타.
+    uploader.enqueue([meta(0, { marker: "old-meta" }), snapshot(1, { marker: "old" })]);
+    uploader.enqueue(Array.from({ length: MAX_PENDING_EVENTS - 2 }, (_, i) => event(i + 2)));
+    // 새 체크포인트 - Meta 와 FullSnapshot 이 짝으로 온다.
+    uploader.enqueue([
+      meta(MAX_PENDING_EVENTS, { marker: "new-meta" }),
+      snapshot(MAX_PENDING_EVENTS + 1, { marker: "new" }),
+    ]);
+    uploader.enqueue(Array.from({ length: 100 }, (_, i) => event(MAX_PENDING_EVENTS + i + 2)));
+
+    await uploader.flush();
+
+    const events = bodyOf(fetcher.mock.calls[0]!).events as Record<string, unknown>[];
+    // 새 세대가 자기 Meta 를 들고 남는다.
+    expect(events[0]!.marker).toBe("new-meta");
+    expect(events[0]!.type).toBe(4);
+    expect(events[1]!.marker).toBe("new");
+    expect(events.some((e) => e.marker === "old-meta")).toBe(false);
+    expect(events.some((e) => e.marker === "old")).toBe(false);
+  });
+
+  // Meta 없이 FullSnapshot 만 있는 대기열(그 Meta 가 이전 flush 로 이미 나간
+  // 경우)에서는 FullSnapshot 자체가 세대의 시작이다.
+  it("앞에 Meta 가 없으면 FullSnapshot 을 세대 시작으로 본다", async () => {
+    const fetcher = vi.fn(async () => ({ ok: true, status: 202 }));
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([snapshot(0, { marker: "old" })]);
+    uploader.enqueue(Array.from({ length: MAX_PENDING_EVENTS - 1 }, (_, i) => event(i + 1)));
+    uploader.enqueue([snapshot(MAX_PENDING_EVENTS, { marker: "new" })]);
+    uploader.enqueue(Array.from({ length: 100 }, (_, i) => event(MAX_PENDING_EVENTS + i + 1)));
+
+    await uploader.flush();
+
+    const events = bodyOf(fetcher.mock.calls[0]!).events as Record<string, unknown>[];
     expect(events[0]!.marker).toBe("new");
     expect(events.some((e) => e.marker === "old")).toBe(false);
   });

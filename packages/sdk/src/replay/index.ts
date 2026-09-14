@@ -1,7 +1,7 @@
 import { CHECKPOINT_INTERVAL_MS } from "@trace/shared/recording-limits";
 import { record } from "rrweb";
 import { CheckpointBuffer, type RecordedEvent } from "./buffer.js";
-import { maskText, stripDataUris } from "./mask.js";
+import { maskText, redactEventText, stripDataUris } from "./mask.js";
 import { installTriggers } from "./triggers.js";
 import { RecordingUploader } from "./uploader.js";
 
@@ -67,6 +67,10 @@ export function startReplay(
       // 스냅샷이든 mutation 이든 같은 함수로 훑는다 - 페이지가 나중에 붙이는
       // 노드도 base64 를 싣고 온다.
       stripDataUris(recorded);
+      // 운영자 셀렉터에 걸린 노드는 rrweb 이 maskTextFn(=maskText)으로 이미
+      // 전부 가렸다. 여기서 훑는 것은 셀렉터에 걸리지 않은 나머지다 -
+      // maskTextFn 은 걸린 노드에만 불리므로 그쪽 텍스트는 도달조차 하지 않는다.
+      redactEventText(recorded);
       buffer.push(recorded, isCheckout === true);
 
       const data = recorded.data as { source?: number } | undefined;
