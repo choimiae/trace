@@ -23,6 +23,7 @@ import type {
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
   ScreenContextEventQuery,
+  SessionRecordingChunk,
   TraceStore,
   UpdateProjectInput,
   UpsertAdminUserFromGoogleInput,
@@ -640,6 +641,48 @@ export class SqliteStore implements TraceStore {
       .get(projectId) as { total: number };
 
     return buildDashboardSummary(await this.listIssues(projectId), row.total);
+  }
+
+  async saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO session_recordings
+           (session_id, project_id, seq, started_at, received_at, event_count, bytes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        chunk.sessionId,
+        chunk.projectId,
+        chunk.seq,
+        chunk.startedAt,
+        new Date().toISOString(),
+        chunk.eventCount,
+        Buffer.from(chunk.bytes),
+      );
+  }
+
+  async listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, project_id, seq, started_at, event_count, bytes
+           FROM session_recordings
+          WHERE project_id = ? AND session_id = ?
+          ORDER BY seq ASC`,
+      )
+      .all(projectId, sessionId) as Row[];
+
+    return rows.map((row) => ({
+      sessionId: row.session_id as string,
+      projectId: row.project_id as string,
+      seq: row.seq as number,
+      startedAt: row.started_at as string,
+      eventCount: row.event_count as number,
+      bytes: new Uint8Array(row.bytes as Buffer),
+    }));
+  }
+
+  async deleteSessionRecordingsBefore(cutoff: string): Promise<number> {
+    return this.db.prepare(`DELETE FROM session_recordings WHERE started_at < ?`).run(cutoff).changes;
   }
 
   private getProjectMembershipSync(projectId: string, adminUserId: string): ProjectMembershipRecord | undefined {

@@ -129,6 +129,16 @@ export interface StoredSession {
   endedAt?: string;
 }
 
+export interface SessionRecordingChunk {
+  sessionId: string;
+  projectId: string;
+  seq: number;
+  startedAt: string;
+  eventCount: number;
+  /** gzip 된 봉투 그대로. 서버는 검증을 위해 풀어 볼 뿐 풀어서 저장하지 않는다. */
+  bytes: Uint8Array;
+}
+
 export interface TraceStore {
   readonly isDurable?: boolean;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
@@ -192,6 +202,11 @@ export interface TraceStore {
    */
   findScreenContextEvents(query: ScreenContextEventQuery): Promise<TraceEvent[]>;
   getDashboardSummary(projectId: string): Promise<DashboardSummary>;
+  /** 같은 (sessionId, seq) 가 이미 있으면 무시한다 — 재전송이 구간을 중복시키지 않게. */
+  saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void>;
+  /** seq 오름차순. 재생은 이 순서로 이어 붙인다. */
+  listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]>;
+  deleteSessionRecordingsBefore(cutoff: string): Promise<number>;
 }
 
 export function assertDeployableTraceStore(store: TraceStore, env: NodeJS.ProcessEnv): void {

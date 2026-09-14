@@ -103,4 +103,18 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 
 CREATE INDEX IF NOT EXISTS audit_logs_project_created ON audit_logs (project_id, created_at DESC, audit_log_id DESC);
+
+CREATE TABLE IF NOT EXISTS session_recordings (
+  session_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  event_count INTEGER NOT NULL,
+  bytes BLOB NOT NULL,
+  PRIMARY KEY (session_id, seq)
+);
+
+CREATE INDEX IF NOT EXISTS session_recordings_project_session ON session_recordings (project_id, session_id, seq);
+CREATE INDEX IF NOT EXISTS session_recordings_started ON session_recordings (started_at);
 `;

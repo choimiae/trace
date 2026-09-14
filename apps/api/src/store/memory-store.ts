@@ -21,6 +21,7 @@ import type {
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
   ScreenContextEventQuery,
+  SessionRecordingChunk,
   TraceStore,
   UpdateProjectInput,
   UpsertAdminUserFromGoogleInput,
@@ -37,6 +38,7 @@ export class MemoryStore implements TraceStore {
   private adminSessions = new Map<string, AdminSessionRecord>();
   private projectMemberships = new Map<string, ProjectMembershipRecord>();
   private auditLogs = new Map<string, AuditLogRecord>();
+  private sessionRecordings = new Map<string, SessionRecordingChunk>();
 
   async createProject(input: CreateProjectInput): Promise<ProjectRecord> {
     const project: ProjectRecord = {
@@ -352,5 +354,28 @@ export class MemoryStore implements TraceStore {
   async getDashboardSummary(projectId: string): Promise<DashboardSummary> {
     const [issues, events] = await Promise.all([this.listIssues(projectId), this.listEvents(projectId)]);
     return buildDashboardSummary(issues, events.length);
+  }
+
+  async saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void> {
+    const key = `${chunk.sessionId}:${chunk.seq}`;
+    if (this.sessionRecordings.has(key)) return;
+    this.sessionRecordings.set(key, { ...chunk, bytes: new Uint8Array(chunk.bytes) });
+  }
+
+  async listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]> {
+    return Array.from(this.sessionRecordings.values())
+      .filter((chunk) => chunk.projectId === projectId && chunk.sessionId === sessionId)
+      .sort((a, b) => a.seq - b.seq);
+  }
+
+  async deleteSessionRecordingsBefore(cutoff: string): Promise<number> {
+    let deleted = 0;
+    for (const [key, chunk] of this.sessionRecordings) {
+      if (chunk.startedAt < cutoff) {
+        this.sessionRecordings.delete(key);
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

@@ -1874,6 +1874,79 @@ function describeTraceStoreContract(
       expect(renamed?.name).toBe("Demo 2");
       expect(renamed?.replay).toEqual({ enabled: true, maskSelectors: [".customer-name"] });
     });
+
+    it("세션 기록 청크를 seq 순서로 돌려준다", async () => {
+      const store = open();
+      const chunk = (seq: number, startedAt: string) => ({
+        sessionId: "sess_1",
+        projectId: "proj_1",
+        seq,
+        startedAt,
+        eventCount: 2,
+        bytes: new Uint8Array([seq, 9, 9]),
+      });
+
+      await store.saveSessionRecordingChunk(chunk(1, "2026-09-14T00:02:00.000Z"));
+      await store.saveSessionRecordingChunk(chunk(0, "2026-09-14T00:00:00.000Z"));
+
+      const stored = await store.listSessionRecordingChunks("proj_1", "sess_1");
+      expect(stored.map((item) => item.seq)).toEqual([0, 1]);
+      expect(Array.from(stored[0]!.bytes)).toEqual([0, 9, 9]);
+      expect(stored[0]!.eventCount).toBe(2);
+    });
+
+    // 재전송은 네트워크가 불안정하면 평범하게 일어난다. 두 번 저장하면 재생할 때
+    // 같은 구간이 두 번 나온다.
+    it("같은 seq 를 다시 보내면 무시한다", async () => {
+      const store = open();
+      const chunk = {
+        sessionId: "sess_1",
+        projectId: "proj_1",
+        seq: 0,
+        startedAt: "2026-09-14T00:00:00.000Z",
+        eventCount: 1,
+        bytes: new Uint8Array([1, 2, 3]),
+      };
+
+      await store.saveSessionRecordingChunk(chunk);
+      await store.saveSessionRecordingChunk({ ...chunk, bytes: new Uint8Array([4, 5, 6]) });
+
+      const stored = await store.listSessionRecordingChunks("proj_1", "sess_1");
+      expect(stored).toHaveLength(1);
+      expect(Array.from(stored[0]!.bytes)).toEqual([1, 2, 3]);
+    });
+
+    it("다른 세션의 청크를 섞지 않는다", async () => {
+      const store = open();
+      const base = {
+        projectId: "proj_1",
+        seq: 0,
+        startedAt: "2026-09-14T00:00:00.000Z",
+        eventCount: 1,
+        bytes: new Uint8Array([1]),
+      };
+      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_1" });
+      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_2" });
+
+      expect(await store.listSessionRecordingChunks("proj_1", "sess_1")).toHaveLength(1);
+    });
+
+    it("보존 기한을 넘긴 기록을 지운다", async () => {
+      const store = open();
+      const base = {
+        projectId: "proj_1",
+        sessionId: "sess_1",
+        eventCount: 1,
+        bytes: new Uint8Array([1]),
+      };
+      await store.saveSessionRecordingChunk({ ...base, seq: 0, startedAt: "2026-09-01T00:00:00.000Z" });
+      await store.saveSessionRecordingChunk({ ...base, seq: 1, startedAt: "2026-09-13T00:00:00.000Z" });
+
+      const deleted = await store.deleteSessionRecordingsBefore("2026-09-07T00:00:00.000Z");
+
+      expect(deleted).toBe(1);
+      expect(await store.listSessionRecordingChunks("proj_1", "sess_1")).toHaveLength(1);
+    });
   });
 }
 
