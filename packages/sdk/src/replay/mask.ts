@@ -1,4 +1,4 @@
-import { redactPatterns } from "@trace/shared/privacy";
+import { redactPatterns, redactUrl } from "@trace/shared/privacy";
 
 /**
  * 1x1 투명 GIF. 빈 문자열로 두면 브라우저가 깨진 이미지 아이콘을 그려 재생
@@ -44,11 +44,35 @@ const TEXT_CONTENT_KEY = "textContent";
  *  - `style`·`_cssText` 는 CSS 다. 9자리 이상 숫자가 흔해서(z-index·좌표·색)
  *    훑으면 [redacted] 가 박혀 스타일이 깨진다 - 텍스트 노드의 isStyle 예외와
  *    같은 이유다.
- *  - `src`·`srcset` 은 stripDataUris 가 이미 책임진다. 여기서 또 만지면 긴 숫자를
- *    담은 자산 경로(/img/1234567890.jpg)가 통째로 바뀌어 재생 화면이 원본과
- *    달라진다. `href` 도 같은 이유로 기본은 제외지만 아래 예외가 하나 있다.
+ *  - `class`·`id` 는 구조 식별자지 산문이 아니다. inlineStylesheet:false 라
+ *    재생기는 사이트의 진짜 스타일시트를 불러오는데, `class="row-987654321"` 을
+ *    `row-[redacted]` 로 고쳐 쓰면 선택자가 안 맞아 화면이 달라진다.
  */
-const SKIPPED_ATTRIBUTES = new Set(["style", "_cssText", "src", "srcset", "href"]);
+const SKIPPED_ATTRIBUTES = new Set(["style", "_cssText", "class", "id"]);
+
+/**
+ * URL 을 담는 속성. **경로는 그대로 두고 쿼리스트링만** 훑는다.
+ *
+ * 경로를 지키는 것이 애초에 이 속성들을 제외했던 이유다 - `/img/1234567890.jpg`
+ * 나 `/orders/987654321` 의 긴 숫자가 [redacted] 로 바뀌면 자산이 깨지고 재생
+ * 화면이 원본과 달라진다. 하지만 쿼리스트링은 지키려던 대상이 아니었고, 거기에
+ * `?email=…&phone=…` 이 그대로 실려 나갔다.
+ *
+ * 프래그먼트(#)도 건드리지 않는다 - SVG 스프라이트(`sprite.svg#icon-123456789`)를
+ * 고쳐 쓰면 그림이 안 나온다.
+ */
+const URL_ATTRIBUTES = new Set(["src", "srcset", "href", "poster", "data", "xlink:href"]);
+
+/**
+ * 값 안의 쿼리스트링 구간만 고른다. 공백에서 끊기므로 srcset 처럼 후보가 여럿인
+ * 값에서도 후보마다 자기 쿼리만 훑고 다음 후보의 경로를 삼키지 않는다.
+ * `?` 가 없으면 아무것도 매치하지 않아 값이 바이트 그대로 남는다.
+ */
+const URL_QUERY_PATTERN = /\?[^\s#]*/g;
+
+function redactUrlAttribute(value: string): string {
+  return value.replace(URL_QUERY_PATTERN, (query) => redactPatterns(query));
+}
 
 /**
  * `href` 제외의 구멍을 메우는 예외. `mailto:`·`tel:` 은 연락처를 그대로 싣는
@@ -149,6 +173,15 @@ export function redactEventText(value: unknown, styleTextNodeIds: Set<number>): 
       record[TEXT_CONTENT_KEY] = redactPatterns(textContent);
     }
 
+    // 입력 이벤트의 data.text. rrweb 은 radio·checkbox 를 maskInputValue 에서
+    // 일부러 빼고(그 분기는 도달 불가다), 하나를 누르면 **형제 전부**를
+    // text: el.value 로 다시 내보낸다 - 고르지 않은 선택지의 값까지 함께.
+    // 이벤트 스키마에서 사용자 텍스트가 실리는데 어떤 훑기도 닿지 않던 자리였다.
+    // radio·checkbox 의 value 는 화면에 보이지 않으므로 훑어도 재생이 달라지지
+    // 않고, 텍스트 입력 쪽은 이미 rrweb 이 가려 둔 뒤라 여기서는 무해하다.
+    const text = record["text"];
+    if (typeof text === "string") record["text"] = redactPatterns(text);
+
     // 속성 가방. mutation 의 data.attributes 는 배열([{id, attributes}])이라
     // 여기서 걸러지고, 그 안의 각 항목을 walk 가 따로 방문해 처리한다.
     const attributes = record["attributes"];
@@ -170,7 +203,10 @@ export function redactEventText(value: unknown, styleTextNodeIds: Set<number>): 
           continue;
         }
         if (SKIPPED_ATTRIBUTES.has(name)) continue;
-        bag[name] = redactPatterns(attribute);
+        // URL 속성은 쿼리만, 나머지는 값 전체를 훑는다.
+        bag[name] = URL_ATTRIBUTES.has(name)
+          ? redactUrlAttribute(attribute)
+          : redactPatterns(attribute);
       }
     }
 
@@ -195,7 +231,9 @@ export function redactEventText(value: unknown, styleTextNodeIds: Set<number>): 
 
 const DATA_URI_PATTERN = /^\s*data:/i;
 const SRCSET_DATA_URI_PATTERN = /(^|,)\s*data:/i;
-const STRIPPED_ATTRIBUTES = ["src", "srcset", "href"] as const;
+// src·srcset·href 만으로는 새어 나간다 - <video poster>, <object data>,
+// <use xlink:href> 도 같은 base64 를 싣고 온다.
+const STRIPPED_ATTRIBUTES = ["src", "srcset", "href", "poster", "data", "xlink:href"] as const;
 
 /**
  * rrweb 이벤트에서 data: URI 를 걷어낸다. 이 버전의 rrweb 에는 maskAttributeFn 이
@@ -242,5 +280,47 @@ export function stripDataUris(value: unknown): void {
     }
 
     for (const nested of Object.values(record)) stack.push(nested);
+  }
+}
+
+/** rrweb 의 Meta 이벤트 타입 값. 페이지 URL·뷰포트를 담는다. */
+const META_EVENT_TYPE = 4;
+
+/**
+ * Meta 이벤트가 싣고 나가는 **페이지 URL** 을 다른 이벤트와 같은 방식으로 줄인다.
+ *
+ * 이 URL 은 모든 기록의 첫 이벤트로, 그리고 체크포인트마다 다시 나간다. 제품의
+ * 다른 모든 이벤트 종류는 redactUrl 을 거치는데(apps/api 의 수집 경로, 그리고
+ * 옆의 uploader.ts 봉투) 리플레이 경로만 그것을 통째로 비켜 가고 있었다 -
+ * `?email=…&phone=…` 이 쿼리에 그대로 실린 채로.
+ *
+ * 조합은 제품의 관례 그대로 `origin + urlPath + urlQueryRedacted` 다. 경로의
+ * 식별자는 :id 로 정규화되고 쿼리 키는 안전한 것만 이름이 남는다.
+ *
+ * redactUrl 은 new URL(...) 을 그대로 부르므로 형식이 어긋나면 던진다. 던지거나
+ * 조합 결과가 URL 로 파싱되지 않으면 **원문으로 되돌아가지 않는다** - 그러면
+ * 막으려던 유출이 그대로 재현된다. uploader.ts 의 safeCurrentUrl 과 같은 자리,
+ * 즉 지금 이 페이지의 origin 으로 물러난다(쿼리가 없으니 비밀이 섞일 수 없다).
+ */
+export function redactEventUrl(event: unknown): void {
+  if (event === null || typeof event !== "object") return;
+
+  const record = event as Record<string, unknown>;
+  if (record["type"] !== META_EVENT_TYPE) return;
+
+  const data = record["data"];
+  if (data === null || typeof data !== "object") return;
+
+  const bag = data as Record<string, unknown>;
+  const href = bag["href"];
+  if (typeof href !== "string") return;
+
+  try {
+    const redacted = redactUrl(href);
+    const composed = `${redacted.origin}${redacted.urlPath}${redacted.urlQueryRedacted}`;
+    new URL(composed);
+    bag["href"] = composed;
+  } catch {
+    bag["href"] = window.location.origin;
   }
 }

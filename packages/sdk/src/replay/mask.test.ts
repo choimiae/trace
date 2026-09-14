@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { maskText, redactEventText, stripDataUris, TRANSPARENT_PLACEHOLDER } from "./mask.js";
+import {
+  maskText,
+  redactEventText,
+  redactEventUrl,
+  stripDataUris,
+  TRANSPARENT_PLACEHOLDER,
+} from "./mask.js";
 
 // maskText 는 rrweb 이 "운영자 셀렉터에 걸린 노드" 에만 부르는 콜백이다
 // (rrweb 2.0.0-alpha.4 실측: needMaskingText 가 참일 때만, 인자 1개로).
@@ -340,6 +346,118 @@ describe("redactEventText", () => {
     expect(snapshot.data.node.attributes.href).toBe("https://shop.example.com/orders/987654321");
   });
 
+  // --- 라운드 5 ---
+
+  // rrweb 은 radio·checkbox 를 일부러 maskInputValue 에서 빼고, 하나를 누르면
+  // **형제 전부**를 text: el.value 로 다시 내보낸다. 이벤트 스키마에서 사용자
+  // 텍스트가 실리는데 어떤 훑기도 닿지 않던 유일한 자리였다.
+  it("입력 이벤트의 text 도 훑는다", () => {
+    const event = {
+      type: 3,
+      data: { source: 5, text: "hong@example.com", isChecked: true, id: 6 },
+    };
+
+    redactEventText(event, ids());
+
+    expect(event.data.text).toBe("[redacted]");
+  });
+
+  it("이미 가려진 입력값은 그대로 둔다", () => {
+    const event = { type: 3, data: { source: 5, text: "*******", isChecked: false, id: 7 } };
+
+    redactEventText(event, ids());
+
+    expect(event.data.text).toBe("*******");
+  });
+
+  // 경로의 긴 숫자를 지키려고 URL 속성을 통째로 뺐더니 쿼리스트링까지 함께
+  // 빠져 있었다. 쿼리는 애초에 지키려던 대상이 아니다.
+  it("URL 속성의 쿼리는 훑고 경로는 그대로 둔다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "a",
+          attributes: {
+            href: "/contact?email=hong@example.com&phone=010-1234-5678",
+            src: "/avatar?email=hong@example.com",
+          },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    const attributes = snapshot.data.node.attributes;
+    expect(attributes.href).toBe("/contact?email=[redacted]&phone=[redacted]");
+    expect(attributes.src).toBe("/avatar?email=[redacted]");
+  });
+
+  it("쿼리가 없는 경로는 바이트 그대로다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "img",
+          attributes: { href: "/orders/987654321", src: "/img/1234567890.jpg" },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.href).toBe("/orders/987654321");
+    expect(snapshot.data.node.attributes.src).toBe("/img/1234567890.jpg");
+  });
+
+  it("srcset 은 후보마다 쿼리만 훑는다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "img",
+          attributes: { srcset: "/a/1234567890.jpg?email=hong@example.com 1x, /b/987654321.jpg 2x" },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.srcset).toBe(
+      "/a/1234567890.jpg?email=[redacted] 1x, /b/987654321.jpg 2x",
+    );
+  });
+
+  // SVG 스프라이트(#icon-…)를 깨뜨리면 재생 화면이 달라진다.
+  it("프래그먼트는 건드리지 않는다", () => {
+    const snapshot = {
+      data: { node: { type: 2, tagName: "use", attributes: { src: "sprite.svg#icon-123456789" } } },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.src).toBe("sprite.svg#icon-123456789");
+  });
+
+  // 라운드 2 가 들여온 회귀다. inlineStylesheet:false 라 재생기는 사이트의 진짜
+  // 스타일시트를 불러오는데, class 를 고쳐 쓰면 선택자가 안 맞아 화면이 달라진다.
+  it("class 와 id 는 구조 식별자라 건드리지 않는다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "div",
+          attributes: { class: "row-987654321", id: "user-123456789012" },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.class).toBe("row-987654321");
+    expect(snapshot.data.node.attributes.id).toBe("user-123456789012");
+  });
+
   it("민감하지 않은 본문은 그대로 둔다", () => {
     const snapshot = { data: { node: { type: 3, textContent: "주문 내역" } } };
 
@@ -364,6 +482,66 @@ describe("redactEventText", () => {
 
     expect(() => redactEventText(root, ids())).not.toThrow();
     expect(leaf.textContent).toBe("[redacted]");
+  });
+});
+
+// 페이지 URL 은 Meta 이벤트에 담겨 모든 기록의 첫 이벤트로, 그리고 체크포인트마다
+// 나간다. 다른 이벤트 종류는 전부 redactUrl 을 거치는데 리플레이 경로만 빠져 있었다.
+describe("redactEventUrl", () => {
+  it("Meta 의 페이지 URL 에서 쿼리와 경로 식별자를 지운다", () => {
+    const meta = {
+      type: 4,
+      data: {
+        href: "https://shop.example.com/customers/42?email=hong@example.com",
+        width: 1024,
+        height: 768,
+      },
+    };
+
+    redactEventUrl(meta);
+
+    expect(meta.data.href).toBe(
+      "https://shop.example.com/customers/:id?redacted_param_1=[redacted]",
+    );
+    // 뷰포트는 재생기가 화면 크기를 잡는 데 쓴다 - 건드리면 안 된다.
+    expect(meta.data.width).toBe(1024);
+    expect(meta.data.height).toBe(768);
+  });
+
+  it("쿼리가 없으면 경로 정규화만 한다", () => {
+    const meta = { type: 4, data: { href: "https://shop.example.com/orders/987654321" } };
+
+    redactEventUrl(meta);
+
+    expect(meta.data.href).toBe("https://shop.example.com/orders/:id");
+  });
+
+  it("Meta 가 아닌 이벤트는 건드리지 않는다", () => {
+    const event = { type: 3, data: { source: 0, href: "https://shop.example.com/?email=a@b.co" } };
+
+    redactEventUrl(event);
+
+    expect(event.data.href).toBe("https://shop.example.com/?email=a@b.co");
+  });
+
+  // redactUrl 은 new URL(...) 을 그대로 부르므로 형식이 어긋나면 던진다. 그때
+  // 원문으로 되돌아가면 막으려던 유출이 그대로 재현된다 - uploader 의
+  // safeCurrentUrl 과 같은 자리로 물러난다.
+  it("URL 로 파싱되지 않으면 원문을 남기지 않는다", () => {
+    const meta = { type: 4, data: { href: "not a url ?email=hong@example.com" } };
+
+    redactEventUrl(meta);
+
+    expect(meta.data.href).not.toContain("hong@example.com");
+    expect(meta.data.href).toBe(window.location.origin);
+  });
+
+  it("href 가 없거나 문자열이 아니면 조용히 지나간다", () => {
+    const meta = { type: 4, data: { width: 800 } };
+
+    expect(() => redactEventUrl(meta)).not.toThrow();
+    expect(() => redactEventUrl(null)).not.toThrow();
+    expect(() => redactEventUrl(42)).not.toThrow();
   });
 });
 
@@ -407,6 +585,28 @@ describe("stripDataUris", () => {
     stripDataUris(event);
 
     expect(event.data.node.attributes.href).toBe("");
+  });
+
+  // <video poster>, <object data>, <use xlink:href> 도 base64 를 싣고 온다.
+  it("poster·data·xlink:href 의 data: URI 도 걷어낸다", () => {
+    const event = {
+      data: {
+        node: {
+          childNodes: [
+            { tagName: "video", attributes: { poster: "data:image/png;base64,AAAA" } },
+            { tagName: "object", attributes: { data: "data:image/png;base64,BBBB" } },
+            { tagName: "use", attributes: { "xlink:href": "data:image/svg+xml;base64,CCCC" } },
+          ],
+        },
+      },
+    };
+
+    stripDataUris(event);
+
+    const nodes = event.data.node.childNodes;
+    expect(nodes[0]!.attributes.poster).toBe(TRANSPARENT_PLACEHOLDER);
+    expect(nodes[1]!.attributes.data).toBe(TRANSPARENT_PLACEHOLDER);
+    expect(nodes[2]!.attributes["xlink:href"]).toBe(TRANSPARENT_PLACEHOLDER);
   });
 
   it("null 과 원시값에서 터지지 않는다", () => {

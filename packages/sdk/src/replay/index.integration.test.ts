@@ -24,12 +24,37 @@ const config = {
  * 안 된다. 옆자리 Task 12 가 세 라운드를 초록으로 보낸 이유가 정확히 이
  * 모양이었다. 그래서 모든 배치에 대해 여기를 먼저 통과시킨다.
  */
-function assertCaptured(batch: unknown[] | undefined): unknown[] {
+type EventKind = { type: number; source?: number };
+
+/** 스냅샷. 이 배치 안의 DOM 을 두고 주장하는 테스트가 기대하는 것. */
+const SNAPSHOT: EventKind = { type: 2 };
+/** DOM 변경. texts[]·adds 경로를 보는 테스트가 기대하는 것. */
+const MUTATION: EventKind = { type: 3, source: 0 };
+/** 입력. data.text 경로를 보는 테스트가 기대하는 것. */
+const INPUT: EventKind = { type: 3, source: 5 };
+
+function assertCaptured(batch: unknown[] | undefined, required: EventKind = SNAPSHOT): unknown[] {
   expect(batch, "드레인된 배치가 없다 - 기록이 아예 안 됐다는 뜻이다").toBeDefined();
   expect(batch!.length, "배치가 비었다").toBeGreaterThan(0);
-  // 전체 스냅샷(type 2)이 있어야 그 안의 DOM 을 두고 무언가를 주장할 수 있다.
-  const types = batch!.map((event) => (event as { type: number }).type);
-  expect(types, `스냅샷이 없다 - 실제 타입: ${JSON.stringify(types)}`).toContain(2);
+
+  // 배치가 비어 있지 않은 것만으로는 부족하다. 이 테스트가 실제로 무엇을
+  // 주장하는지에 맞는 **그 종류의 이벤트**가 있어야 한다 - 안 그러면 예컨대
+  // mutation 을 보는 테스트가 마우스 이벤트만 담긴 배치를 받고도
+  // not.toContain 을 조용히 통과한다.
+  const present = batch!.map((event) => {
+    const typed = event as { type: number; data?: { source?: number } };
+    return { type: typed.type, source: typed.data?.source };
+  });
+  const found = present.some(
+    (event) =>
+      event.type === required.type &&
+      (required.source === undefined || event.source === required.source),
+  );
+  expect(
+    found,
+    `기대한 이벤트(${JSON.stringify(required)})가 배치에 없다 - 실제: ${JSON.stringify(present)}`,
+  ).toBe(true);
+
   return batch!;
 }
 
@@ -112,7 +137,7 @@ describe("startReplay (진짜 rrweb)", () => {
     stop();
     document.body.innerHTML = "";
 
-    expect(JSON.stringify(assertCaptured(batches[0]))).not.toContain("lee@example.com");
+    expect(JSON.stringify(assertCaptured(batches[0], MUTATION))).not.toContain("lee@example.com");
   });
 
   // --- 라운드 2: 입력값 (스냅샷 경로) ---
@@ -230,7 +255,7 @@ describe("startReplay (진짜 rrweb)", () => {
     stop();
     document.body.innerHTML = "";
 
-    const payload = JSON.stringify(assertCaptured(batches[0]));
+    const payload = JSON.stringify(assertCaptured(batches[0], MUTATION));
     expect(payload).toContain("888888888");
     expect(payload).not.toContain("z-index:[redacted]");
   });
@@ -240,6 +265,96 @@ describe("startReplay (진짜 rrweb)", () => {
     const { payload } = recordAndDrain("<h1>주문 내역</h1>");
 
     expect(payload).toContain("주문 내역");
+  });
+
+  // --- 라운드 5 ---
+
+  // rrweb 은 radio·checkbox 를 maskInputValue 에서 빼고, 하나를 누르면 형제
+  // 전부를 data.text 로 다시 내보낸다. 클릭 한 번에 고르지 않은 선택지의 값까지
+  // 함께 나간다.
+  it("radio 를 눌러도 형제들의 값이 새지 않는다", () => {
+    const batches: unknown[][] = [];
+    const uploader = {
+      enqueue: vi.fn((events: unknown[]) => {
+        batches.push(events);
+      }),
+      flush: vi.fn(async () => true),
+    };
+
+    document.body.innerHTML =
+      '<input type="radio" name="c" id="r1" value="hong@example.com">' +
+      '<input type="radio" name="c" id="r2" value="lee@example.com">' +
+      '<input type="radio" name="c" id="r3" value="010-9876-5432">' +
+      '<button id="trigger">확인</button>';
+    const stop = startReplay(config, { uploader });
+
+    document.querySelector<HTMLInputElement>("#r1")!.click();
+    const button = document.querySelector("#trigger")!;
+    for (let index = 0; index < 3; index += 1) {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+    stop();
+    document.body.innerHTML = "";
+
+    const payload = JSON.stringify(assertCaptured(batches[0], INPUT));
+    expect(payload).not.toContain("hong@example.com");
+    expect(payload).not.toContain("lee@example.com");
+    expect(payload).not.toContain("010-9876-5432");
+  });
+
+  // 페이지 URL 은 Meta 로 실려 모든 기록의 첫 이벤트가 된다.
+  it("Meta 의 페이지 URL 이 redactUrl 을 거친다", () => {
+    const batches: unknown[][] = [];
+    const uploader = {
+      enqueue: vi.fn((events: unknown[]) => {
+        batches.push(events);
+      }),
+      flush: vi.fn(async () => true),
+    };
+    window.history.replaceState({}, "", "/customers/42?email=hong@example.com&phone=010-1234-5678");
+
+    document.body.innerHTML = '<button id="trigger">확인</button>';
+    const stop = startReplay(config, { uploader });
+    const button = document.querySelector("#trigger")!;
+    for (let index = 0; index < 3; index += 1) {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+    stop();
+    document.body.innerHTML = "";
+    window.history.replaceState({}, "", "/");
+
+    const batch = assertCaptured(batches[0], { type: 4 });
+    const meta = batch.find((event) => (event as { type: number }).type === 4) as {
+      data: { href: string; width: number; height: number };
+    };
+    expect(meta.data.href).not.toContain("hong@example.com");
+    expect(meta.data.href).not.toContain("010-1234-5678");
+    expect(meta.data.href).toBe("http://localhost:3000/customers/:id?redacted_param_1=[redacted]&redacted_param_2=[redacted]");
+    // 뷰포트는 그대로여야 재생기가 화면 크기를 잡는다.
+    expect(meta.data.width).toBeGreaterThan(0);
+    expect(meta.data.height).toBeGreaterThan(0);
+  });
+
+  it("링크·이미지의 쿼리는 지우고 경로는 그대로 둔다", () => {
+    const { payload } = recordAndDrain(
+      '<a href="/contact?email=hong@example.com&amp;phone=010-1234-5678">문의</a>' +
+        '<img src="/avatar?email=hong@example.com">' +
+        '<a href="/orders/987654321">주문</a>' +
+        '<img src="/img/1234567890.jpg">',
+    );
+
+    expect(payload).not.toContain("hong@example.com");
+    expect(payload).not.toContain("010-1234-5678");
+    // 경로는 바이트 그대로 - 이것이 애초에 URL 속성을 제외했던 이유다.
+    expect(payload).toContain("/orders/987654321");
+    expect(payload).toContain("/img/1234567890.jpg");
+  });
+
+  it("class 와 id 를 고쳐 쓰지 않는다", () => {
+    const { payload } = recordAndDrain('<div class="row-987654321" id="user-123456789012">행</div>');
+
+    expect(payload).toContain("row-987654321");
+    expect(payload).toContain("user-123456789012");
   });
 
   // 스펙 §6 이 가장 중요하다고 적은 항목을, 모킹 없이 네 조각이 배선된 채로 본다.

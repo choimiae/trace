@@ -1,7 +1,7 @@
 import { CHECKPOINT_INTERVAL_MS } from "@trace/shared/recording-limits";
 import { record } from "rrweb";
 import { CheckpointBuffer, type RecordedEvent } from "./buffer.js";
-import { maskText, redactEventText, stripDataUris } from "./mask.js";
+import { maskText, redactEventText, redactEventUrl, stripDataUris } from "./mask.js";
 import { installTriggers } from "./triggers.js";
 import { RecordingUploader } from "./uploader.js";
 
@@ -75,6 +75,9 @@ export function startReplay(
       // 전부 가렸다. 여기서 훑는 것은 셀렉터에 걸리지 않은 나머지다 -
       // maskTextFn 은 걸린 노드에만 불리므로 그쪽 텍스트는 도달조차 하지 않는다.
       redactEventText(recorded, styleTextNodeIds);
+      // Meta 가 싣는 페이지 URL. 제품의 다른 모든 이벤트는 redactUrl 을 거치는데
+      // 리플레이 경로만 비켜 가고 있었다 - 그것도 모든 기록의 첫 이벤트에서.
+      redactEventUrl(recorded);
       buffer.push(recorded, isCheckout === true);
 
       const data = recorded.data as { source?: number } | undefined;
