@@ -120,8 +120,21 @@ export function startReplay(
     // 노드를 **전부 지우고 value 로 덮어쓴다**(rrweb-snapshot :1590). 가리기
     // 전에도 재생 화면에 나오지 않던 글자다.
     //
-    // 이 값은 이제 비지 않으므로 조건부 전개가 필요 없다 - 빈 문자열을 넘기면
-    // rrweb 안에서 matches/closest 가 던진다.
+    // 조건부 전개는 없앴다. 이 값이 이제 비지 않는다는 것이 이유이고, **원래
+    // 주석이 적은 이유는 사실이 아니었다** - "빈 문자열을 넘기면 rrweb 이
+    // 던진다" 는 성립하지 않는다. needMaskingText 는 `if (maskTextSelector)` 로
+    // 감싸 두어서(rrweb-snapshot :375) 빈 문자열은 그냥 거짓이다. 아무것도
+    // 던지지 않고, 텍스트가 **안 가려질** 뿐이다.
+    //
+    // 실제로 던지는 것은 비어 있지 않은 **잘못된** 셀렉터다 - 끝에 쉼표가 붙은
+    // "textarea," 같은 것. matches/closest 가 SyntaxError 를 내는데
+    // needMaskingText 는 모든 텍스트 노드에서 불리므로 스냅샷이 통째로 죽는다
+    // (실측: Meta 이벤트 하나만 나가고 FullSnapshot 이 아예 없다). 기록이
+    // 조용히 멎는데 not.toContain(비밀) 류의 단언은 전부 초록인 실패다.
+    //
+    // 우리가 앞에 얹는 "textarea" 는 언제나 유효하므로 이 줄이 그 위험을 새로
+    // 만들지는 않는다. 운영자 셀렉터가 검증 없이 들어오는 것은 그 전부터 있던
+    // 문제이고, 막을 자리는 관리자 쪽 셀렉터 검증이다.
     maskTextSelector: ["textarea", ...config.maskSelectors].join(","),
     inlineStylesheet: false,
     recordCanvas: false,

@@ -45,8 +45,12 @@ describe("startReplay", () => {
   // textarea 는 운영자가 지정하지 않아도 언제나 들어간다. rrweb 이 textarea 의
   // 값을 attributes.value 로만 가리고 HTML 에 적혀 온 초기 내용은 자식 텍스트
   // 노드로 따로 실어 보내기 때문이다 - 운영자가 매번 적어야 하는 종류의 것이
-  // 아니다. 이 값이 비지 않으므로 조건부 전개도 사라졌다(빈 문자열을 넘기면
-  // rrweb 안에서 matches/closest 가 던진다).
+  // 아니다.
+  //
+  // 그래서 이 값은 비지 않고, 조건부 전개도 사라졌다. 빈 문자열이 위험해서가
+  // 아니다 - needMaskingText 는 `if (maskTextSelector)` 로 감싸 두어서 빈
+  // 문자열에는 아무 일도 일어나지 않는다. 위험한 것은 비어 있지 않은 **잘못된**
+  // 셀렉터이고("textarea," 처럼), 그때는 스냅샷이 통째로 죽는다.
   it("셀렉터가 없어도 textarea 는 언제나 가린다", () => {
     startReplay({ ...config, maskSelectors: [] });
 
