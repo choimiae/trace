@@ -64,12 +64,17 @@ export interface RedactedUrl {
 
 export type SafeMetadata = Record<string, string | number>;
 
-export function redactText(value: string): string {
+// 패턴 치환만 한다. 길이 자르기는 부르는 쪽이 정한다 — 리플레이는 화면 본문을
+// 그대로 재생해야 해서 자르면 안 되고, 이벤트 필드는 계약 상한(120)이 있다.
+export function redactPatterns(value: string): string {
   return value
     .replace(EMAIL_PATTERN, REDACTED)
     .replace(PHONE_PATTERN, REDACTED)
-    .replace(LONG_NUMBER_PATTERN, REDACTED)
-    .slice(0, 120);
+    .replace(LONG_NUMBER_PATTERN, REDACTED);
+}
+
+export function redactText(value: string): string {
+  return redactPatterns(value).slice(0, 120);
 }
 
 export function redactUrl(rawUrl: string): RedactedUrl {

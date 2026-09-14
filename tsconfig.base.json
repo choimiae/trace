@@ -14,6 +14,7 @@
     "paths": {
       "@trace/shared": ["packages/shared/src/index.ts"],
       "@trace/shared/privacy": ["packages/shared/src/privacy.ts"],
+      "@trace/shared/recording-limits": ["packages/shared/src/recording-limits.ts"],
       "@trace/sdk": ["packages/sdk/src/index.ts"],
       "@trace/sdk/dom": ["packages/sdk/src/dom.ts"]
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eventBatchSchema } from "./events.js";
-import { isSafeTraceIdentifier, isSensitiveField, redactMetadata, redactText, redactUrl } from "./privacy.js";
+import { isSafeTraceIdentifier, isSensitiveField, redactMetadata, redactPatterns, redactText, redactUrl } from "./privacy.js";
 
 describe("privacy redaction", () => {
   it("redacts emails, phone numbers, and long numeric values from text", () => {
@@ -129,5 +129,24 @@ describe("privacy redaction", () => {
     expect(isSensitiveField({ tagName: "INPUT", type: "password", name: "password", id: "password" })).toBe(true);
     expect(isSensitiveField({ tagName: "INPUT", type: "email", name: "email", id: "email" })).toBe(true);
     expect(isSensitiveField({ tagName: "BUTTON", type: "button", name: "invite", id: "invite" })).toBe(false);
+  });
+});
+
+describe("redactPatterns", () => {
+  it("이메일·휴대폰·9자리 이상 숫자를 지운다", () => {
+    expect(redactPatterns("문의 choi@example.com 010-1234-5678 1234567890")).toBe(
+      "문의 [redacted] [redacted] [redacted]",
+    );
+  });
+
+  // 리플레이는 화면의 본문 텍스트를 그대로 재생한다. redactText 의 120자 자르기를
+  // 그대로 쓰면 긴 문단이 조용히 잘려 재생이 원본과 달라진다.
+  it("120자를 넘어도 자르지 않는다", () => {
+    const long = "가".repeat(300);
+    expect(redactPatterns(long)).toBe(long);
+  });
+
+  it("redactText 는 지금처럼 120자에서 자른다", () => {
+    expect(redactText("가".repeat(300))).toHaveLength(120);
   });
 });
