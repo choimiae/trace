@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import type { AdminAuthConfig } from "./auth/config.js";
 import { createGoogleOAuthClient, type GoogleOAuthClient } from "./auth/google.js";
-import type { EventRetentionConfig } from "./retention/config.js";
+import type { EventRetentionConfig, SessionRecordingRetentionConfig } from "./retention/config.js";
 import { registerAdminProxyRoutes } from "./routes/admin-proxy.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
@@ -14,6 +14,7 @@ export function createApp(options: {
   store: TraceStore;
   authConfig?: AdminAuthConfig | undefined;
   eventRetentionConfig?: EventRetentionConfig | undefined;
+  sessionRecordingRetentionConfig?: SessionRecordingRetentionConfig | undefined;
   now?: (() => Date) | undefined;
   googleOAuthClient?: GoogleOAuthClient | undefined;
 }) {
