@@ -1,5 +1,6 @@
 import { CHECKPOINT_INTERVAL_MS } from "@trace/shared/recording-limits";
 import { record } from "rrweb";
+import type { ReplayBootConfig } from "../replay-config.js";
 import { CheckpointBuffer, type RecordedEvent } from "./buffer.js";
 import { maskText, redactEventText, redactEventUrl, stripDataUris } from "./mask.js";
 import { installTriggers } from "./triggers.js";
@@ -12,13 +13,6 @@ const UPLOAD_INTERVAL_MS = 10_000;
 // 런타임 객체가 하나 더 들어가기 때문이다.
 const INCREMENTAL_SNAPSHOT = 3;
 const MUTATION_SOURCE = 0;
-
-export interface ReplayBootConfig {
-  projectId: string;
-  sessionId: string;
-  endpoint: string;
-  maskSelectors: string[];
-}
 
 export interface UploadSink {
   enqueue(events: RecordedEvent[]): void;
@@ -142,12 +136,8 @@ export function startReplay(
   };
 }
 
-declare global {
-  interface Window {
-    __traceReplay?: ReplayBootConfig;
-  }
-}
-
 if (typeof window !== "undefined" && window.__traceReplay) {
   startReplay(window.__traceReplay);
 }
+
+export type { ReplayBootConfig };

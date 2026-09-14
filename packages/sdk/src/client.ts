@@ -56,7 +56,7 @@ export class TraceClient {
   private readonly fetcher: Fetcher;
   private consent: Consent;
   private readonly anonymousUserId = `anon_${nanoid(10)}`;
-  private readonly sessionId = `sess_${nanoid(10)}`;
+  readonly sessionId = `sess_${nanoid(10)}`;
   private readonly pageId = `page_${nanoid(10)}`;
   private queue: TraceEvent[] = [];
   private enqueueListeners: Array<() => void> = [];
