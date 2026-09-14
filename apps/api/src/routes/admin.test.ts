@@ -206,6 +206,30 @@ describe("admin bff routes", () => {
     expect(project?.allowedDomains).toEqual(["http://localhost:5174", "https://demo.example.com"]);
   });
 
+  // 생성 시점의 replay 는 무시된다 — 거절되지도, 반영되지도 않는다. 새
+  // 프로젝트는 항상 기본 꺼짐으로 시작한다(Task 2 store 계약). 켜는 것은
+  // 프로젝트 설정(PATCH) 경로의 일이다.
+  it("생성 요청의 replay 를 무시하고 기본값으로 만든다", async () => {
+    const { store, cookie, csrfToken } = await signedInStore();
+    const app = createApp({ store, authConfig });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/api/projects",
+      headers: { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken },
+      payload: {
+        name: "Demo SaaS",
+        allowedDomains: ["https://demo.example.com"],
+        replay: { enabled: true, maskSelectors: [".customer-name"] },
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json().replay).toEqual({ enabled: false, maskSelectors: [] });
+    const project = await store.getProject(response.json().projectId);
+    expect(project?.replay).toEqual({ enabled: false, maskSelectors: [] });
+  });
+
   it("returns project settings with the signed-in member role", async () => {
     const { store, user, cookie } = await signedInStore();
     const project = await store.createProject({
