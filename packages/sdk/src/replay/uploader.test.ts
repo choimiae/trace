@@ -273,7 +273,15 @@ describe("RecordingUploader", () => {
     expect(bodyOf(fetcher.mock.calls[1]!).seq).toBe(1);
   });
 
-  it("겹친 flush 도 각자의 keepalive 옵션을 그대로 지킨다", async () => {
+  it("겹친 flush 에서 keepalive 호출은 이미 큐에 있던 배치에도 적용된다", async () => {
+    // 라운드 3 정정: keepalive 는 "이 배치를 누가 claim 했는가" 가 아니라
+    // "지금 페이지가 사라지고 있는가" 의 속성이다. secondFlush 가
+    // keepalive 로 호출되면, 아직 안 나간 첫 배치(firstFlush 가 claim 한,
+    // 원래 keepalive 없던 배치)도 그 순간 함께 승격된다 - 그래야 언로드가
+    // 그 요청을 끊어 버리지 않는다. 이 두 요청은 여전히 서로 다른 두 번의
+    // fetch 다("겹친 flush 는 seq 를 중복시키지 않는다" 테스트가 보장하듯
+    // join 이 아니라 chain 이라 하나로 뭉개지지 않는다) - 다만 라운드 1
+    // 때와 달리 첫 번째 것도 이제 keepalive 를 진다.
     let resolveFirst!: (value: { ok: boolean; status?: number }) => void;
     const firstResponse = new Promise<{ ok: boolean; status?: number }>((resolve) => {
       resolveFirst = resolve;
@@ -292,11 +300,8 @@ describe("RecordingUploader", () => {
     resolveFirst({ ok: true, status: 202 });
     await Promise.all([firstFlush, secondFlush]);
 
-    // 진행 중인 요청에 편승(join)하면 이 두 번째 호출은 keepalive 없이 이미
-    // 나가고 있는 첫 번째 요청을 그냥 기다리는 꼴이 되어, 페이지가 그 사이
-    // 닫히면 keepalive 없는 요청이 중단된다. 반드시 자신만의 실제 요청을
-    // keepalive 와 함께 나중에 보내야 한다.
-    expect(initOf(fetcher.mock.calls[0]!).keepalive).toBeFalsy();
+    expect(fetcher.mock.calls.length).toBe(2);
+    expect(initOf(fetcher.mock.calls[0]!).keepalive).toBe(true);
     expect(initOf(fetcher.mock.calls[1]!).keepalive).toBe(true);
   });
 
@@ -599,5 +604,57 @@ describe("RecordingUploader", () => {
     const retriedEvents = bodyOf(fetcher.mock.calls[1]!).events as Record<string, unknown>[];
     expect(retriedEvents).toHaveLength(1);
     expect(retriedEvents[0]!.marker).toBe("anchor");
+  });
+
+  // --- 리뷰 라운드 3: 발견 - backlog 가 있을 때 페이지 이탈 꼬리를 잃는다 ---
+  //
+  // 라운드 2 는 keepalive 를 claim 시점에 배치에 고정했지만, 그 배치를
+  // "누가 claim 했는가" 로만 정했다. 실제로는 "지금 페이지가 사라지고
+  // 있는가" 가 keepalive 를 결정해야 한다 - 이전의 일시적 실패로 backlog 가
+  // 남아 있으면, 그 배치가 keepalive 없이 나가다 언로드에 끊기고, pump() 는
+  // 첫 재시도 가능한 실패에서 멈춰 정작 페이지 이탈 flush 가 claim 한
+  // 꼬리는 시도조차 되지 않는다.
+
+  it("페이지 이탈 시 이미 쌓인 backlog 도 keepalive 로 나간다", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 }) // 이전의 일시적 실패 - backlog 를 남긴다.
+      .mockResolvedValue({ ok: true, status: 202 });
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([event(1)]);
+    expect(await uploader.flush()).toBe(false); // e1 이 seq 0 로 실패한 채 backlog 에 남는다 - keepalive 없이.
+
+    uploader.enqueue([event(2)]);
+    await uploader.flush({ keepalive: true }); // 페이지가 지금 사라지고 있다.
+
+    expect(fetcher.mock.calls.length).toBe(3);
+    // calls[0] 은 keepalive 호출보다 앞서 이미 지나간 시도라 keepalive 가
+    // 없다 - 그건 되돌릴 수 없다. 하지만 keepalive 호출 이후에 나간 모든
+    // 요청은 - 밀린 e1 의 재시도(calls[1])든 새로 claim 된 e2(calls[2])든 -
+    // 반드시 keepalive 를 실어야 한다.
+    expect(initOf(fetcher.mock.calls[1]!).keepalive).toBe(true);
+    expect(initOf(fetcher.mock.calls[2]!).keepalive).toBe(true);
+  });
+
+  it("backlog 가 keepalive 시도에서도 계속 실패해도 새 배치(꼬리)는 시도된다", async () => {
+    const fetcher = vi.fn(async () => ({ ok: false, status: 500 })); // 계속 실패한다 - 성공은 이 테스트의 관심사가 아니다.
+    const uploader = createUploader(fetcher);
+
+    uploader.enqueue([event(1)]);
+    expect(await uploader.flush()).toBe(false); // backlog 남음.
+
+    uploader.enqueue([event(2)]);
+    await uploader.flush({ keepalive: true });
+
+    // 밀린 e1 이 keepalive 재시도에서도 또 실패하더라도, 새로 claim 된
+    // e2(꼬리)는 반드시 시도되어야 한다 - 순서를 지키려고 여기서 멈추면
+    // keepalive 가 존재하는 유일한 이유(마지막 꼬리 저장)를 잃는다. 순서는
+    // seq 로 이미 보장되어 있고(서버는 seq 로 정렬한다), 지금은 이 배치를
+    // 시도할 미래의 flush() 가 없다.
+    expect(fetcher.mock.calls.length).toBe(3); // e1(최초 실패) + e1(keepalive 재시도, 또 실패) + e2(꼬리, keepalive).
+    const tailCall = fetcher.mock.calls[2]!;
+    expect((bodyOf(tailCall).events as RecordedEvent[])[0]!.timestamp).toBe(2);
+    expect(initOf(tailCall).keepalive).toBe(true);
   });
 });

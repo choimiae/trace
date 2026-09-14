@@ -67,7 +67,8 @@ function isRetryableStatus(status: number | undefined): boolean {
 interface Chunk {
   readonly seq: number;
   events: RecordedEvent[];
-  readonly keepalive: boolean;
+  // seq 와 달리 keepalive 는 claim 이후에도 바뀔 수 있다 - flush() 참고.
+  keepalive: boolean;
 }
 
 export class RecordingUploader {
@@ -115,26 +116,32 @@ export class RecordingUploader {
   }
 
   async flush(options: { keepalive?: boolean } = {}): Promise<boolean> {
+    const keepalive = !!options.keepalive;
+
+    // keepalive 는 "이 배치를 누가 claim 했는가" 의 속성이 아니라 "지금 이
+    // 순간 페이지가 사라지고 있는가" 의 속성이다(라운드 3). 이 호출이
+    // keepalive 로 왔다면 - 아직 안 나간 배치가 이전의 일시적 실패로
+    // backlog 에 남아 있더라도 - 지금부터 나가는 모든 배치가 keepalive 를
+    // 져야 한다. 그러지 않으면 언로드가 그 배치의 요청을 끊어 버린다. 이미
+    // 지나간(과거의) 시도는 되돌릴 수 없으니 건드리지 않는다 - 앞으로 나갈
+    // 시도만 바꾼다.
+    if (keepalive) {
+      for (const chunk of this.outstanding) chunk.keepalive = true;
+    }
+
     // 새로 쌓인 이벤트가 있으면 지금 이 호출의 몫으로 배치를 하나 확정한다.
     // seq 는 여기서, 지금, 이 배치에 단 한 번만 부여된다 - claim 은 반드시
     // 동기적이어야 한다. 뒤의 체인(.then)에 미루면 그 사이에 들어오는
     // enqueue() 가 이번 호출이 아니라 다음 flush() 호출의 몫으로 새치기해
     // 들어가 두 호출이 서로의 이벤트를 나눠 갖게 된다.
-    //
-    // keepalive 도 이 배치에 그대로 실어 둔다 - sendOne() 은 이 값을
-    // this.currentUrl() 같은 인스턴스 상태가 아니라 배치 자신에게서 읽는다.
-    // 그래야 이 배치가 나중에 다른 flush() 호출의 진행 중(pump)에 얹혀
-    // 나가더라도 keepalive 를 잃지 않는다 - 반대로 "누가 지금 보내고
-    // 있느냐" 의 keepalive 를 빌려 쓰면, 원래 keepalive 없이 나갈 배치가
-    // keepalive 호출에 얹혀 나갈 때 옵션을 잃는 문제도, 그 반대도 생긴다.
     if (this.unclaimed.length > 0) {
-      this.outstanding.push({ seq: this.nextSeq++, events: this.unclaimed, keepalive: !!options.keepalive });
+      this.outstanding.push({ seq: this.nextSeq++, events: this.unclaimed, keepalive });
       this.unclaimed = [];
     }
 
     if (this.outstanding.length === 0) return true;
 
-    const runNext = () => this.pump();
+    const runNext = () => this.pump(keepalive);
     // 이전 체인이 어떻게 끝났든(pump() 는 내부에서 항상 boolean 으로
     // 정리하므로 reject 는 사실상 일어나지 않지만, 방어적으로 두 콜백 모두
     // runNext 를 잇는다) 이번 호출의 실제 전송 시도는 그 뒤에 실행된다.
@@ -153,28 +160,47 @@ export class RecordingUploader {
    * 큐 맨 앞(가장 오래된, 가장 작은 seq)부터 순서대로 하나씩 전송을
    * 시도한다. 성공하거나(영구 실패로 판단해) 버린 배치는 큐에서 빼고 다음
    * 배치로 계속 진행한다 - 겹친 flush() 호출이 쌓아 둔 뒤쪽 배치까지 이
-   * 한 번의 pump 가 이어서 처리할 수 있다. 각 배치가 자신의 seq 와
-   * keepalive 를 스스로 들고 있으므로 안전하다(둘 다 claim 시점에 고정되고
-   * 다시 읽지 않는다).
+   * 한 번의 pump 가 이어서 처리할 수 있다. 각 배치가 자신의 seq 를 스스로
+   * 들고 있으므로 안전하다(claim 시점에 고정되고 다시 읽지 않는다).
    *
-   * 재시도 가능한 실패를 만나면 그 배치를 큐 맨 앞에 그대로 둔 채 멈춘다 -
-   * 지금 당장 또 두드려 봐야 결과가 달라질 리 없으니, 다음 flush() 호출을
-   * 기다린다. 그 배치는 다음에도 같은 seq 로 재시도된다.
+   * 평소(keepalive 아닌 flush())에는 재시도 가능한 실패를 만나면 그 배치를
+   * 큐 맨 앞에 그대로 둔 채 멈춘다 - 지금 당장 또 두드려 봐야 결과가
+   * 달라질 리 없으니, 다음 flush() 호출을 기다린다.
+   *
+   * keepalive(페이지 이탈)일 때는 멈추지 않는다 - 순서를 지키는 것은
+   * "다음 flush() 가 온다" 는 미래가 있을 때만 의미가 있는데, 페이지가
+   * 사라지는 지금은 그 미래가 없다. 앞 배치가 또 실패해도 계속 다음
+   * 배치로 넘어가 - 뒤에 있는, 방금 이 호출이 claim 한 꼬리까지 - 시도할
+   * 기회를 준다. 순서는 이미 seq 로 보장되어 있다(서버는 도착 순서가 아니라
+   * seq 로 정렬한다) - 잃는 것은 엄격한 전송 순서뿐이고, 얻는 것은 실제로
+   * 무언가를 내보낼 기회다.
    */
-  private async pump(): Promise<boolean> {
-    while (this.outstanding.length > 0) {
-      const chunk = this.outstanding[0]!;
+  private async pump(keepalive: boolean): Promise<boolean> {
+    let delivered = true;
+    let index = 0;
+
+    while (index < this.outstanding.length) {
+      const chunk = this.outstanding[index]!;
       const outcome = await this.sendOne(chunk);
 
-      if (outcome === "retry") return false;
+      if (outcome === "retry") {
+        delivered = false;
+        if (!keepalive) return false;
+        // 이 배치는 자리를 지킨다(다음 flush() 가 있다면 그때 같은 seq 로
+        // 재시도한다) - 다만 지금은 멈추지 않고 다음 배치로 넘어간다.
+        index += 1;
+        continue;
+      }
 
       // 성공했거나 버렸다 - 큐에서 뺀다. capPending() 이 이 사이(await 중)
       // 이 배치를 이미 지웠을 수도 있으니 위치가 아니라 seq 로 찾는다 -
-      // 못 찾아도 이미 처리된 것이니 안전하게 넘어간다.
-      const index = this.outstanding.findIndex((candidate) => candidate.seq === chunk.seq);
-      if (index !== -1) this.outstanding.splice(index, 1);
+      // 못 찾아도 이미 처리된 것이니 안전하게 넘어간다. 앞이 당겨지므로
+      // index 는 그대로 둔다 - 다음 배치가 같은 자리로 온다.
+      const at = this.outstanding.findIndex((candidate) => candidate.seq === chunk.seq);
+      if (at !== -1) this.outstanding.splice(at, 1);
     }
-    return true;
+
+    return delivered;
   }
 
   private async sendOne(chunk: Chunk): Promise<"delivered" | "dropped" | "retry"> {
