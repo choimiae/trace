@@ -413,7 +413,7 @@ describe("getScreenContext", () => {
     expect(JSON.stringify(context)).not.toContain("서울시");
   });
 
-  it("컨테이너에는 텍스트를 담지 않고 버튼·링크·제목에만 담는다", () => {
+  it("자기 글자를 가진 요소는 태그와 무관하게 담고 컨테이너는 담지 않는다", () => {
     window.innerWidth = 1440;
     window.innerHeight = 900;
     document.body.innerHTML = `
@@ -435,15 +435,14 @@ describe("getScreenContext", () => {
 
     expect(byTag("a")?.textMaskedOrLimited).toBe("도움말");
     expect(byTag("h2")?.textMaskedOrLimited).toBe("결제 확인");
-    // main 은 랜드마크로 수집되지만 컨테이너이므로 텍스트가 없다.
+    // section 은 자기 텍스트 노드를 가지므로 이제 그 글자를 담는다. 태그
+    // 화이트리스트가 사라진 자리를 "자기 글자만" 규칙이 대신한다.
+    expect(byTag("section")?.textMaskedOrLimited).toBe("박스 안의 긴 설명 문구");
+    // main 은 자식 요소만 갖고 자기 텍스트 노드가 없어 여전히 글자가 없다.
+    // 이 단언이 진짜 가드다 — textContent(자손 전체)로 돌아가면 main 하나가
+    // 화면 전체 문자열을 담는다.
     expect(byTag("main")).toBeDefined();
     expect(byTag("main")).not.toHaveProperty("textMaskedOrLimited");
-    // section 은 문서 전체 geometry 스캔으로 이제 수집된다(자기 텍스트 노드가
-    // 있어 칠해짐 판정을 통과한다) — 그러나 TEXT_TAG_WHITELIST 에 없어 텍스트는
-    // 여전히 담기지 않는다. 컨테이너는 상자로만 보이고 글자는 새지 않는다.
-    expect(byTag("section")).toBeDefined();
-    expect(byTag("section")).not.toHaveProperty("textMaskedOrLimited");
-    expect(JSON.stringify(context)).not.toContain("박스 안의 긴 설명 문구");
   });
 
   it("텍스트를 담지 않는 랜드마크에서는 textContent 를 아예 읽지 않는다", () => {
@@ -1015,13 +1014,21 @@ describe("비시맨틱 화면에서도 구조를 담는다", () => {
     expect(tags.has("td")).toBe(true);
   });
 
-  // 구조 힌트는 rect 만 남는다. div·td 는 텍스트 화이트리스트에 없다.
-  it("구조 힌트에 글자가 실리지 않는다", () => {
+  // 이 화면이 이 변경의 이유다. 메뉴가 div 고 버튼이 div 라 옛 화이트리스트
+  // (button·a·h1~h3)에서는 글자가 0건이었고, 미리보기가 어느 화면인지 알아볼 수
+  // 없었다. 이제 div 도 자기 글자를 담는다.
+  it("구조 힌트도 자기 글자를 담는다", () => {
     const target = buildNonSemanticScreen();
     const context = getScreenContext(target)!;
+    const texts = context.layoutHints.map((hint) => hint.textMaskedOrLimited);
 
+    expect(texts).toContain("저장");
+    expect(texts).toContain("인쇄");
+
+    // 그래도 컨테이너는 비어 있어야 한다. td·table 은 자식 요소만 갖는다 —
+    // 여기가 무너지면 td 하나가 그 아래 전부를 이어 붙인 문자열을 담는다.
     for (const hint of context.layoutHints) {
-      if (hint.tagName === "div" || hint.tagName === "td" || hint.tagName === "table") {
+      if (hint.tagName === "td" || hint.tagName === "table") {
         expect(hint.textMaskedOrLimited).toBeUndefined();
       }
     }
@@ -1240,6 +1247,71 @@ describe("근사 중복이 겹칠 때 masked 요소를 남긴다", () => {
     const context = getScreenContext(document.querySelector("#click")!)!;
 
     expect(context.layoutHints.map((hint) => hint.tagName)).toEqual(["div", "input", "div"]);
+  });
+});
+
+describe("힌트는 임의 태그의 자기 글자를 담는다", () => {
+  // 태그 화이트리스트(button·a·h1~h3)는 비시맨틱 화면에서 0건이었다 — 실측한
+  // 업무 화면(요소 2,459개)은 메뉴가 span.module-link 고 버튼이 div 라 글자가
+  // 하나도 안 담겼다. 화이트리스트를 걷어내 어떤 태그든 자기 글자를 담게 한다.
+  it("화이트리스트 밖 span 도 자기 글자를 담는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <span id="menu">회계관리</span>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#menu")!, { x: 0, y: 100, width: 48, height: 44 });
+
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+    const menu = context.layoutHints.find((hint) => hint.tagName === "span");
+
+    expect(menu?.textMaskedOrLimited).toBe("회계관리");
+  });
+
+  // 가장 중요한 가드다. allowedElementText 는 textContent 를 쓰는데 그것은
+  // 자손 전체다 — 컨테이너에 그대로 적용하면 <main> 하나가 화면 전체 문자열을
+  // 담는다. 실측: 이 화면의 outerHTML 은 7.2MB 고 보이는 글자는 5.8KB 다.
+  // 힌트는 자기 텍스트 노드만 본다.
+  it("컨테이너는 자손의 글자를 끌어오지 않는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <section id="wrap"><span id="inner">고객 목록 김철수 이영희</span></section>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#wrap")!, { x: 20, y: 20, width: 400, height: 200 });
+    stubRect(document.querySelector("#inner")!, { x: 24, y: 24, width: 392, height: 40 });
+    stubStyle(document.querySelector("#wrap")!, { backgroundColor: "rgb(240, 240, 240)" });
+
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+    const wrap = context.layoutHints.find((hint) => hint.tagName === "section");
+
+    expect(wrap).toBeDefined();
+    expect(wrap).not.toHaveProperty("textMaskedOrLimited");
+  });
+
+  // 입력 계열은 화이트리스트와 무관하게 영원히 글자를 안 담는다. 이 성질은
+  // 계약(screenLayoutHintSchema 의 refine)에도 박혀 있어, 깨지면 배치 전체가
+  // 400 이 된다.
+  it("입력 요소는 글자를 담지 않는다", () => {
+    window.innerWidth = 1000;
+    window.innerHeight = 700;
+    document.body.innerHTML = `
+      <div id="click"></div>
+      <textarea id="memo">사내 메모 전문</textarea>
+    `;
+    stubRect(document.querySelector("#click")!, { x: 500, y: 500, width: 10, height: 10 });
+    stubRect(document.querySelector("#memo")!, { x: 20, y: 20, width: 300, height: 80 });
+
+    const context = expectValidScreenContext(document.querySelector("#click")!);
+    const memo = context.layoutHints.find((hint) => hint.tagName === "textarea");
+
+    expect(memo?.masked).toBe(true);
+    expect(memo).not.toHaveProperty("textMaskedOrLimited");
+    expect(JSON.stringify(context)).not.toContain("사내 메모 전문");
   });
 });
 
@@ -1747,8 +1819,12 @@ describe("iframe", () => {
     );
   });
 
-  // 같은 출처라도 텍스트 정책은 부모 문서와 같다. div 는 화이트리스트에 없다.
-  it("iframe 내부 div 에도 글자가 실리지 않는다", () => {
+  // 같은 출처 프레임 안쪽도 부모 문서와 **같은** 텍스트 정책을 받는다. 정책이
+  // 넓어졌으므로 이 테스트도 함께 넓어진다 — 프레임 안 div 의 글자가 담긴다.
+  // 픽스처를 "비밀 문서 내용" 그대로 둔다: 이 임시 상태가 무엇을 수집하는지
+  // 테스트 스위트에서 눈에 보이는 편이 낫다. 되돌릴 자리는 dom.ts 의
+  // ownElementText 주석과 README 개인정보 표에 적혀 있다.
+  it("iframe 내부 요소도 부모 문서와 같은 텍스트 정책을 받는다", () => {
     document.body.innerHTML = `<div id="side">사이드</div><iframe id="f"></iframe>`;
     const frame = document.querySelector("#f") as HTMLIFrameElement;
     stubRect(document.querySelector("#side")!, { x: 0, y: 0, width: 300, height: 600 });
@@ -1765,10 +1841,7 @@ describe("iframe", () => {
     // 부정 단정(글자가 없다)만 있으면 프레임 스캔이 아무것도 만들지 않아도
     // 통과한다 — 상자가 실제로 수집됐다는 긍정 단정을 함께 못박는다.
     expect(innerHint).toBeDefined();
-    expect(innerHint?.textMaskedOrLimited).toBeUndefined();
-    for (const hint of context.layoutHints) {
-      expect(hint.textMaskedOrLimited).not.toBe("비밀 문서 내용");
-    }
+    expect(innerHint?.textMaskedOrLimited).toBe("비밀 문서 내용");
   });
 
   // 프레임마다 MAX_RECT_SCAN(3,000) 전체를 다시 훑으므로 상한이 없으면 프레임이

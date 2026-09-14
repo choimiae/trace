@@ -39,10 +39,6 @@ const MIN_BOX_SIDE = 8;
 const SKELETON_MAX_VIEWPORT_RATIO = 0.9;
 const LANDMARK_SELECTOR =
   "header, nav, main, aside, [role=banner], [role=navigation], [role=main], [role=complementary]";
-// role 은 getAttribute("role") ?? tagName 이므로 <a> 는 role 이 "a", <h2> 는 "h2" 다.
-// role 이름만으로 화이트리스트를 쓰면 대부분 걸리지 않는다.
-const TEXT_ROLE_WHITELIST = new Set(["button", "link", "tab", "heading"]);
-const TEXT_TAG_WHITELIST = new Set(["button", "a", "h1", "h2", "h3"]);
 
 const CONTENTEDITABLE_SELECTOR = '[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
 // select 의 option 라벨도 textContent 에 들어간다. <a><span>행 열기</span><select>
@@ -228,17 +224,30 @@ function rectCenterDistance(left: ScreenRect, right: ScreenRect): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function allowsHintText(element: Element, tagName: string, role: string | undefined): boolean {
-  if (isTextEntryElement(element)) return false;
-  if (role !== undefined && TEXT_ROLE_WHITELIST.has(role)) return true;
-  return TEXT_TAG_WHITELIST.has(tagName);
+// 힌트의 글자는 **자기 텍스트 노드만** 본다. allowedElementText 가 쓰는
+// textContent 는 자손 전체라, 컨테이너 하나가 화면 전체 문자열을 담는다 —
+// 실측(2026-09-14, 요소 2,465개 업무 화면): outerHTML 7.2MB 에 보이는 글자는
+// 5.8KB 였고 그 차이가 전부 자손 누적이다. 잎 요소는 자기 라벨을 갖고
+// 컨테이너는 아무것도 안 갖는다.
+//
+// 태그 화이트리스트는 없다. button·a·h1~h3 로 좁혔더니 비시맨틱 화면(메뉴가
+// span, 버튼이 div)에서 글자가 **0건**이라 미리보기가 어느 화면인지 알아볼 수
+// 없었다. 대신 masked 가 입력 계열·민감 필드를 막고 redactScreenText 가
+// 이메일·전화·긴 숫자를 지운다.
+function ownElementText(element: Element): string | undefined {
+  let text = "";
+  for (const node of Array.from(element.childNodes)) {
+    if (node.nodeType === 3) text += node.textContent ?? "";
+  }
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length === 0 ? undefined : collapsed;
 }
 
 // 대체 요소는 배경색·테두리가 없어도 언제나 무언가를 그린다.
 const REPLACED_TAGS = new Set(["img", "iframe", "frame", "canvas", "video", "svg", "object", "embed"]);
 
 // 판정에만 쓰고 저장하지 않는다. 여기서 읽은 문자열은 이 함수 밖으로 나가지 않는다 —
-// 힌트에 실릴 텍스트는 allowsHintText 화이트리스트가 따로 정한다.
+// 힌트에 실릴 텍스트는 ownElementText 가 따로 뽑는다.
 function hasOwnTextNode(element: Element): boolean {
   for (const node of Array.from(element.childNodes)) {
     if (node.nodeType === 3 && (node.textContent ?? "").trim().length > 0) return true;
@@ -344,7 +353,7 @@ function buildLayoutHint(
   const masked = isMaskedHintElement(element, tagName);
   // masked 를 텍스트 판정보다 앞에 둔다. "masked:true 인 힌트는 텍스트를 담지 않는다" 는
   // 규칙이 화이트리스트 두 개의 조합에 기대지 않고 이 한 줄로 서게 한다.
-  const rawText = !masked && allowsHintText(element, tagName, role) ? allowedElementText(element) : undefined;
+  const rawText = masked ? undefined : ownElementText(element);
   const text = rawText === undefined ? undefined : redactScreenText(rawText);
 
   return {

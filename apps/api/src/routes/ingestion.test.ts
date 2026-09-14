@@ -437,7 +437,73 @@ describe("ingestion routes", () => {
     expect(JSON.stringify(timeline)).not.toContain("고객 메모 원문");
   });
 
-  it("구식 SDK 가 masked:false 로 보낸 입력 계열·컨테이너 텍스트도 서버가 태그·역할로 직접 판정해 지운다", async () => {
+  // 서버가 태그 화이트리스트(button·a·h1~h3)로 힌트 텍스트를 지우고 있었다.
+  // 비시맨틱 화면은 메뉴가 span 이고 버튼이 div 라 그 게이트에서 글자가 전부
+  // 사라져, SDK 가 보내도 저장되지 않았다. masked 재판정은 유지하고 태그
+  // 게이트만 연다.
+  it("화이트리스트 밖 태그의 힌트 텍스트도 저장한다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com"],
+    });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://demo.example.com" },
+      payload: {
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-02T01:00:02.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-02T01:00:00.000Z",
+            type: "click",
+            urlPath: "/settings",
+            metadata: {},
+            screenContext: {
+              viewport: { width: 1440, height: 900 },
+              layoutHints: [
+                {
+                  tagName: "span",
+                  masked: false,
+                  textMaskedOrLimited: "회계관리",
+                  rect: { x: 0, y: 100, width: 48, height: 44 },
+                },
+                {
+                  tagName: "div",
+                  masked: false,
+                  textMaskedOrLimited: "저장",
+                  rect: { x: 20, y: 200, width: 80, height: 24 },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    const hints = timeline[0]?.screenContext?.layoutHints ?? [];
+
+    expect(hints.find((hint) => hint.tagName === "span")?.textMaskedOrLimited).toBe("회계관리");
+    expect(hints.find((hint) => hint.tagName === "div")?.textMaskedOrLimited).toBe("저장");
+  });
+
+  // 태그 화이트리스트를 걷어내면서 **방어 한 겹이 줄었다.** 전에는 구식·손상된
+  // SDK 가 컨테이너 글자를 보내도 서버가 태그로 지웠는데, 이제 컨테이너를 비우는
+  // 책임이 SDK 의 ownElementText(자기 텍스트 노드만) 한 곳에만 있다. 입력 계열
+  // 재판정은 그대로 남는다 — 그것이 개인정보 경계의 마지막 선이다.
+  it("구식 SDK 가 masked:false 로 보낸 입력 계열 텍스트는 서버가 태그로 직접 판정해 지운다", async () => {
     const store = new MemoryStore();
     const project = await store.createProject({
       name: "Demo",
@@ -513,13 +579,14 @@ describe("ingestion routes", () => {
     expect(input).not.toHaveProperty("textMaskedOrLimited");
     expect(select?.masked).toBe(true);
     expect(select).not.toHaveProperty("textMaskedOrLimited");
+    // main 의 글자는 이제 서버가 안 지운다. 넓힌 정책의 대가를 눈에 보이게
+    // 남긴다 — 픽스처가 사람 이름인 것도 그대로 둔다.
     expect(main?.masked).toBe(false);
-    expect(main).not.toHaveProperty("textMaskedOrLimited");
+    expect(main?.textMaskedOrLimited).toBe("김철수 고객 상세 화면");
     expect(link?.masked).toBe(false);
     expect(link?.textMaskedOrLimited).toBe("도움말");
     expect(serialized).not.toContain("hunter2Password");
     expect(serialized).not.toContain("선택된 옵션 라벨");
-    expect(serialized).not.toContain("김철수 고객 상세 화면");
     expect(serialized).toContain("도움말");
   });
 
