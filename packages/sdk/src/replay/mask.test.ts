@@ -252,6 +252,9 @@ describe("redactEventText", () => {
     expect(snapshot.data.node.attributes.href).toBe("mailto:[redacted]");
   });
 
+  // tel: 은 스킴이 "이 값은 전화번호" 를 보장한다. 패턴으로 고르지 않고 통째로
+  // 지우는 이유다 - 공용 PHONE_PATTERN 은 한국 휴대폰 형태를 겨냥해서 대표번호나
+  // 국제 번호를 지나친다. 스킴을 보장으로 쓰는 쪽이 언제나 더 강하다.
   it("tel: href 의 전화번호를 지운다", () => {
     const snapshot = {
       data: { node: { type: 2, tagName: "a", attributes: { href: "tel:010-1234-5678" } } },
@@ -260,6 +263,29 @@ describe("redactEventText", () => {
     redactEventText(snapshot, ids());
 
     expect(snapshot.data.node.attributes.href).toBe("tel:[redacted]");
+  });
+
+  it("패턴에 걸리지 않는 tel: 번호도 남기지 않는다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "a",
+          attributes: {
+            href: "tel:1588-1234",
+            "data-intl": "tel:+1-202-555-0143",
+            "data-ext": "tel:02-777-1234,,1010",
+          },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    const attributes = snapshot.data.node.attributes;
+    expect(attributes.href).toBe("tel:[redacted]");
+    expect(attributes["data-intl"]).toBe("tel:[redacted]");
+    expect(attributes["data-ext"]).toBe("tel:[redacted]");
   });
 
   it("대문자 스킴과 국가번호 형태도 지운다", () => {
@@ -276,12 +302,26 @@ describe("redactEventText", () => {
     redactEventText(snapshot, ids());
 
     expect(snapshot.data.node.attributes.href).toBe("MAILTO:[redacted]");
-    // 숫자는 전부 사라진다. 앞의 "+" 하나가 남는 것은 공용 PHONE_PATTERN 의
-    // 선행 \b 가 ":" 와 "+" 사이에 설 수 없어서다 - 자릿수는 남지 않으므로
-    // 유출은 아니고, 그 정규식은 이벤트 파이프라인 전체가 함께 쓰는 것이라
-    // 여기서 바꾸지 않는다.
-    expect(snapshot.data.node.attributes["data-alt"]).toBe("tel:+[redacted]");
-    expect(snapshot.data.node.attributes["data-alt"]).not.toContain("1234");
+    // 스킴 대소문자와 무관하게, 뒤는 통째로 사라진다 - 예전에 남던 "+" 도 없다.
+    expect(snapshot.data.node.attributes["data-alt"]).toBe("tel:[redacted]");
+  });
+
+  // mailto: 는 패턴 그대로다. 주소만 확실히 걷어내고 쿼리의 정상적인 내용
+  // (subject 등)은 남긴다 - 그쪽은 화면 맥락이라 통째로 지울 이유가 없다.
+  it("mailto: 는 주소만 지우고 쿼리는 남긴다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "a",
+          attributes: { href: "mailto:hong@example.com?subject=주문 문의" },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.href).toBe("mailto:[redacted]?subject=주문 문의");
   });
 
   it("mailto·tel 이 아닌 스킴의 href 는 그대로 둔다", () => {

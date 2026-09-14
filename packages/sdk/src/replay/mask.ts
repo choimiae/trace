@@ -55,9 +55,23 @@ const SKIPPED_ATTRIBUTES = new Set(["style", "_cssText", "src", "srcset", "href"
  * 스킴이고, 경로처럼 생기지 않아 긴 숫자를 깨뜨릴 위험이 없다 - 그래서 이 둘만
  * 훑는다. `https:` 같은 다른 스킴의 href 는 계속 손대지 않는다(/orders/987654321).
  *
- * 값이 어느 속성에 들어 있든 같은 판정을 쓴다 - data-* 에 담긴 `tel:` 도 연락처다.
+ * 값이 어느 속성에 들어 있든 같은 판정을 쓴다 - 속성 이름이 아니라 값의 스킴을
+ * 보므로 `data-*` 에 담긴 `tel:` 도 함께 잡힌다.
+ *
+ * 둘의 처리가 다르다:
+ *  - `tel:` 은 **스킴 뒤를 통째로 지운다.** 스킴 자체가 "이 값은 전화번호" 를
+ *    보장하므로 패턴으로 고르는 것은 언제나 이보다 약하다 - 공용 PHONE_PATTERN 은
+ *    한국 휴대폰 형태(01[016789])를 겨냥해서 대표번호(1588-1234)나 국제 번호를
+ *    지나치고, `+82-` 형태에서는 앞의 `+` 를 남긴다. 정의상 전화번호인 필드를
+ *    한국 휴대폰용 정규식에 맡길 이유가 없다.
+ *  - `mailto:` 는 `redactPatterns` 그대로다. EMAIL_PATTERN 이 주소를 확실히
+ *    걷어내고, 쿼리(`?subject=…`)에는 지울 이유가 없는 화면 맥락이 들어온다.
  */
-const CONTACT_SCHEME_PATTERN = /^\s*(?:mailto|tel):/i;
+const TEL_SCHEME_PATTERN = /^\s*tel:/i;
+const MAILTO_SCHEME_PATTERN = /^\s*mailto:/i;
+
+/** redactPatterns 가 쓰는 표식과 같은 값. 그 상수는 공용 모듈 밖으로 나오지 않는다. */
+const REDACTED = "[redacted]";
 
 /**
  * 직렬화된 rrweb 이벤트 안의 텍스트에 패턴 제거를 적용한다.
@@ -145,7 +159,13 @@ export function redactEventText(value: unknown, styleTextNodeIds: Set<number>): 
         if (typeof attribute !== "string") continue;
         // 연락처 스킴이면 제외 목록보다 우선한다 - href 를 통째로 빼 두면
         // mailto:hong@example.com 이 그대로 나간다.
-        if (CONTACT_SCHEME_PATTERN.test(attribute)) {
+        const tel = TEL_SCHEME_PATTERN.exec(attribute);
+        if (tel !== null) {
+          // 스킴만 남기고 뒤는 전부 지운다. 번호 모양을 맞혀 볼 필요가 없다.
+          bag[name] = `${tel[0]}${REDACTED}`;
+          continue;
+        }
+        if (MAILTO_SCHEME_PATTERN.test(attribute)) {
           bag[name] = redactPatterns(attribute);
           continue;
         }

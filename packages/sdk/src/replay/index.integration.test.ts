@@ -186,6 +186,17 @@ describe("startReplay (진짜 rrweb)", () => {
     expect(payload).not.toContain("010-1234-5678");
   });
 
+  // 패턴이 아니라 스킴을 보장으로 쓰므로, 공용 PHONE_PATTERN 이 못 잡는 번호도
+  // 남지 않는다.
+  it("패턴에 걸리지 않는 tel: 번호도 남기지 않는다", () => {
+    const { payload } = recordAndDrain(
+      '<a href="tel:1588-1234">대표번호</a><a href="tel:+1-202-555-0143">해외</a>',
+    );
+
+    expect(payload).not.toContain("1588-1234");
+    expect(payload).not.toContain("202-555-0143");
+  });
+
   // 경로형 href 를 깨뜨리지 않는 것이 애초에 href 를 제외했던 이유다.
   it("경로형 href 의 긴 숫자는 깨뜨리지 않는다", () => {
     const { payload } = recordAndDrain('<a href="/orders/987654321">주문</a>');
