@@ -240,6 +240,66 @@ describe("redactEventText", () => {
     expect(snapshot.data.node.attributes.href).toBe("/orders/987654321");
   });
 
+  // href 예외의 구멍이었다 - mailto:·tel: 은 PII 를 그대로 싣는데 경로처럼
+  // 생기지 않아서, 이 둘만 훑으면 긴 숫자를 깨뜨릴 위험 없이 막을 수 있다.
+  it("mailto: href 의 이메일을 지운다", () => {
+    const snapshot = {
+      data: { node: { type: 2, tagName: "a", attributes: { href: "mailto:hong@example.com" } } },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.href).toBe("mailto:[redacted]");
+  });
+
+  it("tel: href 의 전화번호를 지운다", () => {
+    const snapshot = {
+      data: { node: { type: 2, tagName: "a", attributes: { href: "tel:010-1234-5678" } } },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.href).toBe("tel:[redacted]");
+  });
+
+  it("대문자 스킴과 국가번호 형태도 지운다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "a",
+          attributes: { href: "MAILTO:Hong@Example.com", "data-alt": "tel:+82-10-1234-5678" },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.href).toBe("MAILTO:[redacted]");
+    // 숫자는 전부 사라진다. 앞의 "+" 하나가 남는 것은 공용 PHONE_PATTERN 의
+    // 선행 \b 가 ":" 와 "+" 사이에 설 수 없어서다 - 자릿수는 남지 않으므로
+    // 유출은 아니고, 그 정규식은 이벤트 파이프라인 전체가 함께 쓰는 것이라
+    // 여기서 바꾸지 않는다.
+    expect(snapshot.data.node.attributes["data-alt"]).toBe("tel:+[redacted]");
+    expect(snapshot.data.node.attributes["data-alt"]).not.toContain("1234");
+  });
+
+  it("mailto·tel 이 아닌 스킴의 href 는 그대로 둔다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "a",
+          attributes: { href: "https://shop.example.com/orders/987654321" },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.href).toBe("https://shop.example.com/orders/987654321");
+  });
+
   it("민감하지 않은 본문은 그대로 둔다", () => {
     const snapshot = { data: { node: { type: 3, textContent: "주문 내역" } } };
 

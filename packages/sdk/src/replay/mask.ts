@@ -44,11 +44,20 @@ const TEXT_CONTENT_KEY = "textContent";
  *  - `style`·`_cssText` 는 CSS 다. 9자리 이상 숫자가 흔해서(z-index·좌표·색)
  *    훑으면 [redacted] 가 박혀 스타일이 깨진다 - 텍스트 노드의 isStyle 예외와
  *    같은 이유다.
- *  - `src`·`srcset`·`href` 는 stripDataUris 가 이미 책임진다. 여기서 또 만지면
- *    긴 숫자를 담은 자산 경로(/img/1234567890.jpg)나 주문 경로(/orders/987654321)가
- *    통째로 바뀌어 재생 화면이 원본과 달라진다.
+ *  - `src`·`srcset` 은 stripDataUris 가 이미 책임진다. 여기서 또 만지면 긴 숫자를
+ *    담은 자산 경로(/img/1234567890.jpg)가 통째로 바뀌어 재생 화면이 원본과
+ *    달라진다. `href` 도 같은 이유로 기본은 제외지만 아래 예외가 하나 있다.
  */
 const SKIPPED_ATTRIBUTES = new Set(["style", "_cssText", "src", "srcset", "href"]);
+
+/**
+ * `href` 제외의 구멍을 메우는 예외. `mailto:`·`tel:` 은 연락처를 그대로 싣는
+ * 스킴이고, 경로처럼 생기지 않아 긴 숫자를 깨뜨릴 위험이 없다 - 그래서 이 둘만
+ * 훑는다. `https:` 같은 다른 스킴의 href 는 계속 손대지 않는다(/orders/987654321).
+ *
+ * 값이 어느 속성에 들어 있든 같은 판정을 쓴다 - data-* 에 담긴 `tel:` 도 연락처다.
+ */
+const CONTACT_SCHEME_PATTERN = /^\s*(?:mailto|tel):/i;
 
 /**
  * 직렬화된 rrweb 이벤트 안의 텍스트에 패턴 제거를 적용한다.
@@ -80,6 +89,20 @@ const SKIPPED_ATTRIBUTES = new Set(["style", "_cssText", "src", "srcset", "href"
  * texts[] 처리를 walk 뒤로 미루는 것은 순서 때문이다 - 같은 이벤트 안에서
  * style 노드를 먼저 볼지 texts 를 먼저 볼지는 스택 순서에 달렸는데, 거기에
  * 판정이 흔들리면 안 된다.
+ *
+ * **id 재사용 가정(rrweb 을 올릴 때 다시 확인할 것).** 이 Set 은 "한번 style
+ * 텍스트 노드였던 id 는 영영 다른 노드가 되지 않는다" 에 기댄다. 어긋나면 조용한
+ * 유출이다 - 재사용된 id 의 노드가 패턴 훑기를 건너뛰어 그 안의 이메일이 원문 그대로
+ * 나간다. rrweb 2.0.0-alpha.4 에서는 성립한다:
+ *
+ *   rrweb-snapshot/es/rrweb-snapshot.js:147  `var _id = 1;`
+ *   rrweb-snapshot/es/rrweb-snapshot.js:150  `function genId() { return _id++; }`
+ *
+ * `_id` 에 쓰는 곳은 저 두 줄뿐이다 - 초기화와 후위 증가. 리셋도, 감소도, 반납
+ * 목록도 없고 `genId()` 가 유일한 id 발급처다(호출 지점도 :807 하나).
+ * `Mirror.removeNodeFromMap` 은 `idNodeMap` 에서 지우기만 할 뿐 id 를 어디에도
+ * 돌려주지 않는다. 실측으로도 확인했다 - id 7 인 style 을 지우고 새 엘리먼트 5개를
+ * 붙이니 11·13·14·15·16 을 받았다.
  *
  * stripDataUris 와 같은 이유로 재귀가 아니라 스택으로 훑는다 - emit 콜백 안에서
  * 고객 페이지가 만든 임의 깊이의 트리를 도는데, 재귀는 깊은 트리에서
@@ -118,9 +141,16 @@ export function redactEventText(value: unknown, styleTextNodeIds: Set<number>): 
     if (attributes !== null && typeof attributes === "object" && !Array.isArray(attributes)) {
       const bag = attributes as Record<string, unknown>;
       for (const name of Object.keys(bag)) {
-        if (SKIPPED_ATTRIBUTES.has(name)) continue;
         const attribute = bag[name];
-        if (typeof attribute === "string") bag[name] = redactPatterns(attribute);
+        if (typeof attribute !== "string") continue;
+        // 연락처 스킴이면 제외 목록보다 우선한다 - href 를 통째로 빼 두면
+        // mailto:hong@example.com 이 그대로 나간다.
+        if (CONTACT_SCHEME_PATTERN.test(attribute)) {
+          bag[name] = redactPatterns(attribute);
+          continue;
+        }
+        if (SKIPPED_ATTRIBUTES.has(name)) continue;
+        bag[name] = redactPatterns(attribute);
       }
     }
 

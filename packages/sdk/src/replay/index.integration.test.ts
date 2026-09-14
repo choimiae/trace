@@ -177,6 +177,22 @@ describe("startReplay (진짜 rrweb)", () => {
     expect(payload).not.toContain("010-1234-5678");
   });
 
+  it("mailto:·tel: href 의 연락처를 지운다", () => {
+    const { payload } = recordAndDrain(
+      '<a href="mailto:hong@example.com">메일</a><a href="tel:010-1234-5678">전화</a>',
+    );
+
+    expect(payload).not.toContain("hong@example.com");
+    expect(payload).not.toContain("010-1234-5678");
+  });
+
+  // 경로형 href 를 깨뜨리지 않는 것이 애초에 href 를 제외했던 이유다.
+  it("경로형 href 의 긴 숫자는 깨뜨리지 않는다", () => {
+    const { payload } = recordAndDrain('<a href="/orders/987654321">주문</a>');
+
+    expect(payload).toContain("/orders/987654321");
+  });
+
   // --- 라운드 2: style characterData ---
 
   it("제자리에서 바뀐 style 텍스트를 깨뜨리지 않는다", async () => {
