@@ -10,6 +10,19 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
+// 미리보기는 뷰포트를 축소해 그리는데 글자는 같이 줄지 않는다. hero 실측
+// (캔버스 676px / 뷰포트 1456px, 배율 0.464)에서 11px 글자가 실제 비율의 2.2배로
+// 그려져, 48px 메뉴 상자가 화면에서 22px 인데 다섯 글자를 밀어 넣고 있었다.
+// "시스템설정" 이 가운데만 남아 "템설" 로 읽혔다.
+//
+// 그래서 상자가 화면에서 차지하는 **비율**로 판정한다 — 캔버스가 얼마나 크게
+// 그려지든 같은 기준이다. 문턱 미만은 글자를 그리지 않고 title 로만 들고 있어,
+// 마우스를 올리면 온전히 보이고 기하는 틀어지지 않는다.
+//
+// 0.06 은 실측에서 골랐다: 메뉴 레일 3.3%(제외), 근무시간 패널 12.3%(포함),
+// 본문 문구 44%(포함).
+const MIN_INLINE_LABEL_RATIO = 0.06;
+
 function rectStyle(context: ScreenContext, rect: { x: number; y: number; width: number; height: number }) {
   const { width, height } = context.viewport;
   return {
@@ -39,15 +52,20 @@ export function ScreenContextPreview({ context, event, compact = false }: Screen
         <strong>{context.titleMasked ?? event?.urlPath ?? "사용자 화면"}</strong>
       </header>
       <div className="screen-preview__canvas" style={{ aspectRatio: `${context.viewport.width} / ${context.viewport.height}` }}>
-        {context.layoutHints.map((hint, index) => (
-          <div
-            className={`screen-preview__hint${hint.masked ? " screen-preview__hint--masked" : ""}`}
-            key={`${hint.tagName}-${index}-${hint.rect.x}-${hint.rect.y}`}
-            style={rectStyle(context, hint.rect)}
-          >
-            {!hint.masked && hint.textMaskedOrLimited ? <span>{hint.textMaskedOrLimited}</span> : null}
-          </div>
-        ))}
+        {context.layoutHints.map((hint, index) => {
+          const label = hint.masked ? undefined : hint.textMaskedOrLimited;
+          const fitsInline = label !== undefined && hint.rect.width / context.viewport.width >= MIN_INLINE_LABEL_RATIO;
+          return (
+            <div
+              className={`screen-preview__hint${hint.masked ? " screen-preview__hint--masked" : ""}`}
+              key={`${hint.tagName}-${index}-${hint.rect.x}-${hint.rect.y}`}
+              style={rectStyle(context, hint.rect)}
+              {...(label ? { title: label } : {})}
+            >
+              {fitsInline ? <span>{label}</span> : null}
+            </div>
+          );
+        })}
         {context.target ? (
           <div className="screen-preview__target" style={rectStyle(context, context.target.rect)}>
             <span>{context.target.textMaskedOrLimited ?? context.target.role ?? context.target.tagName}</span>

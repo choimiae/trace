@@ -42,8 +42,6 @@ const MAX_ERROR_SOURCE = 256;
 // target(클릭된 요소)에는 적용하지 않는다 — 그 라벨을 보여주는 것이 기능의 목적이고,
 // 클릭은 <div> 같은 컨테이너에도 정당하게 떨어질 수 있다.
 const SERVER_MASKED_TAGS = new Set(["input", "select", "textarea"]);
-const SERVER_TEXT_TAGS = new Set(["button", "a", "h1", "h2", "h3"]);
-const SERVER_TEXT_ROLES = new Set(["button", "link", "tab", "heading"]);
 
 // 화면 맥락은 다른 필드와 같이 "느슨하게 받고 정제한다". 고객 사이트의 평범한 DOM
 // (대문자 role, 토큰 목록 role, 뷰포트보다 긴 래퍼 등) 때문에 배치 전체가 400 이 되면
@@ -241,13 +239,16 @@ function sanitizeScreenContext(value: unknown): ScreenContext | undefined {
       const sanitized = sanitizeScreenElement(hint);
       if (sanitized === undefined) return undefined;
       // masked 는 "내용을 보여주지 않는다" 는 뜻이다. SDK 를 신뢰하지 않고 경계에서
-      // 태그·role 로 직접 재판정한 뒤 텍스트를 지운다.
+      // 태그로 직접 재판정한 뒤 텍스트를 지운다. 이 재판정은 유지한다 — 구식
+      // SDK 가 masked:false 로 보낸 입력 계열도 여기서 걸린다.
+      //
+      // 태그 화이트리스트(button·a·h1~h3)는 걷어냈다. 비시맨틱 화면(메뉴가 span,
+      // 버튼이 div)에서 그 게이트가 힌트 글자를 **전부** 지워, 미리보기가 어느
+      // 화면인지 알아볼 수 없었다. 지금은 임시로 넓힌 상태다 — 되돌릴 때 여기와
+      // packages/sdk/src/dom.ts 의 ownElementText, README 개인정보 표를 함께 본다.
+      // 텍스트 자체는 sanitizeScreenElement 가 이미 마스킹·길이 제한을 걸었다.
       const masked = hint.masked || SERVER_MASKED_TAGS.has(sanitized.tagName);
-      const allowsText =
-        !masked &&
-        (SERVER_TEXT_TAGS.has(sanitized.tagName) ||
-          (sanitized.role !== undefined && SERVER_TEXT_ROLES.has(sanitized.role)));
-      if (allowsText) return { ...sanitized, masked };
+      if (!masked) return { ...sanitized, masked };
       const { textMaskedOrLimited: _dropped, ...withoutText } = sanitized;
       return { ...withoutText, masked };
     })
