@@ -85,4 +85,27 @@ describe("GET /v1/projects/:projectId/config", () => {
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: "project_not_found" });
   });
+
+  // 캐시된 404 가 굳으면, 나중에 프로젝트가 생기거나 오타가 고쳐져도 SDK 는
+  // 계속 같은 404 를 받아 기록을 영영 시작하지 못한다 - 신호도 없이.
+  it("없는 프로젝트의 404 도 캐시하지 않는다", async () => {
+    const app = createApp({ store: new MemoryStore() });
+
+    const response = await app.inject({ method: "GET", url: "/v1/projects/proj_missing/config" });
+
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("잘못된 형식의 projectId 도 404 이고 캐시하지 않는다", async () => {
+    const app = createApp({ store: new MemoryStore() });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/projects/not-a-valid-project-id/config",
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "project_not_found" });
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
 });
