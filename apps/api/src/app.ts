@@ -6,6 +6,7 @@ import type { EventRetentionConfig } from "./retention/config.js";
 import { registerAdminProxyRoutes } from "./routes/admin-proxy.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
+import { registerProjectConfigRoutes } from "./routes/project-config.js";
 import { registerSdkBundleRoutes } from "./routes/sdk-bundle.js";
 import type { TraceStore } from "./store/types.js";
 
@@ -44,6 +45,7 @@ export function createApp(options: {
     eventRetentionConfig: options.eventRetentionConfig ?? {},
     now: options.now,
   });
+  app.register(registerProjectConfigRoutes, { store: options.store });
   app.register(registerSdkBundleRoutes, {});
   return app;
 }
