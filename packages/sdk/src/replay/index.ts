@@ -100,10 +100,29 @@ export function startReplay(
       password: true,
     },
     maskTextFn: maskText,
-    // 빈 문자열을 넘기면 rrweb 안에서 querySelectorAll 이 던진다.
-    ...(config.maskSelectors.length > 0
-      ? { maskTextSelector: config.maskSelectors.join(",") }
-      : {}),
+    // 운영자 셀렉터 **앞에 textarea 를 언제나 붙인다.**
+    //
+    // rrweb 은 textarea 의 값을 `attributes.value` 로만 가린다. HTML 에 적혀 온
+    // 초기 내용은 그와 별개로 **자식 텍스트 노드**에 실려 나가는데,
+    // serializeTextNode 에는 textarea 예외가 없다(2.0.0-alpha.4). 실제 브라우저에서
+    // 확인한 모양이다 - 저장된 청크 안에 `value:"*****…"` 바로 옆으로
+    // `textContent:"김철수 담당자 연락처 …"` 가 앉아 있었다. 타이핑한 글자가 아니라
+    // **서버가 채워 그린 값**이라, 저장값을 렌더하는 폼이면 그대로 나간다.
+    //
+    // 우리 쪽에서 직렬화 뒤에 훑지 않고 여기서 막는 이유는 needMaskingText 가
+    // 텍스트 노드의 **부모 엘리먼트**를 셀렉터에 맞춰 보기 때문이다. 스냅샷
+    // (serializeTextNode)과 mutation 의 characterData·adds 가 전부 같은 게이트를
+    // 지나므로 셀렉터 한 줄이 네 경로를 한꺼번에 닫는다. 직렬화 뒤에 훑는 길을
+    // 골랐다면 texts[] 로 오는 변경을 알아보려고 노드 id 를 세션 내내 들고
+    // 다녀야 했다 - styleTextNodeIds 가 그 대가를 이미 치르고 있다.
+    //
+    // 재생 충실도로 잃는 것이 없다. 재생기는 rebuild 에서 textarea 의 자식 텍스트
+    // 노드를 **전부 지우고 value 로 덮어쓴다**(rrweb-snapshot :1590). 가리기
+    // 전에도 재생 화면에 나오지 않던 글자다.
+    //
+    // 이 값은 이제 비지 않으므로 조건부 전개가 필요 없다 - 빈 문자열을 넘기면
+    // rrweb 안에서 matches/closest 가 던진다.
+    maskTextSelector: ["textarea", ...config.maskSelectors].join(","),
     inlineStylesheet: false,
     recordCanvas: false,
     collectFonts: false,

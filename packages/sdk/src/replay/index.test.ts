@@ -39,15 +39,19 @@ describe("startReplay", () => {
     startReplay(config);
 
     const options = record.mock.calls[0]![0] as { maskTextSelector?: string };
-    expect(options.maskTextSelector).toBe(".customer-name,td.amount");
+    expect(options.maskTextSelector).toBe("textarea,.customer-name,td.amount");
   });
 
-  // 빈 문자열 셀렉터는 rrweb 안에서 querySelectorAll 을 던지게 만든다.
-  it("셀렉터가 없으면 maskTextSelector 를 넘기지 않는다", () => {
+  // textarea 는 운영자가 지정하지 않아도 언제나 들어간다. rrweb 이 textarea 의
+  // 값을 attributes.value 로만 가리고 HTML 에 적혀 온 초기 내용은 자식 텍스트
+  // 노드로 따로 실어 보내기 때문이다 - 운영자가 매번 적어야 하는 종류의 것이
+  // 아니다. 이 값이 비지 않으므로 조건부 전개도 사라졌다(빈 문자열을 넘기면
+  // rrweb 안에서 matches/closest 가 던진다).
+  it("셀렉터가 없어도 textarea 는 언제나 가린다", () => {
     startReplay({ ...config, maskSelectors: [] });
 
     const options = record.mock.calls[0]![0] as { maskTextSelector?: string };
-    expect(options.maskTextSelector).toBeUndefined();
+    expect(options.maskTextSelector).toBe("textarea");
   });
 
   it("비용이 큰 수집을 모두 끈다", () => {

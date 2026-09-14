@@ -81,6 +81,37 @@ function recordAndDrain(html: string): { payload: string; batches: unknown[][] }
   return { payload: JSON.stringify(assertCaptured(batches[0])), batches };
 }
 
+/**
+ * 스냅샷을 찍은 뒤 DOM 을 건드려, 그 mutation 까지 담긴 배치를 돌려준다.
+ *
+ * 스냅샷 경로와 mutation 경로는 rrweb 안에서 서로 다른 코드다 - 한쪽만 막으면
+ * 다른 쪽으로 그대로 나간다. texts[]·adds 를 보는 테스트는 전부 이 경로다.
+ */
+async function recordMutateAndDrain(html: string, mutate: () => void): Promise<string> {
+  const batches: unknown[][] = [];
+  const uploader = {
+    enqueue: vi.fn((events: unknown[]) => {
+      batches.push(events);
+    }),
+    flush: vi.fn(async () => true),
+  };
+
+  document.body.innerHTML = `${html}<button id="trigger">확인</button>`;
+  const stop = startReplay(config, { uploader });
+
+  mutate();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const button = document.querySelector("#trigger")!;
+  for (let index = 0; index < 3; index += 1) {
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+  stop();
+  document.body.innerHTML = "";
+
+  return JSON.stringify(assertCaptured(batches[0], MUTATION));
+}
+
 describe("startReplay (진짜 rrweb)", () => {
   // 계획이 약속한 것: 운영자가 마스킹 셀렉터를 지정하면 패턴이 없는 PII 도 가려진다.
   // redactPatterns 는 사람 이름을 못 잡으므로, 여기서 통과하면 운영자가 지정한
@@ -355,6 +386,67 @@ describe("startReplay (진짜 rrweb)", () => {
 
     expect(payload).toContain("row-987654321");
     expect(payload).toContain("user-123456789012");
+  });
+
+  // --- 라운드 6: textarea 의 자식 텍스트 ---
+  //
+  // rrweb 은 textarea 의 값을 `attributes.value` 로만 가린다(serializeElementNode).
+  // HTML 에 적혀 온 초기 내용은 그와 **별개로 자식 텍스트 노드**에 실려 나가고,
+  // serializeTextNode 에는 textarea 예외가 없다. 재생기는 rebuild 에서 value 로
+  // 자식 텍스트 노드를 전부 지우고 덮어쓰므로(rrweb-snapshot :1590) 화면에는
+  // 보이지도 않는다 - 재생에 쓰이지 않는 원문을 7일 동안 들고 있는 셈이다.
+  // 저장값을 채워 그리는 서버 렌더 폼이 정확히 이 모양이다.
+  //
+  // **패턴이 없는 이름으로 본다.** 이메일로 보면 redactPatterns 가 잡아 초록이
+  // 되고 구멍은 그대로 살아 있다 - 이 파일 머리말이 경고하는 "엉뚱한 이유로
+  // 초록" 이 바로 이것이다. 실제로 위의 "평범한 text·email input 과 textarea 는
+  // 계속 가린다" 가 그 모양으로 이 구멍 위를 지나가고 있었다.
+  it("서버가 채워 보낸 textarea 의 초기 내용을 스냅샷에서 가린다", () => {
+    const { payload } = recordAndDrain('<textarea name="memo">홍길동 담당자</textarea>');
+
+    expect(payload).not.toContain("홍길동");
+    // 노드 자체가 사라진 것이 아니라 가려진 것이어야 한다.
+    expect(payload).toContain("textarea");
+  });
+
+  it("스냅샷 뒤에 바뀐 textarea 텍스트도 가린다", async () => {
+    const payload = await recordMutateAndDrain(
+      '<textarea name="memo">준비 중</textarea>',
+      () => {
+        const node = document.querySelector("textarea")!.firstChild as Text;
+        node.data = "홍길동 담당자";
+      },
+    );
+
+    expect(payload).not.toContain("홍길동");
+  });
+
+  it("나중에 통째로 붙인 textarea 의 내용도 가린다", async () => {
+    const payload = await recordMutateAndDrain('<div id="host"></div>', () => {
+      const area = document.createElement("textarea");
+      area.appendChild(document.createTextNode("홍길동 담당자"));
+      document.querySelector("#host")!.appendChild(area);
+    });
+
+    expect(payload).not.toContain("홍길동");
+  });
+
+  it("기존 textarea 안에 새로 붙인 텍스트도 가린다", async () => {
+    const payload = await recordMutateAndDrain('<textarea name="memo"></textarea>', () => {
+      document.querySelector("textarea")!.appendChild(document.createTextNode("홍길동 담당자"));
+    });
+
+    expect(payload).not.toContain("홍길동");
+  });
+
+  // 과잉 마스킹 확인. textarea 를 가린다고 옆의 본문까지 가리면 재생이 깨진다.
+  it("textarea 를 가려도 바깥 본문은 그대로 남긴다", () => {
+    const { payload } = recordAndDrain(
+      '<label for="memo">메모</label><textarea id="memo">홍길동 담당자</textarea>',
+    );
+
+    expect(payload).not.toContain("홍길동");
+    expect(payload).toContain("메모");
   });
 
   // 스펙 §6 이 가장 중요하다고 적은 항목을, 모킹 없이 네 조각이 배선된 채로 본다.
