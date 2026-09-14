@@ -35,15 +35,18 @@ describe("maskText", () => {
 });
 
 // 셀렉터에 걸리지 않은 노드의 텍스트는 maskTextFn 에 도달조차 하지 않는다.
-// 그 텍스트를 패턴으로 거르는 것이 이 함수의 일이다.
+// 그 텍스트를 패턴으로 거르는 것이 이 함수의 일이다. 속성값도 같은 이유로 훑는다 -
+// needMaskingText 는 텍스트 노드만 게이트하므로 title·aria-label 은 그대로 나간다.
 describe("redactEventText", () => {
+  const ids = () => new Set<number>();
+
   it("직렬화된 텍스트 노드의 이메일을 지운다", () => {
     const snapshot = {
       type: 2,
       data: { node: { childNodes: [{ type: 3, textContent: "문의 hong@example.com" }] } },
     };
 
-    redactEventText(snapshot);
+    redactEventText(snapshot, ids());
 
     expect(snapshot.data.node.childNodes[0]!.textContent).toBe("문의 [redacted]");
   });
@@ -54,69 +57,203 @@ describe("redactEventText", () => {
       data: { source: 0, adds: [{ node: { type: 3, textContent: "010-1234-5678" } }] },
     };
 
-    redactEventText(mutation);
+    redactEventText(mutation, ids());
 
     expect(mutation.data.adds[0]!.node.textContent).toBe("[redacted]");
   });
 
-  // 텍스트 노드가 정체성을 유지한 채 내용만 바뀌면 textContent 가 아니라
-  // texts[].value 로 온다 - 다른 경로라 따로 막아야 한다.
   it("texts[].value 의 텍스트도 훑는다", () => {
     const mutation = {
       type: 3,
       data: { source: 0, texts: [{ id: 7, value: "담당 lee@example.com" }], adds: [] },
     };
 
-    redactEventText(mutation);
+    redactEventText(mutation, ids());
 
     expect(mutation.data.texts[0]!.value).toBe("담당 [redacted]");
   });
 
-  // 키 이름만 보고 아무 value 나 건드리면 안 된다. 속성 변경의 value 까지
-  // 바꾸면 재생 화면이 원본과 달라진다.
-  it("texts 밖의 value 는 건드리지 않는다", () => {
-    const mutation = {
-      type: 3,
-      data: {
-        source: 0,
-        attributes: [{ id: 3, attributes: { value: "010-1234-5678" } }],
-        texts: [],
-      },
-    };
-
-    redactEventText(mutation);
-
-    expect(mutation.data.attributes[0]!.attributes.value).toBe("010-1234-5678");
-  });
-
-  // style 텍스트에 패턴을 돌리면 긴 숫자가 [redacted] 로 바뀌어 CSS 가 깨진다.
   it("style 텍스트 노드는 건드리지 않는다", () => {
     const snapshot = {
       type: 2,
       data: { node: { childNodes: [{ type: 3, isStyle: true, textContent: ".a{z-index:999999999}" }] } },
     };
 
-    redactEventText(snapshot);
+    redactEventText(snapshot, ids());
 
     expect(snapshot.data.node.childNodes[0]!.textContent).toBe(".a{z-index:999999999}");
+  });
+
+  // rrweb 의 characterData 관찰자는 style 텍스트를 isStyle 표시 없이 texts[] 로
+  // 낸다. 스냅샷에서 본 style 텍스트 노드의 id 를 기억해 두지 않으면 여기서
+  // CSS 가 [redacted] 로 깨진다(실측: ".b{z-index:[redacted]}").
+  it("제자리에서 바뀐 style 텍스트도 건드리지 않는다", () => {
+    const styleIds = ids();
+    const snapshot = {
+      type: 2,
+      data: { node: { childNodes: [{ type: 3, isStyle: true, id: 18, textContent: ".a{}" }] } },
+    };
+    redactEventText(snapshot, styleIds);
+
+    const mutation = {
+      type: 3,
+      data: { source: 0, texts: [{ id: 18, value: ".b{z-index:888888888}" }], adds: [] },
+    };
+    redactEventText(mutation, styleIds);
+
+    expect(mutation.data.texts[0]!.value).toBe(".b{z-index:888888888}");
+  });
+
+  it("나중에 붙은 style 의 텍스트 변경도 건드리지 않는다", () => {
+    const styleIds = ids();
+    const added = {
+      type: 3,
+      data: {
+        source: 0,
+        adds: [{ node: { type: 3, isStyle: true, id: 42, textContent: ".c{}" } }],
+      },
+    };
+    redactEventText(added, styleIds);
+
+    const mutation = {
+      type: 3,
+      data: { source: 0, texts: [{ id: 42, value: ".d{width:123456789}" }], adds: [] },
+    };
+    redactEventText(mutation, styleIds);
+
+    expect(mutation.data.texts[0]!.value).toBe(".d{width:123456789}");
+  });
+
+  // style 이 아닌 텍스트 노드는 계속 훑어야 한다 - 위 예외가 너무 넓으면 안 된다.
+  it("style 이 아닌 id 의 texts 는 계속 훑는다", () => {
+    const styleIds = ids();
+    redactEventText(
+      { type: 2, data: { node: { childNodes: [{ type: 3, isStyle: true, id: 18 }] } } },
+      styleIds,
+    );
+
+    const mutation = {
+      type: 3,
+      data: { source: 0, texts: [{ id: 19, value: "담당 lee@example.com" }], adds: [] },
+    };
+    redactEventText(mutation, styleIds);
+
+    expect(mutation.data.texts[0]!.value).toBe("담당 [redacted]");
+  });
+
+  // --- 속성값 (라운드 2) ---
+
+  it("사용자 텍스트를 담는 속성값을 훑는다", () => {
+    const snapshot = {
+      type: 2,
+      data: {
+        node: {
+          type: 2,
+          tagName: "a",
+          attributes: {
+            title: "홍길동 hong@example.com",
+            "aria-label": "연락처 010-1234-5678",
+            alt: "주문 987654321",
+            placeholder: "you@example.com",
+            "data-owner": "kim@example.com",
+          },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    const attributes = snapshot.data.node.attributes;
+    expect(attributes.title).toBe("홍길동 [redacted]");
+    expect(attributes["aria-label"]).toBe("연락처 [redacted]");
+    expect(attributes.alt).toBe("주문 [redacted]");
+    expect(attributes.placeholder).toBe("[redacted]");
+    expect(attributes["data-owner"]).toBe("[redacted]");
+  });
+
+  it("mutation 의 속성 변경도 훑는다", () => {
+    const mutation = {
+      type: 3,
+      data: {
+        source: 0,
+        attributes: [{ id: 3, attributes: { title: "담당 lee@example.com" } }],
+        texts: [],
+      },
+    };
+
+    redactEventText(mutation, ids());
+
+    expect(mutation.data.attributes[0]!.attributes.title).toBe("담당 [redacted]");
+  });
+
+  // option 의 value 는 속성으로만 실려 온다 - rrweb 의 입력 마스킹은
+  // input·textarea·select 태그에만 걸리고 option 에는 닿지 않는다.
+  it("option 의 value 속성도 훑는다", () => {
+    const snapshot = {
+      data: { node: { type: 2, tagName: "option", attributes: { value: "secret@example.com" } } },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.value).toBe("[redacted]");
+  });
+
+  // CSS 에는 9자리 이상 숫자가 흔하다. 여기에 패턴을 돌리면 스타일이 깨진다.
+  it("style 속성과 _cssText 는 건드리지 않는다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "div",
+          attributes: { style: "width:123456789px", _cssText: ".a{z-index:999999999}" },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.style).toBe("width:123456789px");
+    expect(snapshot.data.node.attributes._cssText).toBe(".a{z-index:999999999}");
+  });
+
+  // stripDataUris 가 이미 책임지는 속성이다. 여기서 또 만지면 긴 숫자를 담은
+  // 자산 경로(/img/1234567890.jpg)가 깨져 재생 화면이 원본과 달라진다.
+  it("src·srcset·href 는 건드리지 않는다", () => {
+    const snapshot = {
+      data: {
+        node: {
+          type: 2,
+          tagName: "img",
+          attributes: {
+            src: "/img/1234567890.jpg",
+            srcset: "/img/1234567890.jpg 2x",
+            href: "/orders/987654321",
+          },
+        },
+      },
+    };
+
+    redactEventText(snapshot, ids());
+
+    expect(snapshot.data.node.attributes.src).toBe("/img/1234567890.jpg");
+    expect(snapshot.data.node.attributes.srcset).toBe("/img/1234567890.jpg 2x");
+    expect(snapshot.data.node.attributes.href).toBe("/orders/987654321");
   });
 
   it("민감하지 않은 본문은 그대로 둔다", () => {
     const snapshot = { data: { node: { type: 3, textContent: "주문 내역" } } };
 
-    redactEventText(snapshot);
+    redactEventText(snapshot, ids());
 
     expect(snapshot.data.node.textContent).toBe("주문 내역");
   });
 
   it("null 과 원시값에서 터지지 않는다", () => {
-    expect(() => redactEventText(null)).not.toThrow();
-    expect(() => redactEventText(42)).not.toThrow();
-    expect(() => redactEventText([null, { textContent: null }])).not.toThrow();
+    expect(() => redactEventText(null, ids())).not.toThrow();
+    expect(() => redactEventText(42, ids())).not.toThrow();
+    expect(() => redactEventText([null, { textContent: null }], ids())).not.toThrow();
   });
 
-  // stripDataUris 와 같은 이유 - emit 콜백 안에서 고객 페이지의 임의 깊이
-  // 트리를 훑으므로 재귀는 깊은 트리에서 RangeError 로 죽는다.
   it("깊은 중첩에서도 스택 오버플로 없이 끝까지 훑는다", () => {
     const DEPTH = 50_000;
     const leaf: { textContent: string } = { textContent: "hong@example.com" };
@@ -125,7 +262,7 @@ describe("redactEventText", () => {
       root = { child: root };
     }
 
-    expect(() => redactEventText(root)).not.toThrow();
+    expect(() => redactEventText(root, ids())).not.toThrow();
     expect(leaf.textContent).toBe("[redacted]");
   });
 });

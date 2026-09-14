@@ -40,6 +40,17 @@ export function maskText(text: string): string {
 const TEXT_CONTENT_KEY = "textContent";
 
 /**
+ * 패턴을 돌리면 안 되는 속성.
+ *  - `style`·`_cssText` 는 CSS 다. 9자리 이상 숫자가 흔해서(z-index·좌표·색)
+ *    훑으면 [redacted] 가 박혀 스타일이 깨진다 - 텍스트 노드의 isStyle 예외와
+ *    같은 이유다.
+ *  - `src`·`srcset`·`href` 는 stripDataUris 가 이미 책임진다. 여기서 또 만지면
+ *    긴 숫자를 담은 자산 경로(/img/1234567890.jpg)나 주문 경로(/orders/987654321)가
+ *    통째로 바뀌어 재생 화면이 원본과 달라진다.
+ */
+const SKIPPED_ATTRIBUTES = new Set(["style", "_cssText", "src", "srcset", "href"]);
+
+/**
  * 직렬화된 rrweb 이벤트 안의 텍스트에 패턴 제거를 적용한다.
  *
  * maskTextFn 이 운영자 셀렉터에 걸린 노드만 본다는 사실의 반대쪽 짝이다.
@@ -47,25 +58,36 @@ const TEXT_CONTENT_KEY = "textContent";
  * 않으므로, 직렬화가 끝난 뒤 여기서 한 번 더 훑는다. "구조가 놓친 것을 패턴이
  * 거른다" 는 실제로 이 함수가 하는 일이다 - maskText 는 그 일을 할 수 없다.
  *
- * 실측한 페이로드 모양 두 군데를 본다:
+ * 실측한 페이로드 모양 세 군데를 본다:
  *  - 직렬화된 텍스트 노드의 `textContent` — 스냅샷과 mutation 의 adds 양쪽에
  *    같은 모양으로 들어 있다.
  *  - mutation 의 `data.texts[].value` — 텍스트 노드가 정체성을 유지한 채
  *    내용만 바뀔 때는 adds 가 아니라 이쪽으로 온다.
+ *  - 엘리먼트의 `attributes` — title·aria-label·alt·placeholder·data-* 가
+ *    사용자 텍스트를 싣고 그대로 나간다. rrweb 의 needMaskingText 는 텍스트
+ *    노드만 게이트하므로 운영자 셀렉터에 걸린 엘리먼트라도 속성은 안 가려진다.
  *
- * 키 이름만 보고 아무 `value` 나 건드리지 않는다 - 속성 변경이나 입력 이벤트의
- * value 까지 바꾸면 재생 화면이 원본과 달라진다. 그래서 `texts` 배열 안에서만
- * value 를 만진다.
+ * 키 이름만 보고 아무 `value` 나 건드리지 않는다 - 입력 이벤트의 value 까지
+ * 바꾸면 재생이 원본과 달라진다. `texts` 배열 안과 속성 가방 안에서만 만진다.
  *
- * style 텍스트는 건너뛴다. CSS 본문에 9자리 이상 숫자가 흔한데(z-index·
- * 색상·좌표) 거기에 패턴을 돌리면 [redacted] 가 박혀 스타일시트가 깨진다.
+ * **style 예외는 두 경로 모두에 필요하다.** 텍스트 노드는 `isStyle` 로 알 수
+ * 있지만, rrweb 의 characterData 관찰자는 같은 노드의 변경을 `texts[]` 로 내면서
+ * isStyle 을 붙이지 않는다(실측: `.b{z-index:999999999}` 가
+ * `.b{z-index:[redacted]}` 로 깨졌다). 그래서 스냅샷·adds 에서 본 style 텍스트
+ * 노드의 **id** 를 `styleTextNodeIds` 에 적어 두고, texts[] 에서 그 id 를
+ * 건너뛴다. 세션 하나가 Set 하나를 들고 이벤트 사이로 이어 간다.
+ *
+ * texts[] 처리를 walk 뒤로 미루는 것은 순서 때문이다 - 같은 이벤트 안에서
+ * style 노드를 먼저 볼지 texts 를 먼저 볼지는 스택 순서에 달렸는데, 거기에
+ * 판정이 흔들리면 안 된다.
  *
  * stripDataUris 와 같은 이유로 재귀가 아니라 스택으로 훑는다 - emit 콜백 안에서
  * 고객 페이지가 만든 임의 깊이의 트리를 도는데, 재귀는 깊은 트리에서
  * RangeError 로 죽고 그러면 그 이벤트의 마스킹이 통째로 스킵된다.
  */
-export function redactEventText(value: unknown): void {
+export function redactEventText(value: unknown, styleTextNodeIds: Set<number>): void {
   const stack: unknown[] = [value];
+  const pendingTexts: Array<Record<string, unknown>> = [];
 
   while (stack.length > 0) {
     const current = stack.pop();
@@ -77,23 +99,47 @@ export function redactEventText(value: unknown): void {
     }
 
     const record = current as Record<string, unknown>;
+    const isStyleNode = record["isStyle"] === true;
+
+    // style 텍스트 노드의 id 를 적어 둔다 - 나중에 texts[] 로 올 변경을 알아보려면
+    // 이것뿐이다.
+    const id = record["id"];
+    if (isStyleNode && typeof id === "number") styleTextNodeIds.add(id);
 
     const textContent = record[TEXT_CONTENT_KEY];
     // isStyle 인 텍스트 노드는 화면 본문이 아니라 CSS 다.
-    if (typeof textContent === "string" && record["isStyle"] !== true) {
+    if (typeof textContent === "string" && !isStyleNode) {
       record[TEXT_CONTENT_KEY] = redactPatterns(textContent);
+    }
+
+    // 속성 가방. mutation 의 data.attributes 는 배열([{id, attributes}])이라
+    // 여기서 걸러지고, 그 안의 각 항목을 walk 가 따로 방문해 처리한다.
+    const attributes = record["attributes"];
+    if (attributes !== null && typeof attributes === "object" && !Array.isArray(attributes)) {
+      const bag = attributes as Record<string, unknown>;
+      for (const name of Object.keys(bag)) {
+        if (SKIPPED_ATTRIBUTES.has(name)) continue;
+        const attribute = bag[name];
+        if (typeof attribute === "string") bag[name] = redactPatterns(attribute);
+      }
     }
 
     const texts = record["texts"];
     if (Array.isArray(texts)) {
       for (const entry of texts) {
         if (entry === null || typeof entry !== "object") continue;
-        const text = entry as Record<string, unknown>;
-        if (typeof text["value"] === "string") text["value"] = redactPatterns(text["value"]);
+        pendingTexts.push(entry as Record<string, unknown>);
       }
     }
 
     for (const nested of Object.values(record)) stack.push(nested);
+  }
+
+  for (const entry of pendingTexts) {
+    const id = entry["id"];
+    if (typeof id === "number" && styleTextNodeIds.has(id)) continue;
+    const text = entry["value"];
+    if (typeof text === "string") entry["value"] = redactPatterns(text);
   }
 }
 

@@ -54,7 +54,11 @@ describe("startReplay", () => {
     startReplay(config);
 
     expect(record.mock.calls[0]![0]).toMatchObject({
-      maskAllInputs: true,
+      // maskAllInputs: true 가 아니라 명시 집합이다 - 그 플래그가 펼치는 집합에는
+      // "input" 태그명 키가 없어 type 속성이 없거나 hidden 이거나 대문자인
+      // input 의 값이 스냅샷에 그대로 실렸다. 태그명 키 하나가 스냅샷·관찰자
+      // 두 게이트를 함께 닫는다.
+      maskInputOptions: { input: true, textarea: true, select: true, password: true },
       inlineStylesheet: false,
       recordCanvas: false,
       collectFonts: false,

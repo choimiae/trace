@@ -42,6 +42,10 @@ export function startReplay(
 
   let triggered = false;
   let uploadTimer: ReturnType<typeof setInterval> | undefined;
+  // 스냅샷에서 본 style 텍스트 노드의 id 를 세션 내내 들고 간다. rrweb 은
+  // 나중에 같은 노드의 변경을 texts[] 로 내면서 style 이라는 표시를 붙이지
+  // 않으므로, 이게 없으면 그 CSS 에 패턴 제거가 돌아 스타일이 깨진다.
+  const styleTextNodeIds = new Set<number>();
 
   const triggers = installTriggers(window, {
     onTrigger: () => {
@@ -70,7 +74,7 @@ export function startReplay(
       // 운영자 셀렉터에 걸린 노드는 rrweb 이 maskTextFn(=maskText)으로 이미
       // 전부 가렸다. 여기서 훑는 것은 셀렉터에 걸리지 않은 나머지다 -
       // maskTextFn 은 걸린 노드에만 불리므로 그쪽 텍스트는 도달조차 하지 않는다.
-      redactEventText(recorded);
+      redactEventText(recorded, styleTextNodeIds);
       buffer.push(recorded, isCheckout === true);
 
       const data = recorded.data as { source?: number } | undefined;
@@ -79,7 +83,25 @@ export function startReplay(
       }
     },
     checkoutEveryNms: CHECKPOINT_INTERVAL_MS,
-    maskAllInputs: true,
+    // maskAllInputs: true 가 아니라 명시 집합인 것이 중요하다. 그 플래그가
+    // 펼쳐지는 집합에는 **"input" 태그명 키가 없다** - type 이름들(text·email·
+    // tel…)과 textarea·select·password 뿐이다. 그런데 rrweb 의 스냅샷 경로는
+    // HTML **type 속성**으로 마스킹 여부를 가르고(maskInputValue 는 태그명만
+    // 소문자로 내린다), 그래서 type 속성이 없거나·hidden 이거나·대문자(TEXT)면
+    // 값이 그대로 직렬화됐다. 증분 경로는 DOM 의 type *프로퍼티*를 읽어
+    // 멀쩡했으므로, 입력에 타이핑하는 테스트는 초록인 채 **모든 기록의 첫
+    // 이벤트**가 샜다.
+    //
+    // "input" 은 태그명 키라 스냅샷 게이트와 관찰자 게이트를 한 번에 닫는다 -
+    // type 이 무엇이든(없어도) <input> 이면 가려진다. submit·button·radio·
+    // checkbox 는 rrweb 이 값 마스킹 대상에서 미리 빼므로 버튼 라벨은 그대로
+    // 보인다.
+    maskInputOptions: {
+      input: true,
+      textarea: true,
+      select: true,
+      password: true,
+    },
     maskTextFn: maskText,
     // 빈 문자열을 넘기면 rrweb 안에서 querySelectorAll 이 던진다.
     ...(config.maskSelectors.length > 0
