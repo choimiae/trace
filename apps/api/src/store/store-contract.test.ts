@@ -1820,6 +1820,60 @@ function describeTraceStoreContract(
         "https://app.example.com",
       ]);
     });
+
+    it("새 프로젝트는 리플레이가 꺼진 채로 시작한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      expect(project.replay).toEqual({ enabled: false, maskSelectors: [] });
+      expect((await store.getProject(project.projectId))?.replay).toEqual({
+        enabled: false,
+        maskSelectors: [],
+      });
+    });
+
+    it("리플레이를 켜고 마스킹 셀렉터를 저장한다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      const updated = await store.updateProject(project.projectId, {
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+        replay: { enabled: true, maskSelectors: [".customer-name"] },
+      });
+
+      expect(updated?.replay).toEqual({ enabled: true, maskSelectors: [".customer-name"] });
+      expect((await store.getProject(project.projectId))?.replay.enabled).toBe(true);
+    });
+
+    // 관리자 화면은 아직 리플레이 항목을 보내지 않는다. 이름만 고치는 요청이
+    // 리플레이를 조용히 꺼 버리면 기록이 그 순간 멈춘다.
+    it("replay 를 빼고 수정하면 기존 설정이 남는다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      await store.updateProject(project.projectId, {
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+        replay: { enabled: true, maskSelectors: [".customer-name"] },
+      });
+
+      const renamed = await store.updateProject(project.projectId, {
+        name: "Demo 2",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      expect(renamed?.name).toBe("Demo 2");
+      expect(renamed?.replay).toEqual({ enabled: true, maskSelectors: [".customer-name"] });
+    });
   });
 }
 

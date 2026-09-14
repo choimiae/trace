@@ -1,10 +1,11 @@
-import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
+import type { DashboardSummary, EventBatch, Issue, ReplayConfig, TraceEvent } from "@trace/shared";
 
 export interface ProjectRecord {
   projectId: string;
   name: string;
   allowedDomains: string[];
   privacyConfig: { strictMasking: true; queryRedaction: true; inputCapture: false };
+  replay: ReplayConfig;
   createdAt: string;
 }
 
@@ -16,6 +17,9 @@ export interface CreateProjectInput {
 export interface UpdateProjectInput {
   name: string;
   allowedDomains: string[];
+  // 넘기지 않으면 기존 설정을 유지한다. 관리자 화면이 리플레이 항목을 보내지
+  // 않는 동안 이름만 고친 요청이 기록을 꺼 버리지 않게 하기 위한 것이다.
+  replay?: ReplayConfig;
 }
 
 export function normalizeAllowedDomains(domains: string[]): string[] {

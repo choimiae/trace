@@ -1,4 +1,5 @@
 import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
+import { DEFAULT_REPLAY_CONFIG } from "@trace/shared";
 import { nanoid } from "nanoid";
 import { elementKey } from "../detection/element-identity.js";
 import { buildDashboardSummary } from "./dashboard-summary.js";
@@ -43,6 +44,7 @@ export class MemoryStore implements TraceStore {
       name: input.name,
       allowedDomains: input.allowedDomains,
       privacyConfig: { strictMasking: true, queryRedaction: true, inputCapture: false },
+      replay: DEFAULT_REPLAY_CONFIG,
       createdAt: new Date().toISOString(),
     };
     this.projects.set(project.projectId, project);
@@ -61,6 +63,7 @@ export class MemoryStore implements TraceStore {
       ...existing,
       name: input.name,
       allowedDomains: normalizeAllowedDomains(input.allowedDomains),
+      replay: input.replay ?? existing.replay,
     };
     this.projects.set(projectId, updated);
     return updated;

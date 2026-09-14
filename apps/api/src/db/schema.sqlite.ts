@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL,
   allowed_domains TEXT NOT NULL,
   privacy_config TEXT NOT NULL,
+  replay_config TEXT NOT NULL DEFAULT '{"enabled":false,"maskSelectors":[]}',
   created_at TEXT NOT NULL
 );
 

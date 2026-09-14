@@ -1,5 +1,5 @@
-import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
-import { screenContextSchema } from "@trace/shared";
+import type { DashboardSummary, EventBatch, Issue, ReplayConfig, TraceEvent } from "@trace/shared";
+import { DEFAULT_REPLAY_CONFIG, replayConfigSchema, screenContextSchema } from "@trace/shared";
 import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
@@ -34,6 +34,18 @@ function compact<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null && v !== undefined)) as T;
 }
 
+// 저장된 값이 깨졌거나 예전 형식이면 꺼진 설정으로 돌아간다. 여기서 던지면
+// 프로젝트 조회가 통째로 실패해 수집까지 멈춘다 — 리플레이가 꺼지는 쪽이 낫다.
+function parseReplayConfig(value: unknown): ReplayConfig {
+  if (typeof value !== "string") return DEFAULT_REPLAY_CONFIG;
+  try {
+    const parsed = replayConfigSchema.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : DEFAULT_REPLAY_CONFIG;
+  } catch {
+    return DEFAULT_REPLAY_CONFIG;
+  }
+}
+
 function hasColumn(db: Database.Database, tableName: string, columnName: string): boolean {
   const columns = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
   return columns.some((column) => column.name === columnName);
@@ -66,19 +78,21 @@ export class SqliteStore implements TraceStore {
       name: input.name,
       allowedDomains: input.allowedDomains,
       privacyConfig: { strictMasking: true, queryRedaction: true, inputCapture: false },
+      replay: DEFAULT_REPLAY_CONFIG,
       createdAt: new Date().toISOString(),
     };
 
     this.db
       .prepare(
-        `INSERT INTO projects (project_id, name, allowed_domains, privacy_config, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO projects (project_id, name, allowed_domains, privacy_config, replay_config, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(
         project.projectId,
         project.name,
         JSON.stringify(project.allowedDomains),
         JSON.stringify(project.privacyConfig),
+        JSON.stringify(project.replay),
         project.createdAt,
       );
 
@@ -94,6 +108,7 @@ export class SqliteStore implements TraceStore {
       name: row.name as string,
       allowedDomains: JSON.parse(row.allowed_domains as string) as string[],
       privacyConfig: JSON.parse(row.privacy_config as string) as ProjectRecord["privacyConfig"],
+      replay: parseReplayConfig(row.replay_config),
       createdAt: row.created_at as string,
     };
   }
@@ -102,15 +117,17 @@ export class SqliteStore implements TraceStore {
     const existing = await this.getProject(projectId);
     if (!existing) return undefined;
     const allowedDomains = normalizeAllowedDomains(input.allowedDomains);
+    const replay = input.replay ?? existing.replay;
 
     this.db
-      .prepare(`UPDATE projects SET name = ?, allowed_domains = ? WHERE project_id = ?`)
-      .run(input.name, JSON.stringify(allowedDomains), projectId);
+      .prepare(`UPDATE projects SET name = ?, allowed_domains = ?, replay_config = ? WHERE project_id = ?`)
+      .run(input.name, JSON.stringify(allowedDomains), JSON.stringify(replay), projectId);
 
     return {
       ...existing,
       name: input.name,
       allowedDomains,
+      replay,
     };
   }
 
@@ -717,6 +734,11 @@ export class SqliteStore implements TraceStore {
   }
 
   private migrate(): void {
+    if (!hasColumn(this.db, "projects", "replay_config")) {
+      this.db.exec(
+        `ALTER TABLE projects ADD COLUMN replay_config TEXT NOT NULL DEFAULT '{"enabled":false,"maskSelectors":[]}'`,
+      );
+    }
     if (!hasColumn(this.db, "events", "received_at")) {
       this.db.exec(`
         ALTER TABLE events ADD COLUMN received_at TEXT;
