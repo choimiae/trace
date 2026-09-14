@@ -17,6 +17,7 @@ export function maskText(text: string): string {
 }
 
 const DATA_URI_PATTERN = /^\s*data:/i;
+const SRCSET_DATA_URI_PATTERN = /(^|,)\s*data:/i;
 const STRIPPED_ATTRIBUTES = ["src", "srcset", "href"] as const;
 
 /**
@@ -28,23 +29,41 @@ const STRIPPED_ATTRIBUTES = ["src", "srcset", "href"] as const;
  * 구조를 가정하지 않고 객체 트리 전체를 돈다.
  *
  * 실측 근거: 대상 앱 스냅샷 5,285,916 B 의 95%가 base64 이미지 145개였고,
- * 걷어내면 30,016 B 가 된다(187배).
+ * 걷어내면 30,016 B 가 된다(176배).
+ *
+ * 재귀가 아니라 스택으로 훑는다. rrweb 의 emit 콜백 안에서 고객 페이지가
+ * 만든 임의 깊이의 DOM 트리를 도는데, 재귀는 깊이만큼 네이티브 콜스택을
+ * 먹어 깊은 트리에서 RangeError 로 죽는다 - 죽으면 그 이벤트의 마스킹이
+ * 통째로 스킵된다. 순서는 상관없다(제자리 변형이라 방문 순서에 의존하는
+ * 로직이 없다).
  */
 export function stripDataUris(value: unknown): void {
-  if (value === null || typeof value !== "object") return;
+  const stack: unknown[] = [value];
 
-  if (Array.isArray(value)) {
-    for (const item of value) stripDataUris(item);
-    return;
-  }
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === null || typeof current !== "object") continue;
 
-  const record = value as Record<string, unknown>;
-  for (const name of STRIPPED_ATTRIBUTES) {
-    const attribute = record[name];
-    if (typeof attribute === "string" && DATA_URI_PATTERN.test(attribute)) {
+    if (Array.isArray(current)) {
+      for (const item of current) stack.push(item);
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    for (const name of STRIPPED_ATTRIBUTES) {
+      const attribute = record[name];
+      if (typeof attribute !== "string") continue;
+
+      // srcset 은 콤마로 구분된 후보 목록이라 시작 앵커 패턴으로는 두 번째
+      // 이후 후보의 data: 를 못 잡는다. 포함 여부만 보고 매치되면 목록
+      // 전체를 자리표시자로 바꾼다 - 나머지 후보를 보존하는 부분 재구성은
+      // 하지 않는다(파싱 위험 대비 재생 충실도 이득이 미미하다).
+      const isDataUri = name === "srcset" ? SRCSET_DATA_URI_PATTERN.test(attribute) : DATA_URI_PATTERN.test(attribute);
+      if (!isDataUri) continue;
+
       record[name] = name === "href" ? "" : TRANSPARENT_PLACEHOLDER;
     }
-  }
 
-  for (const nested of Object.values(record)) stripDataUris(nested);
+    for (const nested of Object.values(record)) stack.push(nested);
+  }
 }

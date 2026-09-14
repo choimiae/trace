@@ -65,4 +65,34 @@ describe("stripDataUris", () => {
     expect(() => stripDataUris(42)).not.toThrow();
     expect(() => stripDataUris([null, { attributes: null }])).not.toThrow();
   });
+
+  // srcset 은 콤마로 구분된 후보 목록이다. 시작 앵커 패턴은 두 번째 이후
+  // 후보의 data: 를 놓친다 - 정확히 이 새어 나감을 막으려고 srcset 을
+  // STRIPPED_ATTRIBUTES 에 넣은 것이므로 실제로 걸러야 한다.
+  it("srcset 두 번째 후보가 data: 여도 전체를 자리표시자로 바꾼다", () => {
+    const event = {
+      data: {
+        node: { tagName: "img", attributes: { srcset: "thumb.jpg 1x, data:image/png;base64,AAAA 2x" } },
+      },
+    };
+
+    stripDataUris(event);
+
+    expect(event.data.node.attributes.srcset).toBe(TRANSPARENT_PLACEHOLDER);
+  });
+
+  // rrweb 의 emit 콜백 안에서, 고객 페이지가 만든 임의 깊이의 트리를 훑는다.
+  // 재귀는 깊이만큼 네이티브 스택을 먹으므로 깊은 트리에서 RangeError 로
+  // 죽을 수 있다 - 죽으면 그 이벤트의 마스킹이 통째로 스킵된다.
+  it("깊은 중첩에서도 스택 오버플로 없이 끝까지 훑는다", () => {
+    const DEPTH = 50_000;
+    const leaf: { attributes: { src: string } } = { attributes: { src: "data:image/png;base64,AAAA" } };
+    let root: unknown = leaf;
+    for (let i = 0; i < DEPTH; i++) {
+      root = { child: root };
+    }
+
+    expect(() => stripDataUris(root)).not.toThrow();
+    expect(leaf.attributes.src).toBe(TRANSPARENT_PLACEHOLDER);
+  });
 });
