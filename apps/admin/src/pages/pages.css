@@ -1119,6 +1119,11 @@
   background-size: 32px 32px;
 }
 
+.screen-preview__target {
+  /* 무엇을 눌렀나가 이 미리보기의 핵심이다. 글자 레이어에 덮이면 안 된다. */
+  z-index: 1;
+}
+
 .screen-preview__hint,
 .screen-preview__target {
   position: absolute;
@@ -1138,19 +1143,42 @@
   font-size: var(--text-xs);
 }
 
-/* 가운데 정렬이면 넘칠 때 앞뒤가 같이 잘려 "시스템설정" 이 "템설" 로 읽힌다.
-   왼쪽에서 시작해 말줄임으로 끝내면 "시스템…" 이 되어 앞에서부터 읽힌다.
-   좁은 상자는 컴포넌트가 아예 글자를 안 그리고 title 로 돌린다. */
-.screen-preview__hint {
-  justify-content: flex-start;
-  padding: 0 2px;
+/* 스위치가 켜지면 글자는 상자 안이 아니라 .screen-preview__labels 레이어에
+   그려진다. 상자는 배치만 보여준다. */
+.screen-preview__switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  cursor: pointer;
+  user-select: none;
 }
 
-.screen-preview__hint > span {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.screen-preview__switch input {
+  margin: 0;
+}
+
+.screen-preview__labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* 넘쳐도 자르지 않는다. 겹치면 겹친 채로 둔다 — 자리를 옮기면 어느 상자의
+   글자인지 알 수 없게 되고, 같은 화면이 볼 때마다 다르게 배치된다. */
+.screen-preview__label {
+  position: absolute;
+  padding: 0 4px;
+  border: 1px solid rgb(100 116 139 / 38%);
+  border-radius: 3px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 1px 2px rgb(22 32 43 / 8%);
+  color: var(--ink);
+  font-size: var(--text-xs);
+  line-height: 1.35;
   white-space: nowrap;
 }
 

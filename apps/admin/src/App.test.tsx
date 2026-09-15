@@ -659,6 +659,90 @@ describe("App 프로젝트 전환 동작", () => {
   });
 });
 
+describe("App 미리보기 글자 보기", () => {
+  const representativeEvent = {
+    eventId: "evt_1",
+    sessionId: "sess_1",
+    pageId: "page_1",
+    timestamp: "2026-08-24T00:00:00.000Z",
+    type: "click" as const,
+    urlPath: "/settings",
+    metadata: {},
+    screenContext: {
+      titleMasked: "설정",
+      viewport: { width: 1456, height: 828 },
+      layoutHints: [
+        {
+          tagName: "span",
+          rect: { x: 0, y: 150, width: 48, height: 44 },
+          textMaskedOrLimited: "시스템설정",
+          masked: false,
+        },
+      ],
+    },
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getSessionTimeline.mockResolvedValue([]);
+    api.getDashboardData.mockResolvedValue({
+      summary: baseSummary,
+      issues: [{
+        issueId: "issue_1",
+        projectId: "proj_demo",
+        issueType: "rage_click",
+        title: "설정 화면에서 반복 클릭",
+        summary: "같은 버튼을 반복 클릭했습니다.",
+        affectedSessionsCount: 42,
+        affectedUsersCount: 42,
+        severityScore: 82,
+        firstSeenAt: "2026-08-24T00:00:00.000Z",
+        lastSeenAt: "2026-08-24T00:00:00.000Z",
+        trend: "up",
+        relatedUrlPath: "/settings",
+        exampleSessionIds: ["sess_1"],
+        status: "new",
+        representativeEvent,
+      }],
+    });
+  });
+
+  it("저장된 값이 없으면 꺼진 채로 시작한다", async () => {
+    render(<App />);
+
+    expect(await screen.findByLabelText("글자 보기")).not.toBeChecked();
+    expect(screen.queryByText("시스템설정")).not.toBeInTheDocument();
+  });
+
+  it("대시보드에서 켜면 문제 상세 드로어에도 켜져 있다", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByLabelText("글자 보기"));
+    // 같은 버튼이 최근 목록과 문제 목록 양쪽에 있다. 어느 쪽이든 드로어는 같다.
+    fireEvent.click(screen.getAllByRole("button", { name: "설정 화면에서 반복 클릭 보기" })[0]!);
+
+    await screen.findByRole("complementary", { name: "문제 상세" });
+    const boxes = screen.getAllByLabelText("글자 보기");
+    expect(boxes).toHaveLength(2);
+    boxes.forEach((box) => expect(box).toBeChecked());
+  });
+
+  it("켠 상태는 다시 열어도 유지된다", async () => {
+    const { unmount } = render(<App />);
+    fireEvent.click(await screen.findByLabelText("글자 보기"));
+    unmount();
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("글자 보기")).toBeChecked();
+  });
+});
+
 describe("App 프로젝트 설정", () => {
   it("loads project settings and members together before opening settings", async () => {
     api.getAuthMe.mockResolvedValue({

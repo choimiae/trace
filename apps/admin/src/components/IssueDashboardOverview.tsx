@@ -51,10 +51,14 @@ export function IssueDashboardOverview({
   summary,
   issues,
   onSelectIssue,
+  showPreviewLabels = false,
+  onTogglePreviewLabels,
 }: {
   summary: DashboardSummary;
   issues: Issue[];
   onSelectIssue?: ((issue: Issue) => void) | undefined;
+  showPreviewLabels?: boolean;
+  onTogglePreviewLabels?: ((next: boolean) => void) | undefined;
 }) {
   if (issues.length === 0) return null;
 
@@ -107,6 +111,8 @@ export function IssueDashboardOverview({
           <ScreenContextPreview
             {...(representativeEvent?.screenContext ? { context: representativeEvent.screenContext } : {})}
             {...(representativeEvent ? { event: representativeEvent } : {})}
+            showLabels={showPreviewLabels}
+            {...(onTogglePreviewLabels ? { onToggleLabels: onTogglePreviewLabels } : {})}
           />
           {representativeEvent ? (
             <p className="friction-hero__caption">

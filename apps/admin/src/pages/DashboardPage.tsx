@@ -41,6 +41,8 @@ export function DashboardPage({
   onShowSettings,
   recordedSessions = [],
   onSelectSession = () => {},
+  showPreviewLabels = false,
+  onTogglePreviewLabels = () => {},
 }: {
   summary: DashboardSummary;
   issues: Issue[];
@@ -56,6 +58,8 @@ export function DashboardPage({
   onShowSettings: () => void;
   recordedSessions?: RecordedSessionResponse[];
   onSelectSession?: (sessionId: string) => void;
+  showPreviewLabels?: boolean;
+  onTogglePreviewLabels?: (next: boolean) => void;
 }) {
   return (
     <main className="app-shell">
@@ -88,7 +92,13 @@ export function DashboardPage({
         </p>
       ) : null}
       {/* 화면 먼저, 숫자는 보조. 대표 막힘 문장과 화면 맥락이 지표보다 앞에 온다. */}
-      <IssueDashboardOverview summary={summary} issues={issues} onSelectIssue={onSelectIssue} />
+      <IssueDashboardOverview
+        summary={summary}
+        issues={issues}
+        onSelectIssue={onSelectIssue}
+        showPreviewLabels={showPreviewLabels}
+        onTogglePreviewLabels={onTogglePreviewLabels}
+      />
       <MetricStrip summary={summary} />
       <section className="insight">
         <Chip status="crit" label="심각" />

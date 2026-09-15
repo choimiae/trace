@@ -8,7 +8,17 @@ import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 import { Chip, issueStatusToChip } from "../ui/Chip.js";
 
-export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () => void }) {
+export function IssueDetailPage({
+  issue,
+  onClose,
+  showPreviewLabels = false,
+  onTogglePreviewLabels = () => {},
+}: {
+  issue: Issue;
+  onClose: () => void;
+  showPreviewLabels?: boolean;
+  onTogglePreviewLabels?: (next: boolean) => void;
+}) {
   const [timeline, setTimeline] = useState<SessionTimelineEvent[]>([]);
   const sessionId = issue.exampleSessionIds[0];
 
@@ -38,6 +48,8 @@ export function IssueDetailPage({ issue, onClose }: { issue: Issue; onClose: () 
           <ScreenContextPreview
             context={issue.representativeEvent.screenContext}
             event={issue.representativeEvent}
+            showLabels={showPreviewLabels}
+            onToggleLabels={onTogglePreviewLabels}
           />
         </section>
       ) : null}

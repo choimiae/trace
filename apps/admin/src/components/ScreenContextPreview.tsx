@@ -4,24 +4,20 @@ export interface ScreenContextPreviewProps {
   context?: ScreenContext;
   event?: TraceEvent;
   compact?: boolean;
+  /** 화면 글자를 레이어로 띄울지. compact 에서는 무시한다. */
+  showLabels?: boolean;
+  /** 주면 타이틀 바에 스위치를 그린다. compact 에서는 그리지 않는다. */
+  onToggleLabels?: (next: boolean) => void;
 }
 
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-// 미리보기는 뷰포트를 축소해 그리는데 글자는 같이 줄지 않는다. hero 실측
-// (캔버스 676px / 뷰포트 1456px, 배율 0.464)에서 11px 글자가 실제 비율의 2.2배로
-// 그려져, 48px 메뉴 상자가 화면에서 22px 인데 다섯 글자를 밀어 넣고 있었다.
-// "시스템설정" 이 가운데만 남아 "템설" 로 읽혔다.
-//
-// 그래서 상자가 화면에서 차지하는 **비율**로 판정한다 — 캔버스가 얼마나 크게
-// 그려지든 같은 기준이다. 문턱 미만은 글자를 그리지 않고 title 로만 들고 있어,
-// 마우스를 올리면 온전히 보이고 기하는 틀어지지 않는다.
-//
-// 0.06 은 실측에서 골랐다: 메뉴 레일 3.3%(제외), 근무시간 패널 12.3%(포함),
-// 본문 문구 44%(포함).
-const MIN_INLINE_LABEL_RATIO = 0.06;
+// 상자 안에는 글자를 넣지 않는다. 넣으려 하면 뷰포트를 축소해 그리는 미리보기에서
+// 글자만 안 줄어, 48px 메뉴 상자가 화면에서 22px 인데 다섯 글자를 밀어 넣어야 했다
+// ("시스템설정" 이 "템설" 로 읽혔다). 크기로 고르던 문턱(0.06)을 없애고, 스위치로
+// 전부 보이거나 전부 숨긴다 — 켜면 상자 밖으로 넘치는 레이어에 그린다.
 
 function rectStyle(context: ScreenContext, rect: { x: number; y: number; width: number; height: number }) {
   const { width, height } = context.viewport;
@@ -33,7 +29,17 @@ function rectStyle(context: ScreenContext, rect: { x: number; y: number; width: 
   };
 }
 
-export function ScreenContextPreview({ context, event, compact = false }: ScreenContextPreviewProps) {
+export function ScreenContextPreview({
+  context,
+  event,
+  compact = false,
+  showLabels = false,
+  onToggleLabels,
+}: ScreenContextPreviewProps) {
+  // compact 는 타임라인의 이벤트별 미리보기다(약 340px). 그 크기에서는 라벨
+  // 간격이 11px 인데 글자 높이가 14px 이라 세로로도 겹쳐 덩어리가 된다.
+  const labelsVisible = showLabels && !compact;
+  const switchVisible = onToggleLabels !== undefined && !compact;
   if (!context) {
     return (
       <section className="screen-preview screen-preview--empty" aria-label="화면 맥락 미리보기">
@@ -50,22 +56,49 @@ export function ScreenContextPreview({ context, event, compact = false }: Screen
         <span className="screen-preview__dot" />
         <span className="screen-preview__dot" />
         <strong>{context.titleMasked ?? event?.urlPath ?? "사용자 화면"}</strong>
+        {switchVisible ? (
+          <label className="screen-preview__switch">
+            <input
+              type="checkbox"
+              checked={showLabels}
+              onChange={(changeEvent) => onToggleLabels(changeEvent.target.checked)}
+            />
+            글자 보기
+          </label>
+        ) : null}
       </header>
       <div className="screen-preview__canvas" style={{ aspectRatio: `${context.viewport.width} / ${context.viewport.height}` }}>
         {context.layoutHints.map((hint, index) => {
           const label = hint.masked ? undefined : hint.textMaskedOrLimited;
-          const fitsInline = label !== undefined && hint.rect.width / context.viewport.width >= MIN_INLINE_LABEL_RATIO;
           return (
             <div
               className={`screen-preview__hint${hint.masked ? " screen-preview__hint--masked" : ""}`}
               key={`${hint.tagName}-${index}-${hint.rect.x}-${hint.rect.y}`}
               style={rectStyle(context, hint.rect)}
               {...(label ? { title: label } : {})}
-            >
-              {fitsInline ? <span>{label}</span> : null}
-            </div>
+            />
           );
         })}
+        {labelsVisible ? (
+          /* 상자 안이 아니라 위에 얹는다. 넘쳐도 자르지 않고, 겹쳐도 그대로 둔다 —
+             자리를 옮기면 어느 상자의 글자인지 알 수 없게 된다. */
+          <div className="screen-preview__labels">
+            {context.layoutHints.map((hint, index) =>
+              hint.masked || hint.textMaskedOrLimited === undefined ? null : (
+                <span
+                  className="screen-preview__label"
+                  key={`label-${hint.tagName}-${index}-${hint.rect.x}-${hint.rect.y}`}
+                  style={{
+                    left: `${clampPercent((hint.rect.x / context.viewport.width) * 100)}%`,
+                    top: `${clampPercent((hint.rect.y / context.viewport.height) * 100)}%`,
+                  }}
+                >
+                  {hint.textMaskedOrLimited}
+                </span>
+              ),
+            )}
+          </div>
+        ) : null}
         {context.target ? (
           <div className="screen-preview__target" style={rectStyle(context, context.target.rect)}>
             <span>{context.target.textMaskedOrLimited ?? context.target.role ?? context.target.tagName}</span>

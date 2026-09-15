@@ -1,61 +1,85 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScreenContextPreview } from "./ScreenContextPreview.js";
 
 expect.extend(matchers);
 afterEach(cleanup);
 
 describe("ScreenContextPreview", () => {
-  // 미리보기는 뷰포트를 축소해 그리는데 글자는 안 줄어든다. 실측(hero, 캔버스
-  // 676px / 뷰포트 1456px, 배율 0.464): 11px 글자가 실제 비율의 2.2배로 그려져,
-  // 48px 짜리 메뉴 상자가 화면에서 22px 인데 5글자를 넣고 있었다. 결과는
-  // "시스템설정" 이 가운데만 남아 "템설" 로 보이는 것이었다.
-  //
-  // 그래서 상자가 화면에서 차지하는 비율이 문턱 미만이면 글자를 안 그린다.
-  // 대신 title 로 들고 있어 마우스를 올리면 온전히 보인다. 기하가 틀어지지 않는다.
-  it("좁은 상자는 글자를 그리지 않고 title 로 들고 있다", () => {
-    render(
-      <ScreenContextPreview
-        context={{
-          viewport: { width: 1456, height: 828 },
-          layoutHints: [
-            {
-              tagName: "span",
-              // 48 / 1456 = 3.3% — 문턱 미만
-              rect: { x: 0, y: 150, width: 48, height: 44 },
-              textMaskedOrLimited: "시스템설정",
-              masked: false,
-            },
-          ],
-        }}
-      />,
-    );
+  const hintContext = {
+    viewport: { width: 1456, height: 828 },
+    layoutHints: [
+      {
+        tagName: "span",
+        // 48 / 1456 = 3.3% — 예전 문턱 미만이라 안 보이던 것
+        rect: { x: 0, y: 150, width: 48, height: 44 },
+        textMaskedOrLimited: "시스템설정",
+        masked: false,
+      },
+      {
+        tagName: "div",
+        // 640 / 1456 = 44% — 예전 문턱 이상이라 보이던 것
+        rect: { x: 408, y: 287, width: 640, height: 30 },
+        textMaskedOrLimited: "기업의 지속가능한 성장을 위해",
+        masked: false,
+      },
+    ],
+  };
+
+  // 상자 안에 글자를 넣지 않기로 했다. 넣으려 하면 뷰포트를 축소해 그리는
+  // 미리보기에서 글자만 안 줄어 "시스템설정" 이 "템설" 로 읽혔다. 이제는
+  // 크기로 고르지 않고 스위치로 전부 보이거나 전부 숨긴다.
+  it("글자 보기가 꺼져 있으면 크기와 무관하게 글자를 그리지 않는다", () => {
+    render(<ScreenContextPreview context={hintContext} />);
 
     expect(screen.queryByText("시스템설정")).not.toBeInTheDocument();
+    expect(screen.queryByText("기업의 지속가능한 성장을 위해")).not.toBeInTheDocument();
+  });
+
+  it("글자 보기가 꺼져 있어도 title 로는 들고 있다", () => {
+    render(<ScreenContextPreview context={hintContext} />);
+
     expect(screen.getByTitle("시스템설정")).toBeInTheDocument();
   });
 
-  it("넓은 상자는 글자를 그대로 그린다", () => {
+  it("글자 보기를 켜면 크기와 무관하게 전부 그린다", () => {
+    render(<ScreenContextPreview context={hintContext} showLabels />);
+
+    expect(screen.getByText("시스템설정")).toBeInTheDocument();
+    expect(screen.getByText("기업의 지속가능한 성장을 위해")).toBeInTheDocument();
+  });
+
+  // 340px 짜리 타임라인 미리보기에서는 라벨 간격이 11px 인데 글자 높이가
+  // 14px 이라 세로로도 겹쳐 덩어리가 된다. 배치만 보여준다.
+  it("compact 는 켜도 글자를 그리지 않는다", () => {
+    render(<ScreenContextPreview context={hintContext} showLabels compact />);
+
+    expect(screen.queryByText("시스템설정")).not.toBeInTheDocument();
+  });
+
+  it("compact 에는 스위치를 두지 않는다", () => {
     render(
-      <ScreenContextPreview
-        context={{
-          viewport: { width: 1456, height: 828 },
-          layoutHints: [
-            {
-              tagName: "div",
-              // 640 / 1456 = 44% — 문턱 이상
-              rect: { x: 408, y: 287, width: 640, height: 30 },
-              textMaskedOrLimited: "기업의 지속가능한 성장을 위해",
-              masked: false,
-            },
-          ],
-        }}
-      />,
+      <ScreenContextPreview context={hintContext} compact onToggleLabels={() => undefined} />,
     );
 
-    expect(screen.getByText("기업의 지속가능한 성장을 위해")).toBeInTheDocument();
+    expect(screen.queryByLabelText("글자 보기")).not.toBeInTheDocument();
+  });
+
+  it("핸들러를 받으면 스위치를 그리고 누르면 뒤집어 알린다", () => {
+    const onToggleLabels = vi.fn();
+    render(<ScreenContextPreview context={hintContext} onToggleLabels={onToggleLabels} />);
+
+    fireEvent.click(screen.getByLabelText("글자 보기"));
+
+    expect(onToggleLabels).toHaveBeenCalledWith(true);
+  });
+
+  it("핸들러가 없으면 스위치를 그리지 않는다", () => {
+    render(<ScreenContextPreview context={hintContext} />);
+
+    expect(screen.queryByLabelText("글자 보기")).not.toBeInTheDocument();
   });
 
   // masked 힌트는 어느 크기에서도 글자를 갖지 않는다. title 로도 새면 안 된다 —
@@ -151,5 +175,24 @@ describe("ScreenContextPreview", () => {
     );
 
     expect(screen.getByText("/reports/monthly")).toBeInTheDocument();
+  });
+
+  it("클릭한 요소의 글자는 스위치와 무관하게 남는다", () => {
+    const context = {
+      viewport: { width: 1440, height: 900 },
+      target: {
+        tagName: "button",
+        role: "button",
+        textMaskedOrLimited: "저장",
+        rect: { x: 620, y: 420, width: 96, height: 40 },
+      },
+      layoutHints: [],
+    };
+
+    const { rerender } = render(<ScreenContextPreview context={context} />);
+    expect(screen.getByText("저장")).toBeInTheDocument();
+
+    rerender(<ScreenContextPreview context={context} showLabels />);
+    expect(screen.getByText("저장")).toBeInTheDocument();
   });
 });

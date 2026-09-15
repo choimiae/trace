@@ -26,7 +26,12 @@ import {
   type RecordedSessionResponse,
 } from "./api.js";
 import { API_BASE_URL } from "./config.js";
-import { readSelectedProjectId, writeSelectedProjectId } from "./storage.js";
+import {
+  readPreviewLabels,
+  readSelectedProjectId,
+  writePreviewLabels,
+  writeSelectedProjectId,
+} from "./storage.js";
 import { CreateProjectPage } from "./pages/CreateProjectPage.js";
 import { DashboardPage, type ProjectOption } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
@@ -267,7 +272,16 @@ export function App() {
   // 돌아올 때 목록을 잃지 않으려면 그 화면들이 전부 이 값을 들고 다녀야 한다.
   // 화면 곁의 값이라는 점에서 selectedIssue 와 같은 자리다.
   const [recordedSessions, setRecordedSessions] = useState<RecordedSessionResponse[]>([]);
+  // 미리보기 글자 보기도 화면 곁의 값이다. 대시보드와 문제 상세가 같은 값을 보므로
+  // 어느 쪽에서 켜든 둘 다 켜진다. 브라우저에만 남는다 - 프로젝트 설정에 두면
+  // 조회자가 켤 수 없고(설정 PATCH 는 viewer 403), 남의 화면까지 같이 바뀐다.
+  const [showPreviewLabels, setShowPreviewLabels] = useState(readPreviewLabels);
   const [reloadKey, setReloadKey] = useState(0);
+
+  const handleTogglePreviewLabels = (next: boolean) => {
+    setShowPreviewLabels(next);
+    writePreviewLabels(next);
+  };
 
   useEffect(() => {
     let active = true;
@@ -1088,6 +1102,8 @@ export function App() {
         settingsError={state.settingsError}
         onLogout={() => { void handleLogout(); }}
         onSelectIssue={setSelectedIssue}
+        showPreviewLabels={showPreviewLabels}
+        onTogglePreviewLabels={handleTogglePreviewLabels}
         onCreateProject={() => setState({ type: "create-project", csrfToken: state.csrfToken })}
         onShowInstall={() =>
           setState({
@@ -1112,7 +1128,14 @@ export function App() {
           })
         }
       />
-      {selectedIssue ? <IssueDetailPage issue={selectedIssue} onClose={() => setSelectedIssue(undefined)} /> : null}
+      {selectedIssue ? (
+        <IssueDetailPage
+          issue={selectedIssue}
+          onClose={() => setSelectedIssue(undefined)}
+          showPreviewLabels={showPreviewLabels}
+          onTogglePreviewLabels={handleTogglePreviewLabels}
+        />
+      ) : null}
     </>
   );
 }
