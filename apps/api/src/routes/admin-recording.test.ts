@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { createAdminSessionForUser } from "../auth/session.js";
@@ -160,6 +161,115 @@ describe("GET /admin/api/sessions/:sessionId/recording", () => {
     const response = await app.inject({
       method: "GET",
       url: `/admin/api/sessions/sess_abc/recording?projectId=${project.projectId}`,
+      headers: { cookie: session.cookie.split(";")[0] as string },
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+});
+
+describe("GET /admin/api/sessions/:sessionId/recording/chunks/:seq", () => {
+  async function withGzipChunk() {
+    const fixture = await createAuthenticatedOwner();
+    const body = gzipSync(
+      Buffer.from(
+        JSON.stringify({
+          projectId: fixture.project.projectId,
+          seq: 0,
+          startedAt: "2026-09-15T00:00:00.000Z",
+          url: "https://demo.example.com/",
+          sdkVersion: "0.1.0",
+          events: [{ type: 2, data: {}, timestamp: 1 }],
+        }),
+        "utf8",
+      ),
+    );
+    await fixture.store.saveSessionRecordingChunk({
+      sessionId: "sess_abc",
+      projectId: fixture.project.projectId,
+      seq: 0,
+      startedAt: "2026-09-15T00:00:00.000Z",
+      receivedAt: "2026-09-15T00:00:10.000Z",
+      eventCount: 1,
+      bytes: new Uint8Array(body),
+    });
+    return { ...fixture, body };
+  }
+
+  it("저장된 gzip 바이트를 그대로 돌려준다", async () => {
+    const { app, project, headers, body } = await withGzipChunk();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/sessions/sess_abc/recording/chunks/0?projectId=${project.projectId}`,
+      headers,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-encoding"]).toBe("gzip");
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    // 바이트가 하나도 달라지면 안 된다. 서버가 풀었다 다시 감으면 여기서 깨진다.
+    expect(Buffer.compare(response.rawPayload, body)).toBe(0);
+  });
+
+  it("없는 seq 는 404", async () => {
+    const { app, project, headers } = await withGzipChunk();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/sessions/sess_abc/recording/chunks/9?projectId=${project.projectId}`,
+      headers,
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("seq 가 숫자가 아니면 400", async () => {
+    const { app, project, headers } = await withGzipChunk();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/sessions/sess_abc/recording/chunks/abc?projectId=${project.projectId}`,
+      headers,
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("인증이 없으면 401", async () => {
+    const { app, project } = await withGzipChunk();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/sessions/sess_abc/recording/chunks/0?projectId=${project.projectId}`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("조회자도 받을 수 있다", async () => {
+    const { app, store, project } = await withGzipChunk();
+    // 주의: 브리프 원문은 이 sub-user 에 owner 와 같은 이메일(admin@example.com)을
+    // 쓴다 — upsertAdminUserFromGoogle 이 admin_email_conflict 로 던진다. Task 2 와
+    // 같은 이유로 고유 이메일을 쓴다(fixture 신원 문제일 뿐 검증 내용은 그대로다).
+    const viewer = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_viewer_chunk",
+      email: "viewer-chunk@example.com",
+      emailVerified: true,
+      now: "2026-09-15T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: viewer.adminUserId,
+      role: "viewer",
+      createdAt: "2026-09-15T00:00:00.000Z",
+    });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user: viewer });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/sessions/sess_abc/recording/chunks/0?projectId=${project.projectId}`,
       headers: { cookie: session.cookie.split(";")[0] as string },
     });
 

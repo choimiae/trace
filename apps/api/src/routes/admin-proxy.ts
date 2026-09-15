@@ -20,6 +20,10 @@ const projectMemberParamsSchema = z.object({ projectId: z.string(), adminUserId:
 const issueParamsSchema = z.object({ issueId: z.string() });
 const sessionParamsSchema = z.object({ sessionId: z.string() });
 const projectQuerySchema = z.object({ projectId: z.string() });
+const recordingChunkParamsSchema = z.object({
+  sessionId: z.string(),
+  seq: z.coerce.number().int().min(0),
+});
 
 export async function registerAdminProxyRoutes(
   app: FastifyInstance,
@@ -498,6 +502,34 @@ export async function registerAdminProxyRoutes(
         receivedAt: chunk.receivedAt,
       })),
     });
+  });
+
+  app.get("/admin/api/sessions/:sessionId/recording/chunks/:seq", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const params = recordingChunkParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "invalid_chunk_seq" });
+
+    const { projectId } = projectQuerySchema.parse(request.query);
+    const access = await getProjectAccess(options.store, projectId, authenticated, "session_recording");
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+
+    const chunks = await options.store.listSessionRecordingChunks(projectId, params.data.sessionId);
+    const chunk = chunks.find((candidate) => candidate.seq === params.data.seq);
+    if (!chunk) return reply.code(404).send({ error: "recording_chunk_not_found" });
+
+    // **풀지 않는다.** 저장된 gzip 을 그대로 흘려보내고 브라우저가 푼다.
+    // 업로드에서 content-encoding 을 피한 이유(프록시가 풀면 받는 것이
+    // gzip 인지 매번 달라진다)는 내려받기에 해당되지 않는다 - 프록시가
+    // 풀든 말든 브라우저가 받는 것은 JSON 이다.
+    return reply
+      .header("content-type", "application/json; charset=utf-8")
+      .header("content-encoding", "gzip")
+      .header("cache-control", "no-store")
+      .send(Buffer.from(chunk.bytes));
   });
 }
 
