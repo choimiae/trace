@@ -1387,6 +1387,13 @@
   background: var(--white);
 }
 
+.replay-mount iframe {
+  /* 브라우저 기본 iframe 테두리(2px inset)를 지운다. rrweb 은 iframe 에
+     스타일을 주지 않으므로 그대로 두면 무대 테두리 안에 테두리가 하나 더
+     보인다 - 브라우저 측정으로 확인함(Task 9). */
+  border: 0;
+}
+
 .replay-controls {
   display: flex;
   align-items: center;

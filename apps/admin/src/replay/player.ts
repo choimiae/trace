@@ -1,4 +1,11 @@
 import { Replayer } from "rrweb";
+// rrweb 은 `Replayer` 만 내보내고 자신의 스타일시트는 자동으로 붙이지 않는다
+// (그건 rrweb-player 의 일). 이 시트가 없으면 `.replayer-wrapper` 가
+// position:relative 를 못 받아 `.replayer-mouse-tail` 캔버스가 보통 흐름에
+// 끼어들어 iframe 을 무대 밖으로 밀어낸다 - 브라우저 측정으로 확인함
+// (Task 9). 부수효과 임포트라 리플레이 화면을 열 때만(지연 로드된
+// SessionReplayPage 를 통해서만) 받아온다.
+import "rrweb/dist/rrweb.css";
 import { computeFit } from "./fit.js";
 
 export interface ReplayPlayer {
