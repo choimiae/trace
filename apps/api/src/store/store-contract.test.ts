@@ -1972,6 +1972,67 @@ function describeTraceStoreContract(
       expect(kept[0]!.startedAt).toBe("2020-01-01T00:00:00.000Z");
       expect(kept[0]!.receivedAt).toBe("2026-09-13T00:00:00.000Z");
     });
+
+    it("기록된 세션을 최근 순으로 집계한다", async () => {
+      const store = open();
+      const chunk = (sessionId: string, seq: number, receivedAt: string, eventCount: number) => ({
+        sessionId,
+        projectId: "proj_a",
+        seq,
+        startedAt: "2026-09-15T00:00:00.000Z",
+        receivedAt,
+        eventCount,
+        bytes: new Uint8Array([1, 2, 3]),
+      });
+
+      await store.saveSessionRecordingChunk(chunk("sess_old", 0, "2026-09-15T00:00:00.000Z", 2));
+      await store.saveSessionRecordingChunk(chunk("sess_new", 0, "2026-09-15T01:00:00.000Z", 3));
+      await store.saveSessionRecordingChunk(chunk("sess_new", 1, "2026-09-15T01:05:00.000Z", 4));
+
+      const sessions = await store.listRecordedSessions("proj_a", 50);
+
+      expect(sessions.map((s) => s.sessionId)).toEqual(["sess_new", "sess_old"]);
+      expect(sessions[0]).toEqual({
+        sessionId: "sess_new",
+        startedAt: "2026-09-15T00:00:00.000Z",
+        lastReceivedAt: "2026-09-15T01:05:00.000Z",
+        chunkCount: 2,
+        eventCount: 7,
+        bytes: 6,
+      });
+    });
+
+    it("다른 프로젝트의 기록은 섞이지 않는다", async () => {
+      const store = open();
+      const base = {
+        seq: 0,
+        startedAt: "2026-09-15T00:00:00.000Z",
+        receivedAt: "2026-09-15T00:00:00.000Z",
+        eventCount: 1,
+        bytes: new Uint8Array([1]),
+      };
+      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_a", projectId: "proj_a" });
+      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_b", projectId: "proj_b" });
+
+      expect((await store.listRecordedSessions("proj_a", 50)).map((s) => s.sessionId)).toEqual(["sess_a"]);
+    });
+
+    it("limit 으로 개수를 자른다", async () => {
+      const store = open();
+      for (let i = 0; i < 3; i += 1) {
+        await store.saveSessionRecordingChunk({
+          sessionId: `sess_${i}`,
+          projectId: "proj_a",
+          seq: 0,
+          startedAt: "2026-09-15T00:00:00.000Z",
+          receivedAt: `2026-09-15T0${i}:00:00.000Z`,
+          eventCount: 1,
+          bytes: new Uint8Array([1]),
+        });
+      }
+
+      expect(await store.listRecordedSessions("proj_a", 2)).toHaveLength(2);
+    });
   });
 }
 

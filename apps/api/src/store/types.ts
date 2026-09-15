@@ -153,6 +153,19 @@ export interface SessionRecordingChunk {
   bytes: Uint8Array;
 }
 
+/** 한 세션의 기록을 요약한 값. 목록 화면이 쓴다. */
+export interface RecordedSessionSummary {
+  sessionId: string;
+  /** 가장 이른 청크의 `startedAt`. 브라우저 시계가 적은 값이라 표시용이다. */
+  startedAt: string;
+  /** 가장 늦은 청크의 `receivedAt`. 목록 정렬이 보는 값이다. */
+  lastReceivedAt: string;
+  chunkCount: number;
+  eventCount: number;
+  /** gzip 상태의 바이트 합. 푼 크기가 아니다. */
+  bytes: number;
+}
+
 export interface TraceStore {
   readonly isDurable?: boolean;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
@@ -220,6 +233,8 @@ export interface TraceStore {
   saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void>;
   /** seq 오름차순. 재생은 이 순서로 이어 붙인다. */
   listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]>;
+  /** `lastReceivedAt` 내림차순. 최근 기록이 먼저다. */
+  listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]>;
   /** `receivedAt` 이 cutoff 이전인 청크를 지운다. startedAt 은 보지 않는다. */
   deleteSessionRecordingsBefore(cutoff: string): Promise<number>;
 }

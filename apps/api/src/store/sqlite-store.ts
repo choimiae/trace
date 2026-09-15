@@ -22,6 +22,7 @@ import type {
   ProjectMembershipRecord,
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
+  RecordedSessionSummary,
   ScreenContextEventQuery,
   SessionRecordingChunk,
   TraceStore,
@@ -679,6 +680,33 @@ export class SqliteStore implements TraceStore {
       receivedAt: row.received_at as string,
       eventCount: row.event_count as number,
       bytes: new Uint8Array(row.bytes as Buffer),
+    }));
+  }
+
+  async listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id,
+                MIN(started_at)     AS started_at,
+                MAX(received_at)    AS last_received_at,
+                COUNT(*)            AS chunk_count,
+                SUM(event_count)    AS event_count,
+                SUM(LENGTH(bytes))  AS bytes
+           FROM session_recordings
+          WHERE project_id = ?
+          GROUP BY session_id
+          ORDER BY last_received_at DESC
+          LIMIT ?`,
+      )
+      .all(projectId, limit) as Row[];
+
+    return rows.map((row) => ({
+      sessionId: row.session_id as string,
+      startedAt: row.started_at as string,
+      lastReceivedAt: row.last_received_at as string,
+      chunkCount: row.chunk_count as number,
+      eventCount: row.event_count as number,
+      bytes: row.bytes as number,
     }));
   }
 

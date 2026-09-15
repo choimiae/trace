@@ -20,6 +20,7 @@ import type {
   ProjectMembershipRecord,
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
+  RecordedSessionSummary,
   ScreenContextEventQuery,
   SessionRecordingChunk,
   TraceStore,
@@ -366,6 +367,38 @@ export class MemoryStore implements TraceStore {
     return Array.from(this.sessionRecordings.values())
       .filter((chunk) => chunk.projectId === projectId && chunk.sessionId === sessionId)
       .sort((a, b) => a.seq - b.seq);
+  }
+
+  async listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]> {
+    const bySession = new Map<string, RecordedSessionSummary>();
+
+    for (const chunk of this.sessionRecordings.values()) {
+      if (chunk.projectId !== projectId) continue;
+
+      const current = bySession.get(chunk.sessionId);
+      if (!current) {
+        bySession.set(chunk.sessionId, {
+          sessionId: chunk.sessionId,
+          startedAt: chunk.startedAt,
+          lastReceivedAt: chunk.receivedAt,
+          chunkCount: 1,
+          eventCount: chunk.eventCount,
+          bytes: chunk.bytes.byteLength,
+        });
+        continue;
+      }
+
+      current.startedAt = chunk.startedAt < current.startedAt ? chunk.startedAt : current.startedAt;
+      current.lastReceivedAt =
+        chunk.receivedAt > current.lastReceivedAt ? chunk.receivedAt : current.lastReceivedAt;
+      current.chunkCount += 1;
+      current.eventCount += chunk.eventCount;
+      current.bytes += chunk.bytes.byteLength;
+    }
+
+    return Array.from(bySession.values())
+      .sort((a, b) => (a.lastReceivedAt < b.lastReceivedAt ? 1 : -1))
+      .slice(0, limit);
   }
 
   // SqliteStore 와 같은 열을 본다 - received_at 이다. startedAt 으로 판정하면
