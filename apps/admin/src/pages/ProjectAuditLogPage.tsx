@@ -12,6 +12,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   project_issues: "문제 목록",
   issue_detail: "문제 상세",
   session_timeline: "세션 타임라인",
+  page_stats: "페이지 통계",
 };
 
 function readString(metadata: Record<string, unknown>, key: string): string | undefined {
