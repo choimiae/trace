@@ -2293,13 +2293,16 @@ function describeTraceStoreContract(
       });
 
       // /a: 3 views, /b: 2 views, /c: 1 view, /d: 1 view — 서로 다른 세션.
+      // 저장 순서를 방문 수 내림차순과 반대로 둔다 - 정렬을 빼먹은 구현이
+      // 삽입 순서(=/d,/c,/b,/a)를 그대로 돌려줘도 이 순서로는 우연히
+      // 기대값(/a,/b)과 맞아떨어지지 않는다.
+      await store.saveBatch(view("sess_d1", "evt_d1", "/d"));
+      await store.saveBatch(view("sess_c1", "evt_c1", "/c"));
+      await store.saveBatch(view("sess_b1", "evt_b1", "/b"));
+      await store.saveBatch(view("sess_b2", "evt_b2", "/b"));
       await store.saveBatch(view("sess_a1", "evt_a1", "/a"));
       await store.saveBatch(view("sess_a2", "evt_a2", "/a"));
       await store.saveBatch(view("sess_a3", "evt_a3", "/a"));
-      await store.saveBatch(view("sess_b1", "evt_b1", "/b"));
-      await store.saveBatch(view("sess_b2", "evt_b2", "/b"));
-      await store.saveBatch(view("sess_c1", "evt_c1", "/c"));
-      await store.saveBatch(view("sess_d1", "evt_d1", "/d"));
 
       const stats = await store.listPageStats(project.projectId, 2);
 
