@@ -538,7 +538,7 @@ describe("App 프로젝트 전환 동작", () => {
       name: "proj_demo 설정 화면에서 반복 클릭 보기",
     });
     fireEvent.click(issueButton!);
-    expect(await screen.findByRole("complementary", { name: "문제 상세" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "문제 상세" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "proj_second" } });
 
@@ -726,7 +726,7 @@ describe("App 미리보기 글자 보기", () => {
     // 같은 버튼이 최근 목록과 문제 목록 양쪽에 있다. 어느 쪽이든 드로어는 같다.
     fireEvent.click(screen.getAllByRole("button", { name: "설정 화면에서 반복 클릭 보기" })[0]!);
 
-    await screen.findByRole("complementary", { name: "문제 상세" });
+    await screen.findByRole("dialog", { name: "문제 상세" });
     const boxes = screen.getAllByLabelText("글자 보기");
     expect(boxes).toHaveLength(2);
     boxes.forEach((box) => expect(box).toBeChecked());

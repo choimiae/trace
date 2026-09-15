@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { Issue } from "@trace/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IssueDetailPage } from "./IssueDetailPage.js";
@@ -57,7 +57,10 @@ describe("IssueDetailPage", () => {
 
     const context = await screen.findByRole("region", { name: "대표 화면 맥락" });
     expect(within(context).getByLabelText("클릭 위치")).toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // 상세 자체가 다이얼로그가 됐다. 화면 맥락이 그 안에서 팝업을 또 열지
+    // 않는다는 것이 이 테스트의 원래 의도다.
+    expect(within(context).queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(screen.getByText("세션 타임라인")).toBeInTheDocument();
   });
 
@@ -66,5 +69,42 @@ describe("IssueDetailPage", () => {
 
     expect(await screen.findByText("세션 타임라인")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "대표 화면 맥락" })).not.toBeInTheDocument();
+  });
+
+  // 드로어(오른쪽 패널)에서 화면 대부분을 덮는 다이얼로그로 바꿨다. 뒤를 가린
+  // 배경을 누르면 닫히는 것이 이런 팝업의 기본 동작이다.
+  it("다이얼로그로 열린다", () => {
+    render(<IssueDetailPage issue={issue({})} onClose={() => undefined} />);
+
+    const dialog = screen.getByRole("dialog", { name: "문제 상세" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("가려진 배경을 누르면 닫는다", () => {
+    const onClose = vi.fn();
+    const { container } = render(<IssueDetailPage issue={issue({})} onClose={onClose} />);
+
+    fireEvent.click(container.querySelector(".detail-backdrop") as HTMLElement);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // 안쪽을 누르다 배경까지 이벤트가 번지면 읽던 중에 닫힌다.
+  it("다이얼로그 안을 누르면 닫지 않는다", () => {
+    const onClose = vi.fn();
+    render(<IssueDetailPage issue={issue({})} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("dialog", { name: "문제 상세" }));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("Escape 로 닫는다", () => {
+    const onClose = vi.fn();
+    render(<IssueDetailPage issue={issue({})} onClose={onClose} />);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
