@@ -39,6 +39,7 @@ export function DashboardPage({
   onCreateProject,
   onShowInstall,
   onShowSettings,
+  onShowPageStats = () => {},
   sessions = [],
   onSelectSession = () => {},
   onReplaySession = () => {},
@@ -57,6 +58,7 @@ export function DashboardPage({
   onCreateProject: () => void;
   onShowInstall: () => void;
   onShowSettings: () => void;
+  onShowPageStats?: () => void;
   sessions?: SessionResponse[];
   onSelectSession?: (sessionId: string) => void;
   onReplaySession?: (sessionId: string) => void;
@@ -84,6 +86,7 @@ export function DashboardPage({
           <span className="user-email">{userEmail}</span>
           <Button onClick={onCreateProject}>새 프로젝트</Button>
           <Button onClick={onShowSettings}>프로젝트 설정</Button>
+          <Button onClick={onShowPageStats}>페이지 통계</Button>
           <Button onClick={onShowInstall}>설치 안내</Button>
           <Button onClick={onLogout}>로그아웃</Button>
         </div>

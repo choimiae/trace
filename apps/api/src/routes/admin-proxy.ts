@@ -28,6 +28,7 @@ const recordingChunkParamsSchema = z.object({
 // 질의 파라미터를 받지 않는다. 페이지네이션이 필요할 만큼 쌓이는 것을 본 뒤에
 // 만든다.
 const SESSION_LIMIT = 50;
+const PAGE_STATS_LIMIT = 50;
 
 export async function registerAdminProxyRoutes(
   app: FastifyInstance,
@@ -459,6 +460,20 @@ export async function registerAdminProxyRoutes(
     return reply.header("cache-control", "no-store").send({ sessions });
   });
 
+  app.get("/admin/api/projects/:projectId/page-stats", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const access = await getProjectAccess(options.store, projectId, authenticated, "page_stats");
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+
+    const pages = await options.store.listPageStats(projectId, PAGE_STATS_LIMIT);
+    return reply.header("cache-control", "no-store").send({ pages });
+  });
+
   app.get("/admin/api/issues/:issueId", async (request, reply) => {
     const authenticated = await authenticate(request, options);
     if ("error" in authenticated) return reply.code(401).send(authenticated);
@@ -699,7 +714,8 @@ type ProjectResourceType =
   | "project_issues"
   | "issue_detail"
   | "session_timeline"
-  | "session_recording";
+  | "session_recording"
+  | "page_stats";
 
 async function auditProjectAccessDenied(
   store: TraceStore,

@@ -224,6 +224,21 @@ export async function getSessions(projectId: string): Promise<SessionResponse[]>
   return body.sessions;
 }
 
+export interface PageStatsResponse {
+  urlPath: string;
+  views: number;
+  averageDwellMs?: number;
+  exitRate: number;
+  scrollReach: Array<{ depth: number; ratio: number }>;
+}
+
+export async function getPageStats(projectId: string): Promise<PageStatsResponse[]> {
+  const body = await getJson<{ pages: PageStatsResponse[] }>(
+    `/admin/api/projects/${projectId}/page-stats`,
+  );
+  return body.pages;
+}
+
 export async function getRecordingManifest(
   projectId: string,
   sessionId: string,

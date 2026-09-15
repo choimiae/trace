@@ -369,3 +369,86 @@ describe("GET /admin/api/projects/:projectId/sessions", () => {
     expect(response.statusCode).toBe(200);
   });
 });
+
+describe("GET /admin/api/projects/:projectId/page-stats", () => {
+  it("페이지 통계를 돌려준다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+    await store.saveBatch({
+      projectId: project.projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-15T00:10:00.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://demo.example.com/",
+      events: [
+        {
+          eventId: "evt_1",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-15T00:00:00.000Z",
+          type: "page_view",
+          urlPath: "/home",
+          metadata: {},
+        },
+        {
+          eventId: "evt_2",
+          sessionId: "sess_1",
+          pageId: "page_1",
+          timestamp: "2026-09-15T00:00:10.000Z",
+          type: "page_leave",
+          urlPath: "/home",
+          metadata: {},
+        },
+      ],
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/page-stats`,
+      headers,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.pages[0].urlPath).toBe("/home");
+    expect(body.pages[0].views).toBe(1);
+    expect(body.pages[0].averageDwellMs).toBe(10_000);
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("인증이 없으면 401", async () => {
+    const { app, project } = await createAuthenticatedOwner();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/page-stats`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("조회자도 볼 수 있다", async () => {
+    const { app, store, project } = await createAuthenticatedOwner();
+    const viewer = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_viewer_stats",
+      email: "viewer-stats@example.com",
+      emailVerified: true,
+      now: "2026-09-15T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: viewer.adminUserId,
+      role: "viewer",
+      createdAt: "2026-09-15T00:00:00.000Z",
+    });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user: viewer });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/page-stats`,
+      headers: { cookie: session.cookie.split(";")[0] as string },
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+});

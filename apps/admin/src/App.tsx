@@ -7,6 +7,7 @@ import {
   getAuthMe,
   getDashboardData,
   getLoginOptions,
+  getPageStats,
   getProjectAuditLogs,
   getProjectMembers,
   getProjectSettings,
@@ -18,6 +19,7 @@ import {
   updateProjectSettings,
   type AddProjectMemberInput,
   type LoginOptionsResponse,
+  type PageStatsResponse,
   type ProjectAuditLogEntryResponse,
   type ProjectMemberCandidateResponse,
   type ProjectMemberResponse,
@@ -37,6 +39,7 @@ import { DashboardPage, type ProjectOption } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
 import { SessionDetailDialog } from "./pages/SessionDetailDialog.js";
+import { PageStatsPage } from "./pages/PageStatsPage.js";
 import { ProjectAuditLogPage } from "./pages/ProjectAuditLogPage.js";
 import { ProjectSettingsPage } from "./pages/ProjectSettingsPage.js";
 import { StatusPage } from "./pages/StatusPage.js";
@@ -128,6 +131,17 @@ type AppState =
       projects: ProjectOption[];
       projectId: string;
       sessionId: string;
+      userEmail: string;
+      adminUserId: string;
+      csrfToken: string;
+      settingsSessionId: number;
+    }
+  | {
+      type: "page-stats";
+      pages: PageStatsResponse[];
+      dashboardData: { summary: DashboardSummary; issues: Issue[] };
+      projects: ProjectOption[];
+      projectId: string;
       userEmail: string;
       adminUserId: string;
       csrfToken: string;
@@ -1011,6 +1025,26 @@ export function App() {
     );
   }
 
+  if (state.type === "page-stats") {
+    return (
+      <PageStatsPage
+        pages={state.pages}
+        onBack={() =>
+          setState({
+            type: "ready",
+            data: state.dashboardData,
+            projects: state.projects,
+            projectId: state.projectId,
+            userEmail: state.userEmail,
+            adminUserId: state.adminUserId,
+            csrfToken: state.csrfToken,
+            settingsSessionId: state.settingsSessionId,
+          })
+        }
+      />
+    );
+  }
+
   if (state.type === "replay") {
     return (
       <Suspense fallback={<p className="empty-state">재생기를 불러오는 중입니다.</p>}>
@@ -1043,6 +1077,36 @@ export function App() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setSelectedIssue(undefined);
+        setState({ type: "login" });
+      } else if (error instanceof ApiError && error.status === 403) {
+        setState({ type: "forbidden" });
+      } else {
+        setState({ type: "network" });
+      }
+    }
+  };
+
+  const handleShowPageStats = async () => {
+    const projectId = state.projectId;
+    try {
+      const pages = await getPageStats(projectId);
+      setState((current) =>
+        current.type === "ready" && current.projectId === projectId
+          ? {
+              type: "page-stats",
+              pages,
+              dashboardData: current.data,
+              projects: current.projects,
+              projectId: current.projectId,
+              userEmail: current.userEmail,
+              adminUserId: current.adminUserId,
+              csrfToken: current.csrfToken,
+              settingsSessionId: current.settingsSessionId,
+            }
+          : current,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
         setState({ type: "login" });
       } else if (error instanceof ApiError && error.status === 403) {
         setState({ type: "forbidden" });
@@ -1117,6 +1181,7 @@ export function App() {
           })
         }
         onShowSettings={() => { void handleShowSettings(); }}
+        onShowPageStats={() => { void handleShowPageStats(); }}
         sessions={sessions}
         onSelectSession={(sessionId) =>
           setSelectedSession(sessions.find((session) => session.sessionId === sessionId))
