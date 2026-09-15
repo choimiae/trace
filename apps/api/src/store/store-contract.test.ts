@@ -2169,6 +2169,54 @@ function describeTraceStoreContract(
       expect(report.exitRate).toBe(1);
     });
 
+    // 라우팅으로 페이지를 옮기면 이전 경로의 page_leave·scroll 과 다음
+    // page_view 가 같은 동기 tick 에서 나가 같은 밀리초를 찍을 수 있다.
+    // urlPath 가 이미 페이지를 가르므로, 그 경계 밀리초의 스크롤도 이전
+    // 페이지 몫으로 세어야 한다 — < 로 좁히면 이 경우를 놓친다.
+    it("라우팅 경계와 같은 밀리초의 스크롤도 도달로 센다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const event = (
+        sessionId: string,
+        eventId: string,
+        type: "page_view" | "page_leave" | "scroll",
+        urlPath: string,
+        timestamp: string,
+        metadata: Record<string, unknown> = {},
+      ) => ({ eventId, sessionId, pageId: "page_1", timestamp, type, urlPath, metadata });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-15T00:10:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/",
+        events: [
+          event("sess_1", "evt_1", "page_view", "/home", "2026-09-15T00:00:00.000Z"),
+          event("sess_1", "evt_2", "scroll", "/home", "2026-09-15T00:00:10.000Z", {
+            metric: "scroll_depth",
+            score: 50,
+          }),
+          event("sess_1", "evt_3", "page_leave", "/home", "2026-09-15T00:00:10.000Z"),
+          event("sess_1", "evt_4", "page_view", "/report", "2026-09-15T00:00:10.000Z"),
+        ],
+      });
+
+      const stats = await store.listPageStats(project.projectId, 50);
+      const home = stats.find((row) => row.urlPath === "/home")!;
+
+      expect(home.scrollReach).toEqual([
+        { depth: 25, ratio: 0 },
+        { depth: 50, ratio: 1 },
+        { depth: 75, ratio: 0 },
+        { depth: 100, ratio: 0 },
+      ]);
+    });
+
     // 브라우저가 강제 종료되면 page_leave 가 못 나간다. 0 으로 세면 평균이
     // 끌려 내려간다.
     it("짝 없는 방문은 평균 체류에서 뺀다", async () => {

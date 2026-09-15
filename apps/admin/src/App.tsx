@@ -1208,6 +1208,7 @@ export function App() {
           sessionId={selectedSession.sessionId}
           hasRecording={selectedSession.hasRecording}
           onClose={() => setSelectedSession(undefined)}
+          onAuthExpired={() => setState({ type: "login" })}
           onReplay={() => {
             const sessionId = selectedSession.sessionId;
             setSelectedSession(undefined);

@@ -38,6 +38,10 @@ export function computePageStats(events: TraceEvent[], limit: number): PageStats
       if (view === lastView) target.exits += 1;
 
       const nextView = pageViews[index + 1];
+      // <= 다. 라우팅으로 페이지를 옮기면 직전 경로의 page_leave 와 다음
+      // page_view 가 같은 동기 tick 에서 나가 같은 밀리초를 찍는 일이 흔하다
+      // (contract fixture 의 00:00:10.000Z 쌍이 그 경우다). < 로 좁히면 이런
+      // 라우팅 이탈마다 체류가 통째로 사라진다 — 건드리지 않는다.
       const leave = ordered.find(
         (event) =>
           event.type === "page_leave" &&
@@ -47,12 +51,16 @@ export function computePageStats(events: TraceEvent[], limit: number): PageStats
       );
       if (leave) target.dwellMs.push(Date.parse(leave.timestamp) - Date.parse(view.timestamp));
 
+      // page_leave 와 같은 <= 다. 경계 밀리초에 걸친 스크롤도 event.urlPath
+      // === view.urlPath 가 이미 걸러 주므로(다음 페이지의 스크롤은 urlPath
+      // 가 달라 여기 섞이지 않는다) < 로 좁혀 둘 이유가 없었다 — 드물게
+      // 경계에 걸친 도달을 놓치는 손실만 있었다.
       const scrolls = ordered.filter(
         (event) =>
           event.type === "scroll" &&
           event.urlPath === view.urlPath &&
           event.timestamp >= view.timestamp &&
-          (nextView === undefined || event.timestamp < nextView.timestamp),
+          (nextView === undefined || event.timestamp <= nextView.timestamp),
       );
       for (const depth of SCROLL_DEPTHS) {
         const hit = scrolls.some(
