@@ -1,4 +1,4 @@
-import type { DashboardSummary, Issue } from "@trace/shared";
+import type { DashboardSummary, Issue, ReplayConfig } from "@trace/shared";
 import { useEffect, useState } from "react";
 import {
   ApiError,
@@ -653,7 +653,11 @@ export function App() {
   };
 
   if (state.type === "settings") {
-    const handleSaveSettings = async (input: { name: string; allowedDomains: string[] }) => {
+    const handleSaveSettings = async (input: {
+      name: string;
+      allowedDomains: string[];
+      replay: ReplayConfig;
+    }) => {
       const projectId = state.projectId;
       const csrfToken = state.csrfToken;
       setState((current) =>

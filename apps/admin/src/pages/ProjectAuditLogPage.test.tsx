@@ -104,6 +104,41 @@ describe("describeAuditLogEntry project.updated", () => {
       { name: "New", allowedDomains: [] },
     )).toBe("프로젝트 설정을 변경했습니다. 이름을 'Old'에서 'New'로 바꿈, 허용 도메인 1개에서 0개로 변경");
   });
+
+  it("리플레이를 켠 것을 덧붙인다", () => {
+    expect(updated(
+      { name: "Same", allowedDomains: [], replay: { enabled: false, maskSelectors: [] } },
+      { name: "Same", allowedDomains: [], replay: { enabled: true, maskSelectors: [] } },
+    )).toBe("프로젝트 설정을 변경했습니다. 세션 리플레이를 켬");
+  });
+
+  it("리플레이를 끈 것을 덧붙인다", () => {
+    expect(updated(
+      { name: "Same", allowedDomains: [], replay: { enabled: true, maskSelectors: [] } },
+      { name: "Same", allowedDomains: [], replay: { enabled: false, maskSelectors: [] } },
+    )).toBe("프로젝트 설정을 변경했습니다. 세션 리플레이를 끔");
+  });
+
+  it("마스킹 셀렉터 개수 변경을 덧붙인다", () => {
+    expect(updated(
+      { name: "Same", allowedDomains: [], replay: { enabled: true, maskSelectors: [".a"] } },
+      { name: "Same", allowedDomains: [], replay: { enabled: true, maskSelectors: [".a", ".b"] } },
+    )).toBe("프로젝트 설정을 변경했습니다. 마스킹 셀렉터 1개에서 2개로 변경");
+  });
+
+  it("리플레이가 그대로면 아무것도 덧붙이지 않는다", () => {
+    expect(updated(
+      { name: "Same", allowedDomains: [], replay: { enabled: true, maskSelectors: [".a"] } },
+      { name: "Same", allowedDomains: [], replay: { enabled: true, maskSelectors: [".a"] } },
+    )).toBe("프로젝트 설정을 변경했습니다.");
+  });
+
+  it("리플레이가 없는 옛 기록도 설명한다", () => {
+    expect(updated(
+      { name: "Old", allowedDomains: [] },
+      { name: "New", allowedDomains: [] },
+    )).toBe("프로젝트 설정을 변경했습니다. 이름을 'Old'에서 'New'로 바꿈");
+  });
 });
 
 describe("describeAuditLogEntry fallback", () => {

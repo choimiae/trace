@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MAX_MASK_SELECTORS } from "@trace/shared/recording-limits";
 import { ProjectSettingsPage } from "./ProjectSettingsPage.js";
 
 expect.extend(matchers);
@@ -14,6 +15,7 @@ const ownerProject = {
   projectId: "proj_demo",
   name: "Demo",
   allowedDomains: ["https://demo.example.com", "https://app.example.com"],
+  replay: { enabled: false, maskSelectors: [] },
   role: "owner" as const,
 };
 
@@ -101,6 +103,7 @@ describe("ProjectSettingsPage", () => {
     expect(onSave).toHaveBeenCalledWith({
       name: "New Demo",
       allowedDomains: ["https://new.example.com", "https://app.example.com"],
+      replay: { enabled: false, maskSelectors: [] },
     });
   });
 
@@ -114,6 +117,7 @@ describe("ProjectSettingsPage", () => {
     expect(onSave).toHaveBeenCalledWith({
       name: "Demo",
       allowedDomains: ["https://demo.example.com", "https://app.example.com"],
+      replay: { enabled: false, maskSelectors: [] },
     });
   });
 
@@ -432,5 +436,169 @@ describe("ProjectSettingsPage", () => {
     });
 
     expect(screen.queryByRole("button", { name: "활동 이력" })).not.toBeInTheDocument();
+  });
+
+  it("리플레이를 켜면 경고와 마스킹 셀렉터 입력이 나타난다", () => {
+    renderRequiredProps();
+
+    expect(screen.queryByLabelText(/마스킹 셀렉터/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("세션 리플레이 켜기"));
+
+    expect(screen.getByLabelText(/마스킹 셀렉터/)).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("화면 전체가 기록됩니다");
+  });
+
+  it("저장이 리플레이 설정을 함께 보낸다", () => {
+    const onSave = vi.fn();
+    renderRequiredProps({ onSave });
+
+    fireEvent.click(screen.getByLabelText("세션 리플레이 켜기"));
+    fireEvent.change(screen.getByLabelText(/마스킹 셀렉터/), {
+      target: { value: ".customer-name\n\n  [data-pii]  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(onSave).toHaveBeenCalledWith({
+      name: "Demo",
+      allowedDomains: ["https://demo.example.com", "https://app.example.com"],
+      replay: { enabled: true, maskSelectors: [".customer-name", "[data-pii]"] },
+    });
+  });
+
+  it("쓸 수 없는 문자가 섞인 셀렉터는 저장을 막고 이유를 보여준다", () => {
+    renderRequiredProps();
+
+    fireEvent.click(screen.getByLabelText("세션 리플레이 켜기"));
+    fireEvent.change(screen.getByLabelText(/마스킹 셀렉터/), {
+      target: { value: ".ok\n.bad{color:red}" },
+    });
+
+    expect(screen.getByText(/2번째 줄/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+  });
+
+  it("셀렉터가 상한을 넘으면 저장을 막고 몇 개인지 알려준다", () => {
+    renderRequiredProps();
+
+    fireEvent.click(screen.getByLabelText("세션 리플레이 켜기"));
+    fireEvent.change(screen.getByLabelText(/마스킹 셀렉터/), {
+      target: {
+        value: Array.from({ length: MAX_MASK_SELECTORS + 1 }, (_, index) => `.pii-${index}`).join("\n"),
+      },
+    });
+
+    expect(screen.getByText(`셀렉터는 최대 ${MAX_MASK_SELECTORS}개까지 지정할 수 있습니다. 지금 ${MAX_MASK_SELECTORS + 1}개입니다.`)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+  });
+
+  it("다른 프로젝트로 바뀌면 리플레이 설정을 다시 읽는다", () => {
+    const { rerender } = renderRequiredProps();
+
+    expect(screen.getByLabelText("세션 리플레이 켜기")).not.toBeChecked();
+
+    rerender(
+      <ProjectSettingsPage
+        project={{
+          ...ownerProject,
+          projectId: "proj_other",
+          replay: { enabled: true, maskSelectors: [".customer-name"] },
+        }}
+        members={members}
+        currentAdminUserId="admin_owner"
+        memberCandidates={memberCandidates}
+        onBack={() => undefined}
+        onSave={() => undefined}
+        onAddMember={() => undefined}
+        onUpdateMemberRole={() => undefined}
+        onRemoveMember={() => undefined}
+        onSearchMemberCandidates={() => undefined}
+        onSelectMemberCandidate={() => undefined}
+      />,
+    );
+
+    expect(screen.getByLabelText("세션 리플레이 켜기")).toBeChecked();
+    expect(screen.getByLabelText(/마스킹 셀렉터/)).toHaveValue(".customer-name");
+  });
+
+  it("리플레이를 켜면 이전 저장 성공 메시지를 숨긴다", () => {
+    renderRequiredProps({ savedMessage: "저장했습니다." });
+
+    fireEvent.click(screen.getByLabelText("세션 리플레이 켜기"));
+
+    expect(screen.queryByText("저장했습니다.")).not.toBeInTheDocument();
+  });
+
+  it("마스킹 셀렉터를 고치면 이전 저장 성공 메시지를 숨긴다", () => {
+    renderRequiredProps({
+      project: { ...ownerProject, replay: { enabled: true, maskSelectors: [] } },
+      savedMessage: "저장했습니다.",
+    });
+
+    fireEvent.change(screen.getByLabelText(/마스킹 셀렉터/), {
+      target: { value: ".customer-name" },
+    });
+
+    expect(screen.queryByText("저장했습니다.")).not.toBeInTheDocument();
+  });
+
+  it("viewer 에게는 리플레이 항목을 읽기 전용으로 보여준다", () => {
+    renderRequiredProps({
+      project: {
+        ...ownerProject,
+        role: "viewer",
+        replay: { enabled: true, maskSelectors: [".customer-name"] },
+      },
+    });
+
+    expect(screen.getByLabelText("세션 리플레이 켜기")).toBeDisabled();
+    expect(screen.getByLabelText(/마스킹 셀렉터/)).toBeDisabled();
+  });
+
+  it("저장 중에는 리플레이 항목을 잠근다", () => {
+    renderRequiredProps({
+      project: { ...ownerProject, replay: { enabled: true, maskSelectors: [] } },
+      saving: true,
+    });
+
+    expect(screen.getByLabelText("세션 리플레이 켜기")).toBeDisabled();
+    expect(screen.getByLabelText(/마스킹 셀렉터/)).toBeDisabled();
+  });
+
+  // 회귀 방지 장치다. 끄기와 함께 셀렉터가 지워지면 다시 켤 때 운영자가
+  // 지정해 둔 것을 잃는다.
+  it("리플레이를 꺼도 지정해 둔 셀렉터는 그대로 저장한다", () => {
+    const onSave = vi.fn();
+    renderRequiredProps({
+      project: { ...ownerProject, replay: { enabled: true, maskSelectors: [".customer-name"] } },
+      onSave,
+    });
+
+    fireEvent.click(screen.getByLabelText("세션 리플레이 켜기"));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replay: { enabled: false, maskSelectors: [".customer-name"] },
+      }),
+    );
+  });
+
+  it("경고 안에서 가리지 못하는 것 목록을 펼쳐 볼 수 있다", () => {
+    renderRequiredProps({
+      project: { ...ownerProject, replay: { enabled: true, maskSelectors: [] } },
+    });
+
+    const disclosure = screen.getByText("가리지 못하는 것 전체 보기");
+    expect(disclosure).toBeInTheDocument();
+
+    const items = within(disclosure.closest("details") as HTMLElement).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("인라인 style"),
+        expect.stringContaining("srcdoc"),
+        expect.stringContaining("쿼리스트링"),
+      ]),
+    );
   });
 });

@@ -133,6 +133,7 @@ beforeEach(() => {
     projectId: "proj_demo",
     name: "Demo",
     allowedDomains: ["https://demo.example.com"],
+    replay: { enabled: false, maskSelectors: [] },
     role: "owner",
   });
   api.getProjectMembers.mockResolvedValue([
@@ -179,6 +180,7 @@ beforeEach(() => {
     projectId: "proj_demo",
     name: "New Demo",
     allowedDomains: ["https://new.example.com"],
+    replay: { enabled: false, maskSelectors: [] },
     role: "owner",
   });
 });
@@ -570,6 +572,7 @@ describe("App 프로젝트 전환 동작", () => {
       projectId: "proj_second",
       name: "Second",
       allowedDomains: ["https://second.example.com"],
+      replay: { enabled: false, maskSelectors: [] },
       role: "admin",
     });
 
@@ -1095,6 +1098,7 @@ describe("App 프로젝트 설정", () => {
       projectId: "proj_demo",
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],
+      replay: { enabled: false, maskSelectors: [] },
       role: "admin",
     });
 
@@ -1303,6 +1307,7 @@ describe("App 프로젝트 설정", () => {
       projectId: "proj_a",
       name: "Project A",
       allowedDomains: ["https://a.example.com"],
+      replay: { enabled: false, maskSelectors: [] },
       role: "owner",
     });
     api.getProjectMembers.mockImplementation(
@@ -1418,7 +1423,11 @@ describe("App 프로젝트 설정", () => {
 
     expect(api.updateProjectSettings).toHaveBeenCalledWith(
       "proj_demo",
-      { name: "New Demo", allowedDomains: ["https://new.example.com"] },
+      {
+        name: "New Demo",
+        allowedDomains: ["https://new.example.com"],
+        replay: { enabled: false, maskSelectors: [] },
+      },
       "csrf_1",
     );
     expect(await screen.findByText("저장했습니다.")).toBeInTheDocument();
@@ -1434,6 +1443,7 @@ describe("App 프로젝트 설정", () => {
       projectId: "proj_demo",
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],
+      replay: { enabled: false, maskSelectors: [] },
       role: "viewer",
     });
 

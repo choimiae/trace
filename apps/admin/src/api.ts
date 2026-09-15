@@ -1,4 +1,4 @@
-import type { DashboardSummary, Issue, SessionTimelineEvent } from "@trace/shared";
+import type { DashboardSummary, Issue, ReplayConfig, SessionTimelineEvent } from "@trace/shared";
 import { API_BASE_URL } from "./config.js";
 
 export type ProjectRole = "owner" | "admin" | "viewer";
@@ -7,6 +7,7 @@ export interface ProjectSettingsResponse {
   projectId: string;
   name: string;
   allowedDomains: string[];
+  replay: ReplayConfig;
   role: ProjectRole;
 }
 
@@ -169,7 +170,7 @@ export async function removeProjectMember(
 
 export async function updateProjectSettings(
   projectId: string,
-  input: { name: string; allowedDomains: string[] },
+  input: { name: string; allowedDomains: string[]; replay: ReplayConfig },
   csrfToken: string,
 ): Promise<ProjectSettingsResponse> {
   const response = await ensureSuccess(`/admin/api/projects/${projectId}`, {

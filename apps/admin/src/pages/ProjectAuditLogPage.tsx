@@ -22,15 +22,36 @@ function readString(metadata: Record<string, unknown>, key: string): string | un
 function readSettings(
   metadata: Record<string, unknown>,
   key: "before" | "after",
-): { name?: string; allowedDomains?: unknown[] } | undefined {
+): {
+  name?: string;
+  allowedDomains?: unknown[];
+  replay?: { enabled?: boolean; maskSelectors?: unknown[] };
+} | undefined {
   const value = metadata[key];
   if (typeof value !== "object" || value === null) return undefined;
   const record = value as Record<string, unknown>;
   const name = typeof record.name === "string" ? record.name : undefined;
   const allowedDomains = Array.isArray(record.allowedDomains) ? record.allowedDomains : undefined;
+  const replay = readReplay(record.replay);
   return {
     ...(name === undefined ? {} : { name }),
     ...(allowedDomains === undefined ? {} : { allowedDomains }),
+    ...(replay === undefined ? {} : { replay }),
+  };
+}
+
+// 리플레이가 붙기 전의 기록에는 이 키가 없다. 없는 것과 꺼진 것은 다르므로
+// undefined 를 false 로 메우지 않는다.
+function readReplay(
+  value: unknown,
+): { enabled?: boolean; maskSelectors?: unknown[] } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const enabled = typeof record.enabled === "boolean" ? record.enabled : undefined;
+  const maskSelectors = Array.isArray(record.maskSelectors) ? record.maskSelectors : undefined;
+  return {
+    ...(enabled === undefined ? {} : { enabled }),
+    ...(maskSelectors === undefined ? {} : { maskSelectors }),
   };
 }
 
@@ -60,6 +81,24 @@ function describeSettingsChange(metadata: Record<string, unknown>): string {
       JSON.stringify(before.allowedDomains) !== JSON.stringify(after.allowedDomains)
     ) {
       details.push("허용 도메인 변경");
+    }
+  }
+
+  const beforeReplay = before.replay;
+  const afterReplay = after.replay;
+  if (beforeReplay !== undefined && afterReplay !== undefined) {
+    if (beforeReplay.enabled !== afterReplay.enabled && afterReplay.enabled !== undefined) {
+      details.push(`세션 리플레이를 ${afterReplay.enabled ? "켬" : "끔"}`);
+    }
+
+    const beforeSelectors = beforeReplay.maskSelectors?.length;
+    const afterSelectors = afterReplay.maskSelectors?.length;
+    if (
+      beforeSelectors !== undefined &&
+      afterSelectors !== undefined &&
+      beforeSelectors !== afterSelectors
+    ) {
+      details.push(`마스킹 셀렉터 ${beforeSelectors}개에서 ${afterSelectors}개로 변경`);
     }
   }
 
