@@ -36,6 +36,24 @@ export interface LoginOptionsResponse {
   localLogin: boolean;
 }
 
+export interface RecordedSessionResponse {
+  sessionId: string;
+  startedAt: string;
+  lastReceivedAt: string;
+  chunkCount: number;
+  eventCount: number;
+  bytes: number;
+}
+
+export interface RecordingChunkSummary {
+  seq: number;
+  eventCount: number;
+  /** gzip 상태의 크기다. 푼 크기가 아니다. */
+  bytes: number;
+  startedAt: string;
+  receivedAt: string;
+}
+
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
@@ -197,6 +215,35 @@ export async function getIssueDetail(projectId: string, issueId: string): Promis
 
 export async function getSessionTimeline(projectId: string, sessionId: string): Promise<SessionTimelineEvent[]> {
   return getJson<SessionTimelineEvent[]>(`/admin/api/sessions/${sessionId}/timeline?projectId=${projectId}`);
+}
+
+export async function getRecordedSessions(projectId: string): Promise<RecordedSessionResponse[]> {
+  const body = await getJson<{ sessions: RecordedSessionResponse[] }>(
+    `/admin/api/projects/${projectId}/recorded-sessions`,
+  );
+  return body.sessions;
+}
+
+export async function getRecordingManifest(
+  projectId: string,
+  sessionId: string,
+): Promise<RecordingChunkSummary[]> {
+  const body = await getJson<{ chunks: RecordingChunkSummary[] }>(
+    `/admin/api/sessions/${sessionId}/recording?projectId=${projectId}`,
+  );
+  return body.chunks;
+}
+
+// 응답은 Content-Encoding: gzip 이다. 브라우저가 투명하게 풀어 주므로
+// 여기서 압축을 다룰 일이 없다 - 우리가 풀면 두 번 푸는 것이다.
+export async function getRecordingChunk(
+  projectId: string,
+  sessionId: string,
+  seq: number,
+): Promise<unknown> {
+  return getJson<unknown>(
+    `/admin/api/sessions/${sessionId}/recording/chunks/${seq}?projectId=${projectId}`,
+  );
 }
 
 async function getJson<T>(path: string): Promise<T> {
