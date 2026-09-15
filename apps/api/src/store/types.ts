@@ -233,6 +233,14 @@ export interface TraceStore {
   saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void>;
   /** seq 오름차순. 재생은 이 순서로 이어 붙인다. */
   listSessionRecordingChunks(projectId: string, sessionId: string): Promise<SessionRecordingChunk[]>;
+  /**
+   * seq 하나만 가져온다. 청크 다운로드 라우트가 쓴다 - `listSessionRecordingChunks`
+   * 로 세션 전체를 읽고 `.find()` 로 고르면 재생 한 번에 세션의 모든 BLOB 을
+   * SELECT·복사하게 된다(SDK 가 10초마다 flush 하므로 30분 세션이면 청크 약 180개).
+   * `session_recordings_project_session (project_id, session_id, seq)` 인덱스가
+   * 이 조회를 덮는다.
+   */
+  getSessionRecordingChunk(projectId: string, sessionId: string, seq: number): Promise<SessionRecordingChunk | undefined>;
   /** `lastReceivedAt` 내림차순. 최근 기록이 먼저다. */
   listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]>;
   /** `receivedAt` 이 cutoff 이전인 청크를 지운다. startedAt 은 보지 않는다. */

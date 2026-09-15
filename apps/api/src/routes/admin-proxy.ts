@@ -514,7 +514,7 @@ export async function registerAdminProxyRoutes(
       chunks: chunks.map((chunk) => ({
         seq: chunk.seq,
         eventCount: chunk.eventCount,
-        // gzip 상태의 크기다. 화면은 이것으로 진행률을 보여준다.
+        // gzip 상태의 크기다. 푼 크기가 아니다.
         bytes: chunk.bytes.byteLength,
         startedAt: chunk.startedAt,
         receivedAt: chunk.receivedAt,
@@ -535,8 +535,7 @@ export async function registerAdminProxyRoutes(
       return reply.code(access.statusCode).send({ error: access.error });
     }
 
-    const chunks = await options.store.listSessionRecordingChunks(projectId, params.data.sessionId);
-    const chunk = chunks.find((candidate) => candidate.seq === params.data.seq);
+    const chunk = await options.store.getSessionRecordingChunk(projectId, params.data.sessionId, params.data.seq);
     if (!chunk) return reply.code(404).send({ error: "recording_chunk_not_found" });
 
     // **풀지 않는다.** 저장된 gzip 을 그대로 흘려보내고 브라우저가 푼다.

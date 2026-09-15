@@ -369,6 +369,16 @@ export class MemoryStore implements TraceStore {
       .sort((a, b) => a.seq - b.seq);
   }
 
+  async getSessionRecordingChunk(
+    projectId: string,
+    sessionId: string,
+    seq: number,
+  ): Promise<SessionRecordingChunk | undefined> {
+    const chunk = this.sessionRecordings.get(`${sessionId}:${seq}`);
+    if (!chunk || chunk.projectId !== projectId) return undefined;
+    return { ...chunk, bytes: new Uint8Array(chunk.bytes) };
+  }
+
   async listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]> {
     const bySession = new Map<string, RecordedSessionSummary>();
 

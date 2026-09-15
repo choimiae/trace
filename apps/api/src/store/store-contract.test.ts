@@ -1934,6 +1934,62 @@ function describeTraceStoreContract(
       expect(await store.listSessionRecordingChunks("proj_1", "sess_1")).toHaveLength(1);
     });
 
+    // 청크 라우트는 seq 하나만 있으면 된다. listSessionRecordingChunks 로 세션
+    // 전체를 읽고 .find() 로 골라내면 재생 한 번에 세션의 모든 BLOB 을 SELECT·
+    // 복사한다 - SDK 가 10초마다 flush 하므로 30분 세션이면 청크 약 180개다.
+    it("seq 하나만 골라 돌려준다", async () => {
+      const store = open();
+      const chunk = (seq: number) => ({
+        sessionId: "sess_1",
+        projectId: "proj_1",
+        seq,
+        startedAt: "2026-09-14T00:00:00.000Z",
+        receivedAt: "2026-09-14T00:05:00.000Z",
+        eventCount: 2,
+        bytes: new Uint8Array([seq, 9, 9]),
+      });
+      await store.saveSessionRecordingChunk(chunk(0));
+      await store.saveSessionRecordingChunk(chunk(1));
+
+      const found = await store.getSessionRecordingChunk("proj_1", "sess_1", 1);
+      expect(found?.seq).toBe(1);
+      expect(Array.from(found!.bytes)).toEqual([1, 9, 9]);
+      expect(found!.eventCount).toBe(2);
+    });
+
+    it("없는 seq 는 undefined 를 돌려준다", async () => {
+      const store = open();
+      await store.saveSessionRecordingChunk({
+        sessionId: "sess_1",
+        projectId: "proj_1",
+        seq: 0,
+        startedAt: "2026-09-14T00:00:00.000Z",
+        receivedAt: "2026-09-14T00:05:00.000Z",
+        eventCount: 1,
+        bytes: new Uint8Array([1]),
+      });
+
+      expect(await store.getSessionRecordingChunk("proj_1", "sess_1", 9)).toBeUndefined();
+    });
+
+    it("다른 프로젝트로는 청크를 넘기지 않는다", async () => {
+      const store = open();
+      const base = {
+        seq: 0,
+        startedAt: "2026-09-15T00:00:00.000Z",
+        receivedAt: "2026-09-15T00:00:00.000Z",
+        eventCount: 1,
+        bytes: new Uint8Array([1]),
+      };
+      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_a", projectId: "proj_a" });
+      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_b", projectId: "proj_b" });
+
+      // sess_b 는 proj_b 소속이다 - proj_a 로 물으면 project_id 가 걸러야 한다.
+      expect(await store.getSessionRecordingChunk("proj_a", "sess_b", 0)).toBeUndefined();
+      expect(await store.getSessionRecordingChunk("proj_b", "sess_a", 0)).toBeUndefined();
+      expect((await store.getSessionRecordingChunk("proj_a", "sess_a", 0))?.sessionId).toBe("sess_a");
+    });
+
     // 보존 스윕은 **서버가 받은 시각**으로 판정한다. startedAt 은 브라우저 시계가
     // 적어 보낸 값이고 봉투 검증은 "날짜 문자열이다" 까지만 본다. 그 값으로
     // 판정하면 두 가지가 실제로 일어난다 - 시계가 미래로 어긋난 기기의 기록은

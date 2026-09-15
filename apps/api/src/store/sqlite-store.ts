@@ -683,6 +683,31 @@ export class SqliteStore implements TraceStore {
     }));
   }
 
+  async getSessionRecordingChunk(
+    projectId: string,
+    sessionId: string,
+    seq: number,
+  ): Promise<SessionRecordingChunk | undefined> {
+    const row = this.db
+      .prepare(
+        `SELECT session_id, project_id, seq, started_at, received_at, event_count, bytes
+           FROM session_recordings
+          WHERE project_id = ? AND session_id = ? AND seq = ?`,
+      )
+      .get(projectId, sessionId, seq) as Row | undefined;
+    if (!row) return undefined;
+
+    return {
+      sessionId: row.session_id as string,
+      projectId: row.project_id as string,
+      seq: row.seq as number,
+      startedAt: row.started_at as string,
+      receivedAt: row.received_at as string,
+      eventCount: row.event_count as number,
+      bytes: new Uint8Array(row.bytes as Buffer),
+    };
+  }
+
   async listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]> {
     const rows = this.db
       .prepare(
