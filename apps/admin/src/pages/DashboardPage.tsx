@@ -1,8 +1,10 @@
 import type { DashboardSummary, Issue } from "@trace/shared";
 import { lazy, Suspense } from "react";
+import type { RecordedSessionResponse } from "../api.js";
 import { IssueDashboardOverview } from "../components/IssueDashboardOverview.js";
 import { IssueTable } from "../components/IssueTable.js";
 import { MetricStrip } from "../components/MetricStrip.js";
+import { RecordedSessionTable } from "../components/RecordedSessionTable.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
 import { Chip } from "../ui/Chip.js";
@@ -37,6 +39,8 @@ export function DashboardPage({
   onCreateProject,
   onShowInstall,
   onShowSettings,
+  recordedSessions = [],
+  onSelectSession = () => {},
 }: {
   summary: DashboardSummary;
   issues: Issue[];
@@ -50,6 +54,8 @@ export function DashboardPage({
   onCreateProject: () => void;
   onShowInstall: () => void;
   onShowSettings: () => void;
+  recordedSessions?: RecordedSessionResponse[];
+  onSelectSession?: (sessionId: string) => void;
 }) {
   return (
     <main className="app-shell">
@@ -102,6 +108,12 @@ export function DashboardPage({
         </Suspense>
       </section>
       <IssueTable issues={issues} onSelectIssue={onSelectIssue} />
+      <Card as="section" className="recorded-sessions-panel">
+        <div className="panel-heading">
+          <h2>기록된 세션</h2>
+        </div>
+        <RecordedSessionTable sessions={recordedSessions} onSelectSession={onSelectSession} />
+      </Card>
     </main>
   );
 }

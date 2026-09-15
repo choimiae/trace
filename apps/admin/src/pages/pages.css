@@ -772,6 +772,10 @@
   margin-top: var(--space-5);
 }
 
+.recorded-sessions-panel {
+  margin-top: var(--space-5);
+}
+
 .members-list {
   display: grid;
   gap: var(--space-3);
