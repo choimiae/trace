@@ -472,6 +472,33 @@ export async function registerAdminProxyRoutes(
 
     return options.store.getSessionTimeline(projectId, sessionId);
   });
+
+  app.get("/admin/api/sessions/:sessionId/recording", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const { sessionId } = sessionParamsSchema.parse(request.params);
+    const { projectId } = projectQuerySchema.parse(request.query);
+    const access = await getProjectAccess(options.store, projectId, authenticated, "session_recording");
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+
+    const chunks = await options.store.listSessionRecordingChunks(projectId, sessionId);
+
+    // 기록이 없어도 404 가 아니다. 보존 기간이 지나 지워진 것과 트리거가 안
+    // 걸린 것을 화면이 같은 빈 상태로 다룬다.
+    return reply.header("cache-control", "no-store").send({
+      chunks: chunks.map((chunk) => ({
+        seq: chunk.seq,
+        eventCount: chunk.eventCount,
+        // gzip 상태의 크기다. 화면은 이것으로 진행률을 보여준다.
+        bytes: chunk.bytes.byteLength,
+        startedAt: chunk.startedAt,
+        receivedAt: chunk.receivedAt,
+      })),
+    });
+  });
 }
 
 async function authenticate(
@@ -622,7 +649,8 @@ type ProjectResourceType =
   | "project_summary"
   | "project_issues"
   | "issue_detail"
-  | "session_timeline";
+  | "session_timeline"
+  | "session_recording";
 
 async function auditProjectAccessDenied(
   store: TraceStore,
