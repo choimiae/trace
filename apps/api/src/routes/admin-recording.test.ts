@@ -276,3 +276,87 @@ describe("GET /admin/api/sessions/:sessionId/recording/chunks/:seq", () => {
     expect(response.statusCode).toBe(200);
   });
 });
+
+describe("GET /admin/api/projects/:projectId/recorded-sessions", () => {
+  it("기록된 세션을 최근 순으로 돌려준다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+    await store.saveSessionRecordingChunk({
+      sessionId: "sess_abc",
+      projectId: project.projectId,
+      seq: 0,
+      startedAt: "2026-09-15T00:00:00.000Z",
+      receivedAt: "2026-09-15T00:00:10.000Z",
+      eventCount: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/recorded-sessions`,
+      headers,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      sessions: [
+        {
+          sessionId: "sess_abc",
+          startedAt: "2026-09-15T00:00:00.000Z",
+          lastReceivedAt: "2026-09-15T00:00:10.000Z",
+          chunkCount: 1,
+          eventCount: 3,
+          bytes: 3,
+        },
+      ],
+    });
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("기록이 없으면 빈 배열", async () => {
+    const { app, project, headers } = await createAuthenticatedOwner();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/recorded-sessions`,
+      headers,
+    });
+
+    expect(response.json()).toEqual({ sessions: [] });
+  });
+
+  it("인증이 없으면 401", async () => {
+    const { app, project } = await createAuthenticatedOwner();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/recorded-sessions`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("조회자도 목록을 볼 수 있다", async () => {
+    const { app, store, project } = await createAuthenticatedOwner();
+    const viewer = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_viewer_list",
+      email: "viewer-list@example.com",
+      emailVerified: true,
+      now: "2026-09-15T00:00:00.000Z",
+    });
+    await store.addProjectMembership({
+      projectId: project.projectId,
+      adminUserId: viewer.adminUserId,
+      role: "viewer",
+      createdAt: "2026-09-15T00:00:00.000Z",
+    });
+    const session = await createAdminSessionForUser({ store, config: authConfig, user: viewer });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/recorded-sessions`,
+      headers: { cookie: session.cookie.split(";")[0] as string },
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+});

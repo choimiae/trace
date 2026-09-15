@@ -25,6 +25,10 @@ const recordingChunkParamsSchema = z.object({
   seq: z.coerce.number().int().min(0),
 });
 
+// 질의 파라미터를 받지 않는다. 기록은 트리거가 걸린 세션만 올라오므로
+// 페이지네이션이 필요할 만큼 쌓이는 것을 본 뒤에 만든다.
+const RECORDED_SESSION_LIMIT = 50;
+
 export async function registerAdminProxyRoutes(
   app: FastifyInstance,
   options: { store: TraceStore; config: AdminAuthConfig },
@@ -439,6 +443,20 @@ export async function registerAdminProxyRoutes(
 
     const issues = await options.store.listIssues(projectId);
     return attachRepresentativeEvents(options.store, projectId, issues);
+  });
+
+  app.get("/admin/api/projects/:projectId/recorded-sessions", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const access = await getProjectAccess(options.store, projectId, authenticated, "session_recording");
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+
+    const sessions = await options.store.listRecordedSessions(projectId, RECORDED_SESSION_LIMIT);
+    return reply.header("cache-control", "no-store").send({ sessions });
   });
 
   app.get("/admin/api/issues/:issueId", async (request, reply) => {
