@@ -2114,6 +2114,200 @@ function describeTraceStoreContract(
       expect((await store.listSessions(a.projectId, 50)).map((s) => s.sessionId)).toEqual(["sess_a"]);
     });
 
+    it("페이지별 방문·체류·이탈·스크롤 도달을 센다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const event = (
+        sessionId: string,
+        eventId: string,
+        type: "page_view" | "page_leave" | "scroll",
+        urlPath: string,
+        timestamp: string,
+        metadata: Record<string, unknown> = {},
+      ) => ({ eventId, sessionId, pageId: "page_1", timestamp, type, urlPath, metadata });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-15T00:10:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/",
+        events: [
+          event("sess_1", "evt_1", "page_view", "/home", "2026-09-15T00:00:00.000Z"),
+          event("sess_1", "evt_2", "scroll", "/home", "2026-09-15T00:00:05.000Z", {
+            metric: "scroll_depth",
+            score: 50,
+          }),
+          event("sess_1", "evt_3", "page_leave", "/home", "2026-09-15T00:00:10.000Z"),
+          event("sess_1", "evt_4", "page_view", "/report", "2026-09-15T00:00:10.000Z"),
+          event("sess_1", "evt_5", "page_leave", "/report", "2026-09-15T00:00:40.000Z"),
+        ],
+      });
+
+      const stats = await store.listPageStats(project.projectId, 50);
+      const home = stats.find((row) => row.urlPath === "/home")!;
+      const report = stats.find((row) => row.urlPath === "/report")!;
+
+      expect(home.views).toBe(1);
+      expect(home.averageDwellMs).toBe(10_000);
+      // /home 은 세션의 마지막 page_view 가 아니다.
+      expect(home.exitRate).toBe(0);
+      expect(home.scrollReach).toEqual([
+        { depth: 25, ratio: 0 },
+        { depth: 50, ratio: 1 },
+        { depth: 75, ratio: 0 },
+        { depth: 100, ratio: 0 },
+      ]);
+
+      expect(report.views).toBe(1);
+      expect(report.averageDwellMs).toBe(30_000);
+      // /report 가 세션의 마지막 page_view 다.
+      expect(report.exitRate).toBe(1);
+    });
+
+    // 브라우저가 강제 종료되면 page_leave 가 못 나간다. 0 으로 세면 평균이
+    // 끌려 내려간다.
+    it("짝 없는 방문은 평균 체류에서 뺀다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-15T00:10:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-15T00:00:00.000Z",
+            type: "page_view" as const,
+            urlPath: "/home",
+            metadata: {},
+          },
+          {
+            eventId: "evt_2",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-15T00:00:10.000Z",
+            type: "page_leave" as const,
+            urlPath: "/home",
+            metadata: {},
+          },
+          {
+            eventId: "evt_3",
+            sessionId: "sess_2",
+            pageId: "page_1",
+            timestamp: "2026-09-15T00:01:00.000Z",
+            type: "page_view" as const,
+            urlPath: "/home",
+            metadata: {},
+          },
+        ],
+      });
+
+      const stats = await store.listPageStats(project.projectId, 50);
+      const home = stats.find((row) => row.urlPath === "/home")!;
+
+      expect(home.views).toBe(2);
+      // 짝이 있는 방문 하나만 평균에 들어간다.
+      expect(home.averageDwellMs).toBe(10_000);
+    });
+
+    it("page_leave 가 하나도 없으면 평균 체류가 undefined 다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId: "sess_1",
+        sentAt: "2026-09-15T00:10:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/",
+        events: [
+          {
+            eventId: "evt_1",
+            sessionId: "sess_1",
+            pageId: "page_1",
+            timestamp: "2026-09-15T00:00:00.000Z",
+            type: "page_view" as const,
+            urlPath: "/home",
+            metadata: {},
+          },
+        ],
+      });
+
+      const stats = await store.listPageStats(project.projectId, 50);
+
+      expect(stats[0]!.averageDwellMs).toBeUndefined();
+    });
+
+    it("프로젝트에 이벤트가 없으면 빈 배열이다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+
+      expect(await store.listPageStats(project.projectId, 50)).toEqual([]);
+    });
+
+    it("limit 을 넘으면 방문이 많은 페이지부터 자르지 않고 남긴다", async () => {
+      const store = open();
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const view = (sessionId: string, eventId: string, urlPath: string) => ({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
+        sessionId,
+        sentAt: "2026-09-15T00:10:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/",
+        events: [
+          {
+            eventId,
+            sessionId,
+            pageId: "page_1",
+            timestamp: "2026-09-15T00:00:00.000Z",
+            type: "page_view" as const,
+            urlPath,
+            metadata: {},
+          },
+        ],
+      });
+
+      // /a: 3 views, /b: 2 views, /c: 1 view, /d: 1 view — 서로 다른 세션.
+      await store.saveBatch(view("sess_a1", "evt_a1", "/a"));
+      await store.saveBatch(view("sess_a2", "evt_a2", "/a"));
+      await store.saveBatch(view("sess_a3", "evt_a3", "/a"));
+      await store.saveBatch(view("sess_b1", "evt_b1", "/b"));
+      await store.saveBatch(view("sess_b2", "evt_b2", "/b"));
+      await store.saveBatch(view("sess_c1", "evt_c1", "/c"));
+      await store.saveBatch(view("sess_d1", "evt_d1", "/d"));
+
+      const stats = await store.listPageStats(project.projectId, 2);
+
+      expect(stats).toHaveLength(2);
+      expect(stats.map((row) => row.urlPath)).toEqual(["/a", "/b"]);
+      expect(stats.map((row) => row.views)).toEqual([3, 2]);
+    });
+
   });
 }
 

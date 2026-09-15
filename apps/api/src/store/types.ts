@@ -165,6 +165,21 @@ export interface SessionSummary {
   hasRecording: boolean;
 }
 
+/** 페이지 기준 통계. 체류는 저장하지 않고 조회 시점에 계산한다. */
+export interface PageStats {
+  urlPath: string;
+  views: number;
+  /**
+   * `page_view` 와 그 세션의 다음 `page_leave` 차이의 평균(ms).
+   * 짝이 있는 방문이 하나도 없으면 `undefined` 다 — 0 과 구분해야 한다.
+   */
+  averageDwellMs: number | undefined;
+  /** 그 페이지가 세션의 마지막 `page_view` 였던 비율. 0~1. */
+  exitRate: number;
+  /** 25·50·75·100 각각에 도달한 방문의 비율. 0~1. */
+  scrollReach: Array<{ depth: number; ratio: number }>;
+}
+
 export interface TraceStore {
   readonly isDurable?: boolean;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
@@ -242,6 +257,8 @@ export interface TraceStore {
   getSessionRecordingChunk(projectId: string, sessionId: string, seq: number): Promise<SessionRecordingChunk | undefined>;
   /** `startedAt` 내림차순. 최근 세션이 먼저다. 기록 없는 세션도 포함한다. */
   listSessions(projectId: string, limit: number): Promise<SessionSummary[]>;
+  /** `views` 내림차순. 많이 본 페이지가 먼저다. */
+  listPageStats(projectId: string, limit: number): Promise<PageStats[]>;
   /** `receivedAt` 이 cutoff 이전인 청크를 지운다. startedAt 은 보지 않는다. */
   deleteSessionRecordingsBefore(cutoff: string): Promise<number>;
 }

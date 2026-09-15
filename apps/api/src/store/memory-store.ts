@@ -3,6 +3,7 @@ import { DEFAULT_REPLAY_CONFIG } from "@trace/shared";
 import { nanoid } from "nanoid";
 import { elementKey } from "../detection/element-identity.js";
 import { buildDashboardSummary } from "./dashboard-summary.js";
+import { computePageStats } from "./page-stats.js";
 import {
   normalizeAllowedDomains,
   pickRepresentativeScreenContextEvent,
@@ -17,6 +18,7 @@ import type {
   CreateAdminSessionInput,
   CreateAuditLogInput,
   CreateProjectInput,
+  PageStats,
   ProjectMembershipRecord,
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
@@ -306,6 +308,11 @@ export class MemoryStore implements TraceStore {
 
   async listEvents(projectId: string): Promise<TraceEvent[]> {
     return [...(this.events.get(projectId) ?? [])].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+
+  async listPageStats(projectId: string, limit: number): Promise<PageStats[]> {
+    const events = await this.listEvents(projectId);
+    return computePageStats(events, limit);
   }
 
   async upsertIssues(projectId: string, issues: Issue[]): Promise<void> {

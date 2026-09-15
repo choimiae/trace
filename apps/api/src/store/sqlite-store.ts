@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
 import { elementKey } from "../detection/element-identity.js";
 import { buildDashboardSummary } from "./dashboard-summary.js";
+import { computePageStats } from "./page-stats.js";
 import {
   normalizeAllowedDomains,
   pickRepresentativeScreenContextEvent,
@@ -19,6 +20,7 @@ import type {
   CreateAdminSessionInput,
   CreateAuditLogInput,
   CreateProjectInput,
+  PageStats,
   ProjectMembershipRecord,
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
@@ -534,6 +536,11 @@ export class SqliteStore implements TraceStore {
       .all(projectId) as Row[];
 
     return rows.map((row) => this.toEvent(row));
+  }
+
+  async listPageStats(projectId: string, limit: number): Promise<PageStats[]> {
+    const events = await this.listEvents(projectId);
+    return computePageStats(events, limit);
   }
 
   async upsertIssues(projectId: string, issues: Issue[]): Promise<void> {
