@@ -246,7 +246,7 @@ describe("DashboardPage", () => {
     expect(hero.compareDocumentPosition(metrics) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("기록된 세션 카드를 그린다", () => {
+  it("세션 카드를 그린다", () => {
     render(
       <DashboardPage
         summary={summary}
@@ -259,21 +259,20 @@ describe("DashboardPage", () => {
         onLogout={vi.fn()}
         onShowInstall={vi.fn()}
         onShowSettings={vi.fn()}
-        recordedSessions={[
+        sessions={[
           {
             sessionId: "sess_abc",
             startedAt: "2026-09-15T00:00:00.000Z",
-            lastReceivedAt: "2026-09-15T00:05:00.000Z",
-            chunkCount: 1,
-            eventCount: 12,
-            bytes: 1024,
+            lastSeenAt: "2026-09-15T00:05:00.000Z",
+              eventCount: 12,
+            hasRecording: false,
           },
         ]}
         onSelectSession={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "기록된 세션" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "세션" })).toBeInTheDocument();
     expect(screen.getByText("sess_abc")).toBeInTheDocument();
   });
 });

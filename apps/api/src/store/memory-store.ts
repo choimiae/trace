@@ -20,7 +20,7 @@ import type {
   ProjectMembershipRecord,
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
-  RecordedSessionSummary,
+  SessionSummary,
   ScreenContextEventQuery,
   SessionRecordingChunk,
   TraceStore,
@@ -379,35 +379,34 @@ export class MemoryStore implements TraceStore {
     return { ...chunk, bytes: new Uint8Array(chunk.bytes) };
   }
 
-  async listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]> {
-    const bySession = new Map<string, RecordedSessionSummary>();
+  async listSessions(projectId: string, limit: number): Promise<SessionSummary[]> {
+    const recorded = new Set(
+      Array.from(this.sessionRecordings.values())
+        .filter((chunk) => chunk.projectId === projectId)
+        .map((chunk) => chunk.sessionId),
+    );
+    const bySession = new Map<string, SessionSummary>();
 
-    for (const chunk of this.sessionRecordings.values()) {
-      if (chunk.projectId !== projectId) continue;
-
-      const current = bySession.get(chunk.sessionId);
+    for (const event of this.events.get(projectId) ?? []) {
+      const current = bySession.get(event.sessionId);
       if (!current) {
-        bySession.set(chunk.sessionId, {
-          sessionId: chunk.sessionId,
-          startedAt: chunk.startedAt,
-          lastReceivedAt: chunk.receivedAt,
-          chunkCount: 1,
-          eventCount: chunk.eventCount,
-          bytes: chunk.bytes.byteLength,
+        bySession.set(event.sessionId, {
+          sessionId: event.sessionId,
+          startedAt: event.timestamp,
+          lastSeenAt: event.timestamp,
+          eventCount: 1,
+          hasRecording: recorded.has(event.sessionId),
         });
         continue;
       }
 
-      current.startedAt = chunk.startedAt < current.startedAt ? chunk.startedAt : current.startedAt;
-      current.lastReceivedAt =
-        chunk.receivedAt > current.lastReceivedAt ? chunk.receivedAt : current.lastReceivedAt;
-      current.chunkCount += 1;
-      current.eventCount += chunk.eventCount;
-      current.bytes += chunk.bytes.byteLength;
+      if (event.timestamp < current.startedAt) current.startedAt = event.timestamp;
+      if (event.timestamp > current.lastSeenAt) current.lastSeenAt = event.timestamp;
+      current.eventCount += 1;
     }
 
     return Array.from(bySession.values())
-      .sort((a, b) => (a.lastReceivedAt < b.lastReceivedAt ? 1 : -1))
+      .sort((a, b) => (a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1))
       .slice(0, limit);
   }
 

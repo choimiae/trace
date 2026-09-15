@@ -153,6 +153,54 @@ export interface SessionRecordingChunk {
   bytes: Uint8Array;
 }
 
+/** 한 세션을 요약한 값. 세션 목록 화면이 쓴다. 기록이 없는 세션도 들어간다. */
+export interface SessionSummary {
+  sessionId: string;
+  /** 가장 이른 이벤트의 timestamp. 브라우저 시계가 적은 값이라 표시용이다. */
+  startedAt: string;
+  /** 가장 늦은 이벤트의 timestamp. */
+  lastSeenAt: string;
+  eventCount: number;
+  /** 이 세션에 리플레이 기록이 올라와 있는지. 재생 버튼을 띄울지 가른다. */
+  hasRecording: boolean;
+}
+
+export interface SessionRecordingChunk {
+  sessionId: string;
+  projectId: string;
+  seq: number;
+  /**
+   * 기록이 시작된 시각. **브라우저 시계가 적어 보낸 값이다** — 봉투 검증은
+   * "날짜 문자열이다" 까지만 본다. 재생 타임라인에만 쓰고 보존 판정에는 쓰지
+   * 않는다.
+   */
+  startedAt: string;
+  /**
+   * 서버가 청크를 받은 시각. 보존 스윕이 보는 유일한 시각이다.
+   *
+   * 라우트가 자기 시계로 채운다 — 클라이언트가 보낸 값을 여기에 넣으면 안 된다.
+   * startedAt 으로 판정하던 시절에는 시계가 미래로 어긋난 기기의 기록이 7일
+   * 창을 영원히 살아남고, 과거로 어긋난 기기의 기록은 저장되자마자 같은 요청
+   * 안의 스윕에 지워져 202 를 받고도 아무것도 남지 않았다.
+   */
+  receivedAt: string;
+  eventCount: number;
+  /** gzip 된 봉투 그대로. 서버는 검증을 위해 풀어 볼 뿐 풀어서 저장하지 않는다. */
+  bytes: Uint8Array;
+}
+
+/** 한 세션을 요약한 값. 세션 목록 화면이 쓴다. 기록이 없는 세션도 들어간다. */
+export interface SessionSummary {
+  sessionId: string;
+  /** 가장 이른 이벤트의 timestamp. 브라우저 시계가 적은 값이라 표시용이다. */
+  startedAt: string;
+  /** 가장 늦은 이벤트의 timestamp. */
+  lastSeenAt: string;
+  eventCount: number;
+  /** 이 세션에 리플레이 기록이 올라와 있는지. 재생 버튼을 띄울지 가른다. */
+  hasRecording: boolean;
+}
+
 /** 한 세션의 기록을 요약한 값. 목록 화면이 쓴다. */
 export interface RecordedSessionSummary {
   sessionId: string;
@@ -241,8 +289,8 @@ export interface TraceStore {
    * 이 조회를 덮는다.
    */
   getSessionRecordingChunk(projectId: string, sessionId: string, seq: number): Promise<SessionRecordingChunk | undefined>;
-  /** `lastReceivedAt` 내림차순. 최근 기록이 먼저다. */
-  listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]>;
+  /** `startedAt` 내림차순. 최근 세션이 먼저다. 기록 없는 세션도 포함한다. */
+  listSessions(projectId: string, limit: number): Promise<SessionSummary[]>;
   /** `receivedAt` 이 cutoff 이전인 청크를 지운다. startedAt 은 보지 않는다. */
   deleteSessionRecordingsBefore(cutoff: string): Promise<number>;
 }

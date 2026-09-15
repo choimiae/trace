@@ -782,8 +782,13 @@
   margin-top: var(--space-5);
 }
 
-.recorded-sessions-panel {
+.sessions-panel {
   margin-top: var(--space-5);
+}
+
+.session-actions {
+  display: inline-flex;
+  gap: var(--space-4);
 }
 
 .members-list {

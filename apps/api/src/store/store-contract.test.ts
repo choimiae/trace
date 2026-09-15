@@ -2029,66 +2029,91 @@ function describeTraceStoreContract(
       expect(kept[0]!.receivedAt).toBe("2026-09-13T00:00:00.000Z");
     });
 
-    it("기록된 세션을 최근 순으로 집계한다", async () => {
+    it("모든 세션을 최근 순으로 집계하고 기록 유무를 알려준다", async () => {
       const store = open();
-      const chunk = (sessionId: string, seq: number, receivedAt: string, eventCount: number) => ({
+      const project = await store.createProject({
+        name: "Demo",
+        allowedDomains: ["https://demo.example.com"],
+      });
+      const event = (eventId: string, timestamp: string) => ({
+        eventId,
+        sessionId: "",
+        pageId: "page_1",
+        timestamp,
+        type: "click" as const,
+        urlPath: "/settings",
+        metadata: {},
+      });
+      const batch = (sessionId: string, timestamps: string[]) => ({
+        projectId: project.projectId,
+        anonymousUserId: "anon_1",
         sessionId,
-        projectId: "proj_a",
-        seq,
-        startedAt: "2026-09-15T00:00:00.000Z",
-        receivedAt,
-        eventCount,
+        sentAt: "2026-09-15T02:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: timestamps.map((t, i) => ({ ...event(`evt_${sessionId}_${i}`, t), sessionId })),
+      });
+
+      await store.saveBatch(batch("sess_old", ["2026-09-15T00:00:00.000Z", "2026-09-15T00:01:00.000Z"]));
+      await store.saveBatch(batch("sess_new", ["2026-09-15T01:00:00.000Z"]));
+      // sess_new 에만 리플레이 기록이 있다.
+      await store.saveSessionRecordingChunk({
+        sessionId: "sess_new",
+        projectId: project.projectId,
+        seq: 0,
+        startedAt: "2026-09-15T01:00:00.000Z",
+        receivedAt: "2026-09-15T01:00:10.000Z",
+        eventCount: 3,
         bytes: new Uint8Array([1, 2, 3]),
       });
 
-      await store.saveSessionRecordingChunk(chunk("sess_old", 0, "2026-09-15T00:00:00.000Z", 2));
-      await store.saveSessionRecordingChunk(chunk("sess_new", 0, "2026-09-15T01:00:00.000Z", 3));
-      await store.saveSessionRecordingChunk(chunk("sess_new", 1, "2026-09-15T01:05:00.000Z", 4));
-
-      const sessions = await store.listRecordedSessions("proj_a", 50);
+      const sessions = await store.listSessions(project.projectId, 50);
 
       expect(sessions.map((s) => s.sessionId)).toEqual(["sess_new", "sess_old"]);
       expect(sessions[0]).toEqual({
         sessionId: "sess_new",
+        startedAt: "2026-09-15T01:00:00.000Z",
+        lastSeenAt: "2026-09-15T01:00:00.000Z",
+        eventCount: 1,
+        hasRecording: true,
+      });
+      expect(sessions[1]).toEqual({
+        sessionId: "sess_old",
         startedAt: "2026-09-15T00:00:00.000Z",
-        lastReceivedAt: "2026-09-15T01:05:00.000Z",
-        chunkCount: 2,
-        eventCount: 7,
-        bytes: 6,
+        lastSeenAt: "2026-09-15T00:01:00.000Z",
+        eventCount: 2,
+        hasRecording: false,
       });
     });
 
-    it("다른 프로젝트의 기록은 섞이지 않는다", async () => {
+    it("다른 프로젝트의 세션은 섞이지 않는다", async () => {
       const store = open();
-      const base = {
-        seq: 0,
-        startedAt: "2026-09-15T00:00:00.000Z",
-        receivedAt: "2026-09-15T00:00:00.000Z",
-        eventCount: 1,
-        bytes: new Uint8Array([1]),
-      };
-      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_a", projectId: "proj_a" });
-      await store.saveSessionRecordingChunk({ ...base, sessionId: "sess_b", projectId: "proj_b" });
+      const a = await store.createProject({ name: "A", allowedDomains: ["https://a.example.com"] });
+      const b = await store.createProject({ name: "B", allowedDomains: ["https://b.example.com"] });
+      const batch = (projectId: string, sessionId: string) => ({
+        projectId,
+        anonymousUserId: "anon_1",
+        sessionId,
+        sentAt: "2026-09-15T02:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/settings",
+        events: [{
+          eventId: `evt_${sessionId}`,
+          sessionId,
+          pageId: "page_1",
+          timestamp: "2026-09-15T00:00:00.000Z",
+          type: "click" as const,
+          urlPath: "/settings",
+          metadata: {},
+        }],
+      });
 
-      expect((await store.listRecordedSessions("proj_a", 50)).map((s) => s.sessionId)).toEqual(["sess_a"]);
+      await store.saveBatch(batch(a.projectId, "sess_a"));
+      await store.saveBatch(batch(b.projectId, "sess_b"));
+
+      expect((await store.listSessions(a.projectId, 50)).map((s) => s.sessionId)).toEqual(["sess_a"]);
     });
 
-    it("limit 으로 개수를 자른다", async () => {
-      const store = open();
-      for (let i = 0; i < 3; i += 1) {
-        await store.saveSessionRecordingChunk({
-          sessionId: `sess_${i}`,
-          projectId: "proj_a",
-          seq: 0,
-          startedAt: "2026-09-15T00:00:00.000Z",
-          receivedAt: `2026-09-15T0${i}:00:00.000Z`,
-          eventCount: 1,
-          bytes: new Uint8Array([1]),
-        });
-      }
-
-      expect(await store.listRecordedSessions("proj_a", 2)).toHaveLength(2);
-    });
   });
 }
 

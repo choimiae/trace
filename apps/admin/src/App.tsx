@@ -10,7 +10,7 @@ import {
   getProjectAuditLogs,
   getProjectMembers,
   getProjectSettings,
-  getRecordedSessions,
+  getSessions,
   logout,
   removeProjectMember,
   searchProjectMemberCandidates,
@@ -23,7 +23,7 @@ import {
   type ProjectMemberResponse,
   type ProjectRole,
   type ProjectSettingsResponse,
-  type RecordedSessionResponse,
+  type SessionResponse,
 } from "./api.js";
 import { API_BASE_URL } from "./config.js";
 import {
@@ -36,6 +36,7 @@ import { CreateProjectPage } from "./pages/CreateProjectPage.js";
 import { DashboardPage, type ProjectOption } from "./pages/DashboardPage.js";
 import { InstallPage } from "./pages/InstallPage.js";
 import { IssueDetailPage } from "./pages/IssueDetailPage.js";
+import { SessionDetailDialog } from "./pages/SessionDetailDialog.js";
 import { ProjectAuditLogPage } from "./pages/ProjectAuditLogPage.js";
 import { ProjectSettingsPage } from "./pages/ProjectSettingsPage.js";
 import { StatusPage } from "./pages/StatusPage.js";
@@ -257,9 +258,9 @@ function describeCreateProjectError(error: unknown): string {
 
 // 기록 목록을 못 불러와도 대시보드는 연다. 재생은 대시보드의 곁가지이고,
 // 이 목록 하나 때문에 문제 인박스 전체가 막히면 안 된다.
-async function loadRecordedSessions(projectId: string): Promise<RecordedSessionResponse[]> {
+async function loadSessions(projectId: string): Promise<SessionResponse[]> {
   try {
-    return await getRecordedSessions(projectId);
+    return await getSessions(projectId);
   } catch {
     return [];
   }
@@ -271,7 +272,8 @@ export function App() {
   // 기록된 세션 목록은 AppState 밖에 둔다. 설정·활동 이력·재생을 거쳐 대시보드로
   // 돌아올 때 목록을 잃지 않으려면 그 화면들이 전부 이 값을 들고 다녀야 한다.
   // 화면 곁의 값이라는 점에서 selectedIssue 와 같은 자리다.
-  const [recordedSessions, setRecordedSessions] = useState<RecordedSessionResponse[]>([]);
+  const [sessions, setSessions] = useState<SessionResponse[]>([]);
+  const [selectedSession, setSelectedSession] = useState<SessionResponse>();
   // 미리보기 글자 보기도 화면 곁의 값이다. 대시보드와 문제 상세가 같은 값을 보므로
   // 어느 쪽에서 켜든 둘 다 켜진다. 브라우저에만 남는다 - 프로젝트 설정에 두면
   // 조회자가 켤 수 없고(설정 PATCH 는 viewer 403), 남의 화면까지 같이 바뀐다.
@@ -289,7 +291,8 @@ export function App() {
     async function load() {
       setState({ type: "loading" });
       setSelectedIssue(undefined);
-      setRecordedSessions([]);
+      setSelectedSession(undefined);
+      setSessions([]);
 
       try {
         const auth = await getAuthMe();
@@ -305,12 +308,12 @@ export function App() {
 
         writeSelectedProjectId(projectId);
 
-        const [data, sessions] = await Promise.all([
+        const [data, loaded] = await Promise.all([
           getDashboardData(projectId),
-          loadRecordedSessions(projectId),
+          loadSessions(projectId),
         ]);
         if (active) {
-          setRecordedSessions(sessions);
+          setSessions(loaded);
           setState({
             type: "ready",
             data,
@@ -1060,15 +1063,16 @@ export function App() {
 
     writeSelectedProjectId(nextProjectId);
     setSelectedIssue(undefined);
-    setRecordedSessions([]);
+    setSelectedSession(undefined);
+    setSessions([]);
     setState({ type: "loading" });
 
     try {
-      const [data, sessions] = await Promise.all([
+      const [data, loaded] = await Promise.all([
         getDashboardData(nextProjectId),
-        loadRecordedSessions(nextProjectId),
+        loadSessions(nextProjectId),
       ]);
-      setRecordedSessions(sessions);
+      setSessions(loaded);
       setState({
         type: "ready",
         data,
@@ -1113,8 +1117,11 @@ export function App() {
           })
         }
         onShowSettings={() => { void handleShowSettings(); }}
-        recordedSessions={recordedSessions}
+        sessions={sessions}
         onSelectSession={(sessionId) =>
+          setSelectedSession(sessions.find((session) => session.sessionId === sessionId))
+        }
+        onReplaySession={(sessionId) =>
           setState({
             type: "replay",
             dashboardData: state.data,
@@ -1128,6 +1135,29 @@ export function App() {
           })
         }
       />
+      {selectedSession ? (
+        <SessionDetailDialog
+          projectId={state.projectId}
+          sessionId={selectedSession.sessionId}
+          hasRecording={selectedSession.hasRecording}
+          onClose={() => setSelectedSession(undefined)}
+          onReplay={() => {
+            const sessionId = selectedSession.sessionId;
+            setSelectedSession(undefined);
+            setState({
+              type: "replay",
+              dashboardData: state.data,
+              projects: state.projects,
+              projectId: state.projectId,
+              sessionId,
+              userEmail: state.userEmail,
+              adminUserId: state.adminUserId,
+              csrfToken: state.csrfToken,
+              settingsSessionId: state.settingsSessionId,
+            });
+          }}
+        />
+      ) : null}
       {selectedIssue ? (
         <IssueDetailPage
           issue={selectedIssue}

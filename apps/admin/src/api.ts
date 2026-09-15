@@ -36,13 +36,13 @@ export interface LoginOptionsResponse {
   localLogin: boolean;
 }
 
-export interface RecordedSessionResponse {
+export interface SessionResponse {
   sessionId: string;
   startedAt: string;
-  lastReceivedAt: string;
-  chunkCount: number;
+  lastSeenAt: string;
   eventCount: number;
-  bytes: number;
+  /** 리플레이 기록이 있는 세션인지. 재생 버튼을 띄울지 가른다. */
+  hasRecording: boolean;
 }
 
 export interface RecordingChunkSummary {
@@ -217,9 +217,9 @@ export async function getSessionTimeline(projectId: string, sessionId: string): 
   return getJson<SessionTimelineEvent[]>(`/admin/api/sessions/${sessionId}/timeline?projectId=${projectId}`);
 }
 
-export async function getRecordedSessions(projectId: string): Promise<RecordedSessionResponse[]> {
-  const body = await getJson<{ sessions: RecordedSessionResponse[] }>(
-    `/admin/api/projects/${projectId}/recorded-sessions`,
+export async function getSessions(projectId: string): Promise<SessionResponse[]> {
+  const body = await getJson<{ sessions: SessionResponse[] }>(
+    `/admin/api/projects/${projectId}/sessions`,
   );
   return body.sessions;
 }

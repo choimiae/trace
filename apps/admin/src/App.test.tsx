@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 
@@ -27,7 +27,7 @@ const api = vi.hoisted(() => ({
   updateProjectSettings: vi.fn(),
   getIssueDetail: vi.fn(),
   getSessionTimeline: vi.fn(),
-  getRecordedSessions: vi.fn(),
+  getSessions: vi.fn(),
   getRecordingManifest: vi.fn(),
   getRecordingChunk: vi.fn(),
 }));
@@ -49,7 +49,7 @@ vi.mock("./api", () => ({
   updateProjectSettings: api.updateProjectSettings,
   getIssueDetail: api.getIssueDetail,
   getSessionTimeline: api.getSessionTimeline,
-  getRecordedSessions: api.getRecordedSessions,
+  getSessions: api.getSessions,
   getRecordingManifest: api.getRecordingManifest,
   getRecordingChunk: api.getRecordingChunk,
 }));
@@ -116,7 +116,7 @@ function auditLogEntry(auditLogId: string, email: string) {
 beforeEach(() => {
   vi.resetAllMocks();
   api.getLoginOptions.mockResolvedValue({ googleLogin: true, localLogin: false });
-  api.getRecordedSessions.mockResolvedValue([]);
+  api.getSessions.mockResolvedValue([]);
   api.getRecordingManifest.mockResolvedValue([]);
   api.getDashboardData.mockResolvedValue({
     summary: baseSummary,
@@ -1913,10 +1913,9 @@ describe("App 세션 재생", () => {
   const recordedSession = {
     sessionId: "sess_replay",
     startedAt: "2026-09-15T00:00:00.000Z",
-    lastReceivedAt: "2026-09-15T00:00:10.000Z",
-    chunkCount: 2,
+    lastSeenAt: "2026-09-15T00:00:10.000Z",
     eventCount: 40,
-    bytes: 2048,
+    hasRecording: true,
   };
 
   beforeEach(() => {
@@ -1925,10 +1924,23 @@ describe("App 세션 재생", () => {
       projects: [{ projectId: "proj_demo", role: "owner" }],
       csrfToken: "csrf_1",
     });
-    api.getRecordedSessions.mockResolvedValue([recordedSession]);
+    api.getSessions.mockResolvedValue([recordedSession]);
   });
 
-  it("대시보드의 기록된 세션에서 재생 화면으로 들어가고 다시 돌아온다", async () => {
+  it("타임라인을 누르면 세션 상세 다이얼로그가 열린다", async () => {
+    api.getSessionTimeline.mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findByText("sess_replay")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "타임라인" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "세션 상세" });
+    expect(within(dialog).getByText("sess_replay")).toBeInTheDocument();
+    expect(api.getSessionTimeline).toHaveBeenCalledWith("proj_demo", "sess_replay");
+  });
+
+  it("대시보드의 세션 목록에서 재생 화면으로 들어가고 다시 돌아온다", async () => {
     render(<App />);
 
     expect(await screen.findByText("sess_replay")).toBeInTheDocument();
@@ -1954,14 +1966,14 @@ describe("App 세션 재생", () => {
     expect(await screen.findByText("관리자 로그인이 필요합니다.")).toBeInTheDocument();
   });
 
-  it("기록 목록을 불러오지 못해도 대시보드는 연다", async () => {
-    api.getRecordedSessions.mockRejectedValue(new api.ApiError(500, "internal_error"));
+  it("세션 목록을 불러오지 못해도 대시보드는 연다", async () => {
+    api.getSessions.mockRejectedValue(new api.ApiError(500, "internal_error"));
 
     render(<App />);
 
     expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
     expect(
-      await screen.findByText(/기록된 세션이 없습니다/),
+      await screen.findByText(/아직 수집된 세션이 없습니다/),
     ).toBeInTheDocument();
   });
 });

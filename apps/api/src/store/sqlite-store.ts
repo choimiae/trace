@@ -22,7 +22,7 @@ import type {
   ProjectMembershipRecord,
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
-  RecordedSessionSummary,
+  SessionSummary,
   ScreenContextEventQuery,
   SessionRecordingChunk,
   TraceStore,
@@ -683,6 +683,34 @@ export class SqliteStore implements TraceStore {
     }));
   }
 
+  async listSessions(projectId: string, limit: number): Promise<SessionSummary[]> {
+    // 세션 테이블이 따로 없다. 이벤트를 session_id 로 묶어 세고, 기록 유무만
+    // session_recordings 를 한 번 더 본다.
+    const rows = this.db
+      .prepare(
+        `SELECT e.session_id,
+                MIN(e.timestamp) AS started_at,
+                MAX(e.timestamp) AS last_seen_at,
+                COUNT(*)         AS event_count,
+                EXISTS(SELECT 1 FROM session_recordings r
+                        WHERE r.project_id = e.project_id AND r.session_id = e.session_id) AS has_recording
+           FROM events e
+          WHERE e.project_id = ?
+          GROUP BY e.session_id
+          ORDER BY started_at DESC
+          LIMIT ?`,
+      )
+      .all(projectId, limit) as Row[];
+
+    return rows.map((row) => ({
+      sessionId: row.session_id as string,
+      startedAt: row.started_at as string,
+      lastSeenAt: row.last_seen_at as string,
+      eventCount: row.event_count as number,
+      hasRecording: (row.has_recording as number) === 1,
+    }));
+  }
+
   async getSessionRecordingChunk(
     projectId: string,
     sessionId: string,
@@ -706,33 +734,6 @@ export class SqliteStore implements TraceStore {
       eventCount: row.event_count as number,
       bytes: new Uint8Array(row.bytes as Buffer),
     };
-  }
-
-  async listRecordedSessions(projectId: string, limit: number): Promise<RecordedSessionSummary[]> {
-    const rows = this.db
-      .prepare(
-        `SELECT session_id,
-                MIN(started_at)     AS started_at,
-                MAX(received_at)    AS last_received_at,
-                COUNT(*)            AS chunk_count,
-                SUM(event_count)    AS event_count,
-                SUM(LENGTH(bytes))  AS bytes
-           FROM session_recordings
-          WHERE project_id = ?
-          GROUP BY session_id
-          ORDER BY last_received_at DESC
-          LIMIT ?`,
-      )
-      .all(projectId, limit) as Row[];
-
-    return rows.map((row) => ({
-      sessionId: row.session_id as string,
-      startedAt: row.started_at as string,
-      lastReceivedAt: row.last_received_at as string,
-      chunkCount: row.chunk_count as number,
-      eventCount: row.event_count as number,
-      bytes: row.bytes as number,
-    }));
   }
 
   // started_at 이 아니라 received_at 이다. started_at 은 브라우저 시계가 적어

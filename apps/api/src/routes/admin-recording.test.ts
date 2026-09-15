@@ -277,22 +277,32 @@ describe("GET /admin/api/sessions/:sessionId/recording/chunks/:seq", () => {
   });
 });
 
-describe("GET /admin/api/projects/:projectId/recorded-sessions", () => {
-  it("기록된 세션을 최근 순으로 돌려준다", async () => {
+describe("GET /admin/api/projects/:projectId/sessions", () => {
+  it("모든 세션을 최근 순으로 돌려준다", async () => {
     const { app, store, project, headers } = await createAuthenticatedOwner();
-    await store.saveSessionRecordingChunk({
-      sessionId: "sess_abc",
+    // 기록이 없는 세션도 목록에 들어간다 - 이슈 없이 흐름을 보려는 것이 이
+    // 화면의 목적이다.
+    await store.saveBatch({
       projectId: project.projectId,
-      seq: 0,
-      startedAt: "2026-09-15T00:00:00.000Z",
-      receivedAt: "2026-09-15T00:00:10.000Z",
-      eventCount: 3,
-      bytes: new Uint8Array([1, 2, 3]),
+      anonymousUserId: "anon_1",
+      sessionId: "sess_abc",
+      sentAt: "2026-09-15T00:01:00.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://demo.example.com/settings",
+      events: [{
+        eventId: "evt_1",
+        sessionId: "sess_abc",
+        pageId: "page_1",
+        timestamp: "2026-09-15T00:00:00.000Z",
+        type: "click",
+        urlPath: "/settings",
+        metadata: {},
+      }],
     });
 
     const response = await app.inject({
       method: "GET",
-      url: `/admin/api/projects/${project.projectId}/recorded-sessions`,
+      url: `/admin/api/projects/${project.projectId}/sessions`,
       headers,
     });
 
@@ -302,22 +312,21 @@ describe("GET /admin/api/projects/:projectId/recorded-sessions", () => {
         {
           sessionId: "sess_abc",
           startedAt: "2026-09-15T00:00:00.000Z",
-          lastReceivedAt: "2026-09-15T00:00:10.000Z",
-          chunkCount: 1,
-          eventCount: 3,
-          bytes: 3,
+          lastSeenAt: "2026-09-15T00:00:00.000Z",
+          eventCount: 1,
+          hasRecording: false,
         },
       ],
     });
     expect(response.headers["cache-control"]).toBe("no-store");
   });
 
-  it("기록이 없으면 빈 배열", async () => {
+  it("세션이 없으면 빈 배열", async () => {
     const { app, project, headers } = await createAuthenticatedOwner();
 
     const response = await app.inject({
       method: "GET",
-      url: `/admin/api/projects/${project.projectId}/recorded-sessions`,
+      url: `/admin/api/projects/${project.projectId}/sessions`,
       headers,
     });
 
@@ -329,13 +338,13 @@ describe("GET /admin/api/projects/:projectId/recorded-sessions", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: `/admin/api/projects/${project.projectId}/recorded-sessions`,
+      url: `/admin/api/projects/${project.projectId}/sessions`,
     });
 
     expect(response.statusCode).toBe(401);
   });
 
-  it("조회자도 목록을 볼 수 있다", async () => {
+  it("조회자도 세션 목록을 볼 수 있다", async () => {
     const { app, store, project } = await createAuthenticatedOwner();
     const viewer = await store.upsertAdminUserFromGoogle({
       googleSub: "google_sub_viewer_list",
@@ -353,7 +362,7 @@ describe("GET /admin/api/projects/:projectId/recorded-sessions", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: `/admin/api/projects/${project.projectId}/recorded-sessions`,
+      url: `/admin/api/projects/${project.projectId}/sessions`,
       headers: { cookie: session.cookie.split(";")[0] as string },
     });
 
