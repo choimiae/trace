@@ -31,10 +31,23 @@ export function SessionReplayPage({
   const onAuthExpiredRef = useRef(onAuthExpired);
   const [state, setState] = useState<LoadState>("loading");
   const [speed, setSpeed] = useState(1);
+  // 재생기가 아직 없을 때(청크를 받는 중) 고른 배속을 담아 둔다. 재생기가 막
+  // 만들어지는 순간 이 값을 읽어 적용한다 - 그러지 않으면 로딩 중 고른 배속이
+  // `playerRef.current?.setSpeed(...)` 의 no-op 뒤로 조용히 사라진다.
+  const speedRef = useRef(speed);
 
   useEffect(() => {
     onAuthExpiredRef.current = onAuthExpired;
   });
+
+  // 재생 무대는 마운트 너비에 맞춰 줄어든 채로 그려진다(player.ts 의 fit()).
+  // 관리자 창 크기가 바뀌면 다시 맞춰야 한다 - 화면은 rrweb 을 모르니 그냥
+  // `fit()` 을 부른다. 언마운트 뒤에는 부르지 않도록 정리한다.
+  useEffect(() => {
+    const handleResize = () => playerRef.current?.fit();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +77,7 @@ export function SessionReplayPage({
           if (!mount) return;
           player = createPlayerRef.current(mount, assembled.events);
           playerRef.current = player;
+          player.setSpeed(speedRef.current);
           player.play();
           setState("playing");
           continue;
@@ -96,6 +110,7 @@ export function SessionReplayPage({
 
   const changeSpeed = (next: number) => {
     setSpeed(next);
+    speedRef.current = next;
     playerRef.current?.setSpeed(next);
   };
 

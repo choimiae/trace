@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionReplayPage } from "./SessionReplayPage.js";
 
@@ -31,6 +31,8 @@ function fakePlayer() {
   return {
     events: [] as unknown[],
     played: 0,
+    speeds: [] as number[],
+    fitCalls: 0,
     addEvent(event: unknown) {
       this.events.push(event);
     },
@@ -38,7 +40,12 @@ function fakePlayer() {
       this.played += 1;
     },
     pause() {},
-    setSpeed() {},
+    setSpeed(speed: number) {
+      this.speeds.push(speed);
+    },
+    fit() {
+      this.fitCalls += 1;
+    },
     destroy() {},
   };
 }
@@ -142,6 +149,57 @@ describe("SessionReplayPage", () => {
     );
 
     expect(await screen.findByText("이 프로젝트에 접근할 수 없습니다.")).toBeInTheDocument();
+  });
+
+  it("로딩 중에 고른 배속이 재생기가 만들어질 때 적용된다", async () => {
+    let resolveManifest: (value: typeof manifest) => void = () => undefined;
+    api.getRecordingManifest.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveManifest = resolve;
+        }),
+    );
+    const player = fakePlayer();
+
+    render(
+      <SessionReplayPage
+        projectId="proj_a"
+        sessionId="sess_abc"
+        onBack={() => undefined}
+        onAuthExpired={() => undefined}
+        createPlayer={() => player}
+      />,
+    );
+
+    // 아직 재생기가 없다 - 매니페스트가 로딩 중이다.
+    fireEvent.click(screen.getByRole("button", { name: "2x" }));
+    resolveManifest(manifest);
+
+    await waitFor(() => expect(player.played).toBe(1));
+    expect(player.speeds).toEqual([2]);
+  });
+
+  it("창 크기가 바뀌면 재생기에 다시 맞추라고 알린다", async () => {
+    const player = fakePlayer();
+
+    const { unmount } = render(
+      <SessionReplayPage
+        projectId="proj_a"
+        sessionId="sess_abc"
+        onBack={() => undefined}
+        onAuthExpired={() => undefined}
+        createPlayer={() => player}
+      />,
+    );
+
+    await waitFor(() => expect(player.played).toBe(1));
+
+    window.dispatchEvent(new Event("resize"));
+    expect(player.fitCalls).toBe(1);
+
+    unmount();
+    window.dispatchEvent(new Event("resize"));
+    expect(player.fitCalls).toBe(1);
   });
 
   it("원본 스타일시트를 불러온다는 것을 적는다", async () => {
