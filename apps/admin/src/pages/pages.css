@@ -1381,7 +1381,12 @@
 
 .replay-mount {
   position: relative;
-  min-height: 480px;
+  /* min-height 가 아니라 height 다. player.ts 의 fit() 이 계산한 축소 높이를
+     mount.style.height 로 인라인 지정하는데, min-height 는 그보다 값이 크면
+     항상 이긴다 - 무대 아래로 빈 공간이 남는다. 인라인 height 는 이 기본값을
+     그대로 덮어써서 계산값이 이긴다. 재생기가 아직 없을 때(로딩 등)는 이
+     기본값이 자리 표시자 역할을 한다. */
+  height: 480px;
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--white);
