@@ -1106,13 +1106,15 @@ export function App() {
           : current,
       );
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        setState({ type: "login" });
-      } else if (error instanceof ApiError && error.status === 403) {
-        setState({ type: "forbidden" });
-      } else {
-        setState({ type: "network" });
-      }
+      // 조회가 끝나기 전에 로그아웃하거나 다른 프로젝트로 전환했다면 지연된
+      // 실패로 현재 화면을 덮어쓰지 않는다. handleShowSettings 의 catch 와
+      // 같은 모양이다.
+      setState((current) => {
+        if (current.type !== "ready" || current.projectId !== projectId) return current;
+        if (error instanceof ApiError && error.status === 401) return { type: "login" };
+        if (error instanceof ApiError && error.status === 403) return { type: "forbidden" };
+        return { type: "network" };
+      });
     }
   };
 

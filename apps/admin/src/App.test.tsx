@@ -30,6 +30,7 @@ const api = vi.hoisted(() => ({
   getSessions: vi.fn(),
   getRecordingManifest: vi.fn(),
   getRecordingChunk: vi.fn(),
+  getPageStats: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
@@ -52,6 +53,7 @@ vi.mock("./api", () => ({
   getSessions: api.getSessions,
   getRecordingManifest: api.getRecordingManifest,
   getRecordingChunk: api.getRecordingChunk,
+  getPageStats: api.getPageStats,
 }));
 
 const baseSummary = {
@@ -1906,6 +1908,137 @@ describe("App 프로젝트 설정", () => {
     expect(screen.getByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "활동 이력" })).not.toBeInTheDocument();
     expect(screen.queryByText("late@example.com을 조회자로 추가했습니다.")).not.toBeInTheDocument();
+  });
+});
+
+describe("App 페이지 통계", () => {
+  const pageStatsRows = [
+    {
+      urlPath: "/home",
+      views: 120,
+      averageDwellMs: 45_000,
+      exitRate: 0.42,
+      scrollReach: [
+        { depth: 25, ratio: 0.9 },
+        { depth: 50, ratio: 0.6 },
+        { depth: 75, ratio: 0.3 },
+        { depth: 100, ratio: 0.1 },
+      ],
+    },
+  ];
+
+  it("대시보드에서 페이지 통계로 이동해 목록을 보여준다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getPageStats.mockResolvedValue(pageStatsRows);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "페이지 통계" }));
+
+    expect(await screen.findByRole("heading", { name: "페이지 통계" })).toBeInTheDocument();
+    expect(api.getPageStats).toHaveBeenCalledWith("proj_demo");
+    expect(screen.getByText("/home")).toBeInTheDocument();
+  });
+
+  it("페이지 통계에서 대시보드로 돌아갈 수 있다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getPageStats.mockResolvedValue(pageStatsRows);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "페이지 통계" }));
+    expect(await screen.findByRole("heading", { name: "페이지 통계" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "대시보드로 돌아가기" }));
+
+    expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "페이지 통계" })).not.toBeInTheDocument();
+  });
+
+  it("페이지 통계 조회가 401을 받으면 로그인 화면으로 전환한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getPageStats.mockRejectedValue(new api.ApiError(401, "admin_auth_required"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "페이지 통계" }));
+
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+  });
+
+  it("페이지 통계 조회가 403을 받으면 접근 권한 없음 화면으로 전환한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getPageStats.mockRejectedValue(new api.ApiError(403, "project_access_denied"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "페이지 통계" }));
+
+    expect(await screen.findByRole("heading", { name: "접근 권한이 없습니다." })).toBeInTheDocument();
+  });
+
+  it("페이지 통계 조회가 다른 오류를 받으면 연결 실패 화면으로 전환한다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getPageStats.mockRejectedValue(new Error("network unavailable"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "페이지 통계" }));
+
+    expect(await screen.findByRole("heading", { name: "연결할 수 없습니다." })).toBeInTheDocument();
+  });
+
+  // handleShowPageStats 의 성공 경로는 current.projectId 를 확인하고 나서
+  // 상태를 바꾼다. 실패 경로는 그 확인 없이 곧장 setState 했었다 — 요청이
+  // 늦게 실패하면 그 사이 사용자가 로그아웃해도 실패 처리가 로그인 화면을
+  // "연결할 수 없습니다." 로 덮어썼다. 그래서 여기서는 일부러 성공이 아니라
+  // 실패로 지연시킨다 - 성공 경로를 지연시키면 이미 있던 가드 때문에 고친
+  // 코드든 고치기 전 코드든 항상 통과해 버려 이 결함을 잡지 못한다.
+  it("로그아웃 뒤 지연된 페이지 통계 응답은 화면을 덮어쓰지 않는다", async () => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    let rejectPageStats: (error: unknown) => void = () => undefined;
+    api.getPageStats.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectPageStats = reject;
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "페이지 통계" }));
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+
+    await act(async () => {
+      rejectPageStats(new Error("stale failure"));
+    });
+
+    expect(screen.getByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "연결할 수 없습니다." })).not.toBeInTheDocument();
   });
 });
 
