@@ -1,5 +1,5 @@
 import type { DashboardSummary, Issue, ReplayConfig } from "@trace/shared";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   ApiError,
   addProjectMember,
@@ -10,6 +10,7 @@ import {
   getProjectAuditLogs,
   getProjectMembers,
   getProjectSettings,
+  getRecordedSessions,
   logout,
   removeProjectMember,
   searchProjectMemberCandidates,
@@ -22,6 +23,7 @@ import {
   type ProjectMemberResponse,
   type ProjectRole,
   type ProjectSettingsResponse,
+  type RecordedSessionResponse,
 } from "./api.js";
 import { API_BASE_URL } from "./config.js";
 import { readSelectedProjectId, writeSelectedProjectId } from "./storage.js";
@@ -35,6 +37,12 @@ import { StatusPage } from "./pages/StatusPage.js";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./pages/pages.css";
+
+// 재생 화면만 rrweb 을 쓴다. 정적으로 가져오면 재생을 열지 않는 운영자도
+// 재생기를 내려받는다. 차트와 같은 방식으로 별도 청크로 자른다.
+const SessionReplayPage = lazy(() =>
+  import("./pages/SessionReplayPage.js").then((module) => ({ default: module.SessionReplayPage })),
+);
 
 type AppState =
   | { type: "loading" }
@@ -107,6 +115,17 @@ type AppState =
       loading: boolean;
       loadingMore: boolean;
       error?: string | undefined;
+    }
+  | {
+      type: "replay";
+      dashboardData: { summary: DashboardSummary; issues: Issue[] };
+      projects: ProjectOption[];
+      projectId: string;
+      sessionId: string;
+      userEmail: string;
+      adminUserId: string;
+      csrfToken: string;
+      settingsSessionId: number;
     };
 
 function describeApiError(
@@ -231,9 +250,23 @@ function describeCreateProjectError(error: unknown): string {
   return describeApiError(CREATE_PROJECT_ERROR_MESSAGES, error, "프로젝트를 만들지 못했습니다.");
 }
 
+// 기록 목록을 못 불러와도 대시보드는 연다. 재생은 대시보드의 곁가지이고,
+// 이 목록 하나 때문에 문제 인박스 전체가 막히면 안 된다.
+async function loadRecordedSessions(projectId: string): Promise<RecordedSessionResponse[]> {
+  try {
+    return await getRecordedSessions(projectId);
+  } catch {
+    return [];
+  }
+}
+
 export function App() {
   const [state, setState] = useState<AppState>({ type: "loading" });
   const [selectedIssue, setSelectedIssue] = useState<Issue>();
+  // 기록된 세션 목록은 AppState 밖에 둔다. 설정·활동 이력·재생을 거쳐 대시보드로
+  // 돌아올 때 목록을 잃지 않으려면 그 화면들이 전부 이 값을 들고 다녀야 한다.
+  // 화면 곁의 값이라는 점에서 selectedIssue 와 같은 자리다.
+  const [recordedSessions, setRecordedSessions] = useState<RecordedSessionResponse[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -242,6 +275,7 @@ export function App() {
     async function load() {
       setState({ type: "loading" });
       setSelectedIssue(undefined);
+      setRecordedSessions([]);
 
       try {
         const auth = await getAuthMe();
@@ -257,8 +291,12 @@ export function App() {
 
         writeSelectedProjectId(projectId);
 
-        const data = await getDashboardData(projectId);
+        const [data, sessions] = await Promise.all([
+          getDashboardData(projectId),
+          loadRecordedSessions(projectId),
+        ]);
         if (active) {
+          setRecordedSessions(sessions);
           setState({
             type: "ready",
             data,
@@ -956,6 +994,30 @@ export function App() {
     );
   }
 
+  if (state.type === "replay") {
+    return (
+      <Suspense fallback={<p className="empty-state">재생기를 불러오는 중입니다.</p>}>
+        <SessionReplayPage
+          projectId={state.projectId}
+          sessionId={state.sessionId}
+          onBack={() =>
+            setState({
+              type: "ready",
+              data: state.dashboardData,
+              projects: state.projects,
+              projectId: state.projectId,
+              userEmail: state.userEmail,
+              adminUserId: state.adminUserId,
+              csrfToken: state.csrfToken,
+              settingsSessionId: state.settingsSessionId,
+            })
+          }
+          onAuthExpired={() => setState({ type: "login" })}
+        />
+      </Suspense>
+    );
+  }
+
   const handleLogout = async () => {
     try {
       await logout(state.csrfToken);
@@ -984,10 +1046,15 @@ export function App() {
 
     writeSelectedProjectId(nextProjectId);
     setSelectedIssue(undefined);
+    setRecordedSessions([]);
     setState({ type: "loading" });
 
     try {
-      const data = await getDashboardData(nextProjectId);
+      const [data, sessions] = await Promise.all([
+        getDashboardData(nextProjectId),
+        loadRecordedSessions(nextProjectId),
+      ]);
+      setRecordedSessions(sessions);
       setState({
         type: "ready",
         data,
@@ -1030,6 +1097,20 @@ export function App() {
           })
         }
         onShowSettings={() => { void handleShowSettings(); }}
+        recordedSessions={recordedSessions}
+        onSelectSession={(sessionId) =>
+          setState({
+            type: "replay",
+            dashboardData: state.data,
+            projects: state.projects,
+            projectId: state.projectId,
+            sessionId,
+            userEmail: state.userEmail,
+            adminUserId: state.adminUserId,
+            csrfToken: state.csrfToken,
+            settingsSessionId: state.settingsSessionId,
+          })
+        }
       />
       {selectedIssue ? <IssueDetailPage issue={selectedIssue} onClose={() => setSelectedIssue(undefined)} /> : null}
     </>

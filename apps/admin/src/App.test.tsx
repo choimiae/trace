@@ -27,6 +27,9 @@ const api = vi.hoisted(() => ({
   updateProjectSettings: vi.fn(),
   getIssueDetail: vi.fn(),
   getSessionTimeline: vi.fn(),
+  getRecordedSessions: vi.fn(),
+  getRecordingManifest: vi.fn(),
+  getRecordingChunk: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
@@ -46,6 +49,9 @@ vi.mock("./api", () => ({
   updateProjectSettings: api.updateProjectSettings,
   getIssueDetail: api.getIssueDetail,
   getSessionTimeline: api.getSessionTimeline,
+  getRecordedSessions: api.getRecordedSessions,
+  getRecordingManifest: api.getRecordingManifest,
+  getRecordingChunk: api.getRecordingChunk,
 }));
 
 const baseSummary = {
@@ -110,6 +116,8 @@ function auditLogEntry(auditLogId: string, email: string) {
 beforeEach(() => {
   vi.resetAllMocks();
   api.getLoginOptions.mockResolvedValue({ googleLogin: true, localLogin: false });
+  api.getRecordedSessions.mockResolvedValue([]);
+  api.getRecordingManifest.mockResolvedValue([]);
   api.getDashboardData.mockResolvedValue({
     summary: baseSummary,
     issues: [{
@@ -1814,5 +1822,62 @@ describe("App 프로젝트 설정", () => {
     expect(screen.getByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "활동 이력" })).not.toBeInTheDocument();
     expect(screen.queryByText("late@example.com을 조회자로 추가했습니다.")).not.toBeInTheDocument();
+  });
+});
+
+describe("App 세션 재생", () => {
+  const recordedSession = {
+    sessionId: "sess_replay",
+    startedAt: "2026-09-15T00:00:00.000Z",
+    lastReceivedAt: "2026-09-15T00:00:10.000Z",
+    chunkCount: 2,
+    eventCount: 40,
+    bytes: 2048,
+  };
+
+  beforeEach(() => {
+    api.getAuthMe.mockResolvedValue({
+      user: { adminUserId: "admin_1", email: "admin@example.com", name: "Admin" },
+      projects: [{ projectId: "proj_demo", role: "owner" }],
+      csrfToken: "csrf_1",
+    });
+    api.getRecordedSessions.mockResolvedValue([recordedSession]);
+  });
+
+  it("대시보드의 기록된 세션에서 재생 화면으로 들어가고 다시 돌아온다", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("sess_replay")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "재생" }));
+
+    expect(await screen.findByRole("heading", { name: "세션 재생" })).toBeInTheDocument();
+    expect(api.getRecordingManifest).toHaveBeenCalledWith("proj_demo", "sess_replay");
+
+    fireEvent.click(screen.getByRole("button", { name: "대시보드로 돌아가기" }));
+
+    expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
+    await expectIssueTitleVisible("설정 화면에서 반복 클릭");
+  });
+
+  it("재생 중 세션이 만료되면 로그인 화면으로 돌아간다", async () => {
+    api.getRecordingManifest.mockRejectedValue(new api.ApiError(401, "admin_auth_required"));
+
+    render(<App />);
+
+    expect(await screen.findByText("sess_replay")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "재생" }));
+
+    expect(await screen.findByText("관리자 로그인이 필요합니다.")).toBeInTheDocument();
+  });
+
+  it("기록 목록을 불러오지 못해도 대시보드는 연다", async () => {
+    api.getRecordedSessions.mockRejectedValue(new api.ApiError(500, "internal_error"));
+
+    render(<App />);
+
+    expect(await screen.findByText("문제 인박스")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/기록된 세션이 없습니다/),
+    ).toBeInTheDocument();
   });
 });
