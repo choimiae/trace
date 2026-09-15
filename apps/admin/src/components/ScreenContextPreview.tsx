@@ -58,11 +58,14 @@ export function ScreenContextPreview({
         <strong>{context.titleMasked ?? event?.urlPath ?? "사용자 화면"}</strong>
         {switchVisible ? (
           <label className="screen-preview__switch">
+            {/* 네이티브 체크박스를 눈에서만 숨기고 track 으로 그린다. div 로
+                바꾸면 키보드로 못 켜고 스크린리더가 상태를 못 읽는다. */}
             <input
               type="checkbox"
               checked={showLabels}
               onChange={(changeEvent) => onToggleLabels(changeEvent.target.checked)}
             />
+            <span className="screen-preview__switch-track" aria-hidden="true" />
             글자 보기
           </label>
         ) : null}

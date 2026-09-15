@@ -76,6 +76,24 @@ describe("ScreenContextPreview", () => {
     expect(onToggleLabels).toHaveBeenCalledWith(true);
   });
 
+  // 토글 모양을 내려고 네이티브 체크박스를 눈에서 숨긴다. 숨기다가 div 로
+  // 바꿔 버리면 키보드로 못 켜고 스크린리더가 상태를 못 읽는다.
+  it("스위치는 라벨이 걸린 네이티브 체크박스다", () => {
+    render(<ScreenContextPreview context={hintContext} onToggleLabels={() => undefined} />);
+
+    const box = screen.getByLabelText("글자 보기");
+    expect(box.tagName).toBe("INPUT");
+    expect(box).toHaveAttribute("type", "checkbox");
+  });
+
+  it("켜진 상태가 체크박스에 반영된다", () => {
+    render(
+      <ScreenContextPreview context={hintContext} showLabels onToggleLabels={() => undefined} />,
+    );
+
+    expect(screen.getByLabelText("글자 보기")).toBeChecked();
+  });
+
   it("핸들러가 없으면 스위치를 그리지 않는다", () => {
     render(<ScreenContextPreview context={hintContext} />);
 
