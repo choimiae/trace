@@ -15,11 +15,19 @@ export function installNavigationWatcher(
   let lastPath = currentPath();
 
   const notifyIfChanged = () => {
-    const next = currentPath();
-    // 쿼리만 바뀐 이동은 같은 페이지다. 정제된 경로로만 비교한다.
-    if (next === lastPath) return;
-    lastPath = next;
-    onRouteChange(next);
+    try {
+      const next = currentPath();
+      // 쿼리만 바뀐 이동은 같은 페이지다. 정제된 경로로만 비교한다.
+      if (next === lastPath) return;
+      lastPath = next;
+      onRouteChange(next);
+    } catch {
+      // 이 함수는 호스트 라우터가 직접 부르는 pushState/replaceState 패치 안에서
+      // 동기로 돈다. redactUrl(new URL 을 쓴다)이나 onRouteChange(수집 콜백)가
+      // 던지면 그 예외가 패치된 history 메서드를 뚫고 나가 고객의 라우팅 자체를
+      // 깨뜨린다. 이 알림 한 건을 버리는 것으로 막는다 - 수집 실패가 고객
+      // 사이트를 망가뜨려서는 안 된다.
+    }
   };
 
   const history = target.history;

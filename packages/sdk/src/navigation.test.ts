@@ -65,6 +65,22 @@ describe("installNavigationWatcher", () => {
     dispose();
   });
 
+  // pushState/replaceState 는 호스트 라우터가 직접 부르는 함수다. onRouteChange
+  // 가 던져도 그 예외가 패치된 pushState 를 뚫고 나가서는 안 된다 - 그러면
+  // 수집 실패가 고객의 라우팅 자체를 깨뜨린다.
+  it("onRouteChange 가 던져도 pushState 를 깨뜨리지 않고 경로는 그대로 바뀐다", () => {
+    const onRouteChange = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const dispose = installNavigationWatcher(window, onRouteChange);
+
+    expect(() => window.history.pushState(null, "", "/settings")).not.toThrow();
+
+    expect(window.location.pathname).toBe("/settings");
+    expect(onRouteChange).toHaveBeenCalledWith("/settings");
+    dispose();
+  });
+
   it("dispose 하면 원래 history 로 되돌리고 더 알리지 않는다", () => {
     const original = window.history.pushState;
     const onRouteChange = vi.fn();

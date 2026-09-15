@@ -29,7 +29,15 @@ export function installScrollWatcher(
     const depthPercent = ((target.scrollY + viewportHeight) / documentHeight) * 100;
     for (const milestone of reachedMilestones(depthPercent, sent)) {
       sent.add(milestone);
-      onMilestone(milestone);
+      try {
+        onMilestone(milestone);
+      } catch {
+        // onMilestone 은 수집 콜백이다. 여기서 던져도 scroll 리스너 자체는
+        // 깨지지 않지만(브라우저가 리스너별로 격리한다) 이 for 루프는
+        // 중단되어 뒤이은 마일스톤(예: 75, 100)을 건너뛴다. 이번 마일스톤
+        // 하나만 버리고 나머지는 그대로 보낸다 - navigation.ts 와 같은
+        // 관례를 형제 모듈에서 갈라 두지 않는다.
+      }
     }
   };
 

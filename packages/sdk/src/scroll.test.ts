@@ -64,6 +64,22 @@ describe("installScrollWatcher", () => {
     watcher.dispose();
   });
 
+  // onMilestone 은 수집 콜백이다. 하나가 던져도 같은 스크롤 이벤트 안의
+  // 나머지 마일스톤은 그대로 보내야 한다 - 이번 것 하나만 버리는 것이
+  // 구현의 선택이다.
+  it("onMilestone 이 던져도 같은 스크롤 이벤트의 나머지 마일스톤은 그대로 보낸다", () => {
+    stubDocument(2000, 500, 500); // 50%
+    const onMilestone = vi.fn((percent: number) => {
+      if (percent === 25) throw new Error("boom");
+    });
+    const watcher = installScrollWatcher(window, onMilestone);
+
+    expect(() => window.dispatchEvent(new Event("scroll"))).not.toThrow();
+
+    expect(onMilestone.mock.calls.map((call) => call[0])).toEqual([25, 50]);
+    watcher.dispose();
+  });
+
   it("dispose 하면 더 알리지 않는다", () => {
     stubDocument(2000, 500, 500);
     const onMilestone = vi.fn();
