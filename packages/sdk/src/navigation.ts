@@ -1,0 +1,47 @@
+import { redactUrl } from "@trace/shared/privacy";
+
+/**
+ * SPA 라우팅을 감지한다. `page_view` 가 최초 1회만 나가던 것이 이 제품에서
+ * "어떤 페이지를 거쳤나" 를 통째로 비게 만들었다.
+ *
+ * Navigation API 를 쓰지 않는다 — Chrome 계열 전용이라 self-hosted 고객의
+ * 브라우저를 가른다. history 패치는 오래된 방식이지만 어디서나 돈다.
+ */
+export function installNavigationWatcher(
+  target: Window,
+  onRouteChange: (urlPath: string) => void,
+): () => void {
+  const currentPath = () => redactUrl(target.location.href).urlPath;
+  let lastPath = currentPath();
+
+  const notifyIfChanged = () => {
+    const next = currentPath();
+    // 쿼리만 바뀐 이동은 같은 페이지다. 정제된 경로로만 비교한다.
+    if (next === lastPath) return;
+    lastPath = next;
+    onRouteChange(next);
+  };
+
+  const history = target.history;
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+
+  history.pushState = function patchedPushState(...args) {
+    originalPushState.apply(this, args);
+    notifyIfChanged();
+  };
+  history.replaceState = function patchedReplaceState(...args) {
+    originalReplaceState.apply(this, args);
+    notifyIfChanged();
+  };
+
+  target.addEventListener("popstate", notifyIfChanged);
+  target.addEventListener("hashchange", notifyIfChanged);
+
+  return () => {
+    history.pushState = originalPushState;
+    history.replaceState = originalReplaceState;
+    target.removeEventListener("popstate", notifyIfChanged);
+    target.removeEventListener("hashchange", notifyIfChanged);
+  };
+}
