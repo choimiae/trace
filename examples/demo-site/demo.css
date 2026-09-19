@@ -1,0 +1,633 @@
+:root {
+  --ink: #17202a;
+  --ink-soft: #5b6b7c;
+  --line: #d9e1ea;
+  --line-soft: #eaf0f5;
+  --surface: #ffffff;
+  --surface-sunken: #f5f8fa;
+  --accent: #1f4788;
+  --accent-soft: #e8eff8;
+  --warn: #9a5b00;
+  --warn-soft: #fdf3e3;
+  --danger: #a32222;
+  --danger-soft: #fceded;
+  --ok: #1f6b45;
+  --ok-soft: #e8f4ed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--surface-sunken);
+}
+
+/* ── 상단 바 ─────────────────────────────────────────── */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.gnb {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+/* 메뉴를 a 가 아니라 span 으로 둔다. 실제 사내 화면이 이런 모양이고,
+   SDK 가 태그 종류와 무관하게 글자를 걷는지 여기서 드러난다. */
+.gnb-item {
+  padding: 14px 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  background: none;
+}
+
+.gnb-item:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gnb-item[aria-current="page"] {
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ── 레이아웃 ────────────────────────────────────────── */
+
+.shell {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 20px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.lnb {
+  align-self: start;
+  position: sticky;
+  top: 69px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.lnb h2 {
+  margin: 4px 8px 10px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* LNB 도 div 다 — GNB 와 같은 이유. */
+.lnb-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.lnb-item:hover {
+  background: var(--surface-sunken);
+}
+
+.lnb-item[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.view {
+  min-width: 0;
+}
+
+.view > header {
+  margin-bottom: 16px;
+}
+
+.view h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.view header p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.panel {
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.panel > h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.panel > h2 + .panel-note {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+/* ── KPI 카드 (div + span 으로만 구성) ───────────────── */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.kpi-card {
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.kpi-card:hover {
+  border-color: var(--accent);
+}
+
+.kpi-label {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.kpi-value {
+  display: block;
+  margin-top: 2px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.kpi-delta {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.kpi-delta.up {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.kpi-delta.down {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ── 막대 차트 (순수 CSS) ───────────────────────────── */
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 160px;
+  padding-top: 8px;
+}
+
+.bar-col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  cursor: pointer;
+}
+
+.bar {
+  width: 100%;
+  margin-top: auto;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.bar-col:hover .bar {
+  opacity: 1;
+}
+
+.bar-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+/* ── 표 ─────────────────────────────────────────────── */
+
+.table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.search {
+  flex: 1;
+  min-width: 180px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.chip {
+  padding: 5px 11px;
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+th {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-sunken);
+}
+
+tbody tr {
+  cursor: pointer;
+}
+
+tbody tr:hover {
+  background: var(--accent-soft);
+}
+
+.status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.status.active {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.status.hold {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.status.closed {
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+}
+
+.pager {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.pager span {
+  min-width: 30px;
+  padding: 5px 0;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.pager span[aria-current="page"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── 정의 목록 (고객 상세) ──────────────────────────── */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0 24px;
+  margin: 0;
+}
+
+.detail-grid > div {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.detail-grid dt {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.detail-grid dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+}
+
+.detail-grid a {
+  color: var(--accent);
+}
+
+/* ── 폼 ─────────────────────────────────────────────── */
+
+.field {
+  margin-bottom: 14px;
+}
+
+.field label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field input[type="text"],
+.field input[type="email"],
+.field input[type="password"],
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+
+.field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.choices label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 400;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 6px;
+}
+
+/* ── 버튼 ───────────────────────────────────────────── */
+
+button {
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover {
+  color: #fff;
+  opacity: 0.92;
+}
+
+/* ── 마찰 구역 ──────────────────────────────────────── */
+
+.friction {
+  display: grid;
+  gap: 12px;
+}
+
+.friction-row {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.friction-row > :first-child {
+  justify-self: start;
+}
+
+.expect {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.expect strong {
+  color: var(--ink);
+}
+
+.expect code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.notice {
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border-radius: 6px;
+  background: var(--warn-soft);
+  border: 1px solid #f0dcb8;
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.link-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link-list a {
+  color: var(--accent);
+  word-break: break-all;
+}
+
+/* ── 스크롤 확보용 긴 영역 ─────────────────────────── */
+
+.filler p {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+}
+
+.log-line {
+  display: flex;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+
+.log-time {
+  flex: none;
+  width: 108px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.footer-note {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 20px 40px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+/* ── 설정 경고 배너 ─────────────────────────────────── */
+
+/* 수집이 안 되고 있다는 사실은 화면을 덮어서라도 보여야 한다.
+   sticky 인 .topbar 보다 위에 쌓이도록 z-index 를 더 준다. */
+.setup-warning {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 12px 20px;
+  background: var(--danger-soft);
+  border-bottom: 2px solid var(--danger);
+  color: var(--danger);
+}
+
+.setup-warning strong {
+  font-size: 14px;
+}
+
+.setup-warning code {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid #e6bdbd;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+@media (max-width: 760px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .lnb {
+    position: static;
+  }
+
+  .friction-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}

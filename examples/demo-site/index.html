@@ -4,230 +4,104 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trace Demo SaaS</title>
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        padding: 20px;
-        color: #17202a;
-        font-family: system-ui, sans-serif;
-        display: flex;
-        flex-direction: column;
-        min-height: 100vh;
-      }
-
-      header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid #d9e1ea;
-      }
-
-      header h1 {
-        margin: 0;
-        font-size: 20px;
-      }
-
-      nav a {
-        margin-left: 16px;
-        color: #1f4788;
-        text-decoration: none;
-        font-size: 14px;
-      }
-
-      nav a:hover {
-        text-decoration: underline;
-      }
-
-      .container {
-        display: flex;
-        gap: 20px;
-        flex: 1;
-      }
-
-      main {
-        flex: 1;
-      }
-
-      .panel {
-        border: 1px solid #d9e1ea;
-        border-radius: 8px;
-        padding: 20px;
-      }
-
-      main.panel h1 {
-        margin: 0 0 8px 0;
-        font-size: 18px;
-      }
-
-      main.panel > p {
-        margin: 0 0 16px 0;
-        font-size: 14px;
-        color: #555;
-      }
-
-      form {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        margin-bottom: 16px;
-      }
-
-      .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      label {
-        font-size: 13px;
-        font-weight: 500;
-      }
-
-      input, select, textarea {
-        padding: 8px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-family: inherit;
-        font-size: 13px;
-      }
-
-      textarea {
-        resize: vertical;
-        min-height: 60px;
-      }
-
-      button {
-        margin-right: 8px;
-        padding: 10px 14px;
-        background-color: #f0f2f5;
-        border: 1px solid #d9e1ea;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 13px;
-      }
-
-      button:hover {
-        background-color: #e8ecf1;
-      }
-
-      button[type="submit"] {
-        background-color: #1f4788;
-        color: white;
-        border-color: #1f4788;
-        align-self: flex-start;
-      }
-
-      button[type="submit"]:hover {
-        background-color: #162f5c;
-      }
-
-      .button-group {
-        display: flex;
-        gap: 8px;
-        margin-top: 8px;
-      }
-
-      aside {
-        width: 180px;
-        flex-shrink: 0;
-      }
-
-      aside.panel {
-        font-size: 13px;
-        line-height: 1.5;
-      }
-
-      aside.panel h3 {
-        margin: 0 0 8px 0;
-        font-size: 14px;
-      }
-
-      aside.panel p {
-        margin: 0;
-        color: #666;
-      }
-    </style>
+    <link rel="stylesheet" href="./demo.css" />
   </head>
   <body>
-    <header>
-      <h1>더존비즈온</h1>
-      <nav>
-        <a href="#dashboard">대시보드</a>
-        <a href="#settings">설정</a>
-        <a href="#users">사용자</a>
-        <a href="#billing">청구</a>
-      </nav>
-    </header>
-
-    <div class="container">
-      <main class="panel">
-        <h1>설정</h1>
-        <p>워크스페이스 기본 정보를 관리합니다.</p>
-
-        <form onsubmit="return false">
-          <div class="form-group">
-            <label for="workspaceName">워크스페이스 이름</label>
-            <input type="text" name="workspaceName" id="workspaceName" value="더존비즈온 영업팀" />
-          </div>
-
-          <div class="form-group">
-            <label for="ownerEmail">관리자 이메일</label>
-            <input type="email" name="ownerEmail" id="ownerEmail" value="choi@example.com" />
-          </div>
-
-          <div class="form-group">
-            <label for="approver">담당 승인자</label>
-            <select name="approver" id="approver">
-              <option value="">선택하세요</option>
-              <option value="kim">김철수</option>
-              <option value="lee">이영희</option>
-              <option value="park">박민수</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="memo">메모</label>
-            <textarea name="memo" id="memo">김철수 담당자 연락처 010-1234-5678</textarea>
-          </div>
-
-          <button type="submit">저장</button>
-        </form>
-
-        <div class="button-group">
-          <button id="dead-click">권한 추가</button>
-          <button onclick="window.trace?.track('report_export_clicked')">리포트 내보내기</button>
-          <button onclick="throw new Error('Demo error')">오류 발생</button>
-        </div>
-      </main>
-
-      <aside class="panel">
-        <h3>도움말</h3>
-        <p>워크스페이스 이름과 관리자 정보는 조직 내에서만 공유됩니다. 민감한 정보는 저장되지 않습니다.</p>
-      </aside>
+    <div class="topbar">
+      <h1 class="brand">더존비즈온</h1>
+      <!-- 메뉴 항목은 demo.js 가 span 으로 채운다. a 가 아닌 것이 의도다. -->
+      <nav class="gnb" id="gnb"></nav>
+      <div class="topbar-user">
+        <span class="avatar">최</span>
+        <span>최미애 · 영업지원팀</span>
+      </div>
     </div>
+
+    <div class="shell">
+      <aside class="lnb">
+        <h2>메뉴</h2>
+        <div id="lnb-items"></div>
+      </aside>
+      <main class="view" id="view"></main>
+    </div>
+
+    <p class="footer-note">
+      Trace 데모 · 화면의 이름·연락처·사업자번호는 모두 가짜입니다.
+    </p>
+
+    <script src="./demo.js"></script>
 
     <script>
       // query string 에서 projectId 와 port 를 읽어야 하므로 정적 script 태그로는 속성을 채울 수 없다.
       // 동적으로 삽입한 classic script 도 실행 중에는 document.currentScript 가
       // 자기 요소를 가리키므로 data-* 파싱 경로가 동일하게 동작한다.
+      //
+      // demo.js 를 먼저 실행시켜 해시를 "#/dashboard" 로 맞춘 뒤에 붙인다. 순서가 바뀌면
+      // 첫 page_view 가 "/" 로 찍히고, 곧바로 "/dashboard" 가 한 번 더 찍힌다.
       const params = new URLSearchParams(window.location.search);
-      const projectId = params.get("projectId") ?? "proj_demo";
       // port 를 그대로 끼워 넣으면 안 된다. ?port=1@evil.example.com 은
       // "http://localhost:1@evil.example.com/trace.js" 가 되고, 이 URL 의 host 는
       // localhost 가 아니라 evil.example.com 이다 — 앞부분이 userinfo 로 해석된다.
       // 로컬 예제라도 원격 스크립트를 실행시키는 링크가 되므로 숫자만 받는다.
       const rawPort = params.get("port") ?? "";
       const port = /^\d{1,5}$/.test(rawPort) ? rawPort : "4000";
-      const script = document.createElement("script");
-      script.src = `http://localhost:${port}/trace.js`;
-      script.dataset.projectId = projectId;
-      document.head.appendChild(script);
+      const projectId = params.get("projectId");
+
+      // 데모는 테스트 도구다. 수집이 안 되고 있으면 반드시 화면에 드러나야 한다.
+      // 예전에는 projectId 가 없으면 "proj_demo" 라는 없는 프로젝트로 붙였고, 서버는
+      // 모든 배치를 404 로 거절했다 — 화면은 멀쩡해 보이는데 클릭이 한 건도 안 쌓였다.
+      function warn(reason, hint) {
+        const banner = document.createElement("div");
+        banner.className = "setup-warning";
+
+        const title = document.createElement("strong");
+        title.textContent = "수집되지 않습니다";
+        banner.appendChild(title);
+
+        // projectId 는 주소에서 온 값이다. 화면에 되비출 때는 textContent 로만 넣는다.
+        const body = document.createElement("span");
+        body.textContent = reason;
+        banner.appendChild(body);
+
+        const code = document.createElement("code");
+        code.textContent = hint;
+        banner.appendChild(code);
+
+        document.body.prepend(banner);
+      }
+
+      if (!projectId) {
+        // SDK 를 아예 붙이지 않는다. 없는 프로젝트로 붙여 봐야 404 만 쌓이고,
+        // 그 조용한 실패가 바로 이 배너가 막으려는 것이다.
+        warn(
+          "주소에 projectId 가 없습니다. 관리자 페이지에서 프로젝트 ID 를 확인해 주소 뒤에 붙이세요.",
+          `${window.location.origin}/?projectId=proj_xxxxxxxxxx`,
+        );
+      } else {
+        const script = document.createElement("script");
+        script.src = `http://localhost:${port}/trace.js`;
+        script.dataset.projectId = projectId;
+        document.head.appendChild(script);
+
+        // 오타난 ID·지워진 프로젝트·허용 도메인 불일치는 SDK 가 조용히 삼킨다(호스트 사이트를
+        // 방해하지 않는 것이 SDK 의 계약이다). 데모에서는 같은 설정 요청을 한 번 더 던져
+        // 그 침묵을 배너로 바꾼다.
+        const configUrl = `http://localhost:${port}/v1/projects/${encodeURIComponent(projectId)}/config`;
+        fetch(configUrl)
+          .then((response) => {
+            if (response.ok) return;
+            warn(
+              `프로젝트 "${projectId}" 의 설정을 받지 못했습니다 (HTTP ${response.status}). ID 가 맞는지, 허용 도메인에 이 주소가 있는지 확인하세요.`,
+              configUrl,
+            );
+          })
+          .catch(() => {
+            warn(
+              `수집 서버에 닿지 못했습니다. API 서버가 ${port} 포트에 떠 있는지 확인하세요.`,
+              configUrl,
+            );
+          });
+      }
     </script>
   </body>
 </html>
