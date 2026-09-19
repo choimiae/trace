@@ -70,7 +70,7 @@
 **Interfaces:**
 - Produces: `installNavigationWatcher(target: Window, onRouteChange: (urlPath: string) => void): () => void`
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `packages/sdk/src/navigation.test.ts`
 
@@ -155,12 +155,12 @@ describe("installNavigationWatcher", () => {
 });
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/navigation.test.ts`
 Expected: FAIL — 모듈이 없다
 
-- [ ] **Step 3: 구현한다**
+- [x] **Step 3: 구현한다**
 
 `packages/sdk/src/navigation.ts`
 
@@ -214,12 +214,12 @@ export function installNavigationWatcher(
 }
 ```
 
-- [ ] **Step 4: 통과를 확인한다**
+- [x] **Step 4: 통과를 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/navigation.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add packages/sdk/src/navigation.ts packages/sdk/src/navigation.test.ts
@@ -255,7 +255,7 @@ EOF
   - `reachedMilestones(depthPercent: number, already: ReadonlySet<number>): number[]`
   - `installScrollWatcher(target: Window, onMilestone: (percent: number) => void): { reset: () => void; dispose: () => void }`
 
-- [ ] **Step 1: 실패하는 순수 함수 테스트를 쓴다**
+- [x] **Step 1: 실패하는 순수 함수 테스트를 쓴다**
 
 `packages/sdk/src/scroll.test.ts`
 
@@ -282,12 +282,12 @@ describe("reachedMilestones", () => {
 });
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/scroll.test.ts`
 Expected: FAIL — 모듈이 없다
 
-- [ ] **Step 3: 순수 함수를 구현한다**
+- [x] **Step 3: 순수 함수를 구현한다**
 
 `packages/sdk/src/scroll.ts`
 
@@ -305,12 +305,12 @@ export function reachedMilestones(
 }
 ```
 
-- [ ] **Step 4: 통과를 확인한다**
+- [x] **Step 4: 통과를 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/scroll.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 구독기 테스트를 더한다**
+- [x] **Step 5: 구독기 테스트를 더한다**
 
 `scroll.test.ts` 에 이어서 쓴다.
 
@@ -373,12 +373,12 @@ describe("installScrollWatcher", () => {
 });
 ```
 
-- [ ] **Step 6: 실패를 확인한다**
+- [x] **Step 6: 실패를 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/scroll.test.ts`
 Expected: FAIL — `installScrollWatcher` 가 없다
 
-- [ ] **Step 7: 구독기를 구현한다**
+- [x] **Step 7: 구독기를 구현한다**
 
 `scroll.ts` 에 이어서 쓴다.
 
@@ -417,12 +417,12 @@ export function installScrollWatcher(
 }
 ```
 
-- [ ] **Step 8: 통과를 확인한다**
+- [x] **Step 8: 통과를 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/scroll.test.ts`
 Expected: PASS
 
-- [ ] **Step 9: 커밋**
+- [x] **Step 9: 커밋**
 
 ```bash
 git add packages/sdk/src/scroll.ts packages/sdk/src/scroll.test.ts
@@ -456,7 +456,7 @@ EOF
 - Consumes: Task 1 의 `installNavigationWatcher`, Task 2 의 `installScrollWatcher`
 - Produces: `installCollectors` 가 `page_view`(라우팅마다) · `page_leave`(이탈·라우팅 직전) · `scroll`(마일스톤) 을 큐에 넣는다
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `packages/sdk/src/collectors.test.ts`
 
@@ -557,12 +557,12 @@ describe("installCollectors", () => {
 
 > `queuedTypes` 는 `captured` 를 읽는 헬퍼다. 위 코드에서 인자를 받지 않도록 `function queuedTypes(): string[] { return captured.map((event) => event.type); }` 로 고쳐 쓴다.
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/collectors.test.ts`
 Expected: FAIL — `page_leave`·`scroll` 이 나오지 않는다
 
-- [ ] **Step 3: 배선한다**
+- [x] **Step 3: 배선한다**
 
 `collectors.ts` 의 `installCollectors` 를 고친다. 기존 `click`·`error` 수집기는 그대로 둔다.
 
@@ -635,22 +635,22 @@ import { installNavigationWatcher } from "./navigation.js";
 import { installScrollWatcher } from "./scroll.js";
 ```
 
-- [ ] **Step 4: 통과를 확인한다**
+- [x] **Step 4: 통과를 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/collectors.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 번들 예산을 확인한다**
+- [x] **Step 5: 번들 예산을 확인한다**
 
 Run: `npm test --workspace @trace/sdk -- src/bundle-size.test.ts`
 Expected: PASS. 측정 시점 기준 6,426 B 였고 예산은 10,240 B 다. 넘으면 세 수집기 중 무엇이 큰지 재고 보고한다 — 예산을 올리지 않는다.
 
-- [ ] **Step 6: SDK 전체를 돌린다**
+- [x] **Step 6: SDK 전체를 돌린다**
 
 Run: `npm test --workspace @trace/sdk`
 Expected: PASS — 기존 테스트가 하나도 깨지지 않아야 한다
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```bash
 git add packages/sdk/src/collectors.ts packages/sdk/src/collectors.test.ts
@@ -684,14 +684,14 @@ EOF
 
 이 스펙이 고치려는 숫자를 직접 확인한다. **경로 2개** 가 출발점이다.
 
-- [ ] **Step 1: 서버 셋을 띄운다**
+- [x] **Step 1: 서버 셋을 띄운다**
 
 ```bash
 npm run dev:api     # 4000
 npm run dev:admin   # 5173
 ```
 
-- [ ] **Step 2: 대상 앱에 SDK 를 붙인다**
+- [x] **Step 2: 대상 앱에 SDK 를 붙인다**
 
 `localhost:3000` 의 SPA 를 연 뒤 브라우저 콘솔에서 주입한다(앱 파일을 고치지 않는다).
 
@@ -702,11 +702,11 @@ s.dataset.projectId = "<프로젝트 ID>";
 document.head.appendChild(s);
 ```
 
-- [ ] **Step 3: 화면을 옮겨 다닌다**
+- [x] **Step 3: 화면을 옮겨 다닌다**
 
 메뉴를 눌러 **최소 다섯 화면**을 거치고, 각 화면에서 끝까지 스크롤해 본 뒤, 탭을 닫는다.
 
-- [ ] **Step 4: 잰다**
+- [x] **Step 4: 잰다**
 
 ```bash
 sqlite3 apps/api/trace.db "
@@ -717,9 +717,9 @@ select count(*) as events,
   from events;"
 ```
 
-- [ ] **경로가 2개에서 몇 개로 늘었는가** — 이 스펙이 고치려는 숫자다. 늘지 않았으면 라우팅 감지가 안 걸린 것이니 멈추고 보고한다
-- [ ] `page_leave` 와 `scroll` 이 `kinds` 에 있는가
-- [ ] 세션당 이벤트 수가 감당할 만한가
+- [x] **경로가 2개에서 몇 개로 늘었는가** — 이 스펙이 고치려는 숫자다. 늘지 않았으면 라우팅 감지가 안 걸린 것이니 멈추고 보고한다
+- [x] `page_leave` 와 `scroll` 이 `kinds` 에 있는가
+- [x] 세션당 이벤트 수가 감당할 만한가
 
 - [ ] **Step 5: 타임라인이 흐름으로 읽히는가**
 
@@ -737,7 +737,7 @@ select count(*) as events,
 
 커밋 전 상태로 워크트리에 남아 있는 작업이다. 내용은 이미 검증됐다(테스트 1029개 통과, 브라우저에서 세션 5개·타임라인 11건 확인).
 
-- [ ] **Step 1: 변경 목록을 확인한다**
+- [x] **Step 1: 변경 목록을 확인한다**
 
 ```bash
 git -C .worktrees/session-list status --porcelain
@@ -745,7 +745,7 @@ git -C .worktrees/session-list status --porcelain
 
 17개 파일이 나와야 한다. 다르면 멈추고 보고한다.
 
-- [ ] **Step 2: 패치로 옮긴다**
+- [x] **Step 2: 패치로 옮긴다**
 
 ```bash
 git -C .worktrees/session-list diff HEAD > /tmp/session-list.patch
@@ -754,12 +754,12 @@ git apply /tmp/session-list.patch
 
 `RM` 로 표시된 이름 변경(`RecordedSessionTable` → `SessionTable`)이 포함되므로, `git apply` 가 실패하면 `git -C .worktrees/session-list diff HEAD --binary` 로 다시 뜬다.
 
-- [ ] **Step 3: 전체를 돌린다**
+- [x] **Step 3: 전체를 돌린다**
 
 Run: `npm test && npm run typecheck && npm run build`
 Expected: PASS. 이 브랜치에는 Task 1~3 의 새 이벤트가 있으므로, 세션 목록의 이벤트 수가 늘어나는 것 외에 달라질 것은 없다.
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```bash
 git add -A
@@ -793,7 +793,7 @@ EOF
   - `PageStats { urlPath: string; views: number; averageDwellMs: number | undefined; exitRate: number; scrollReach: { depth: number; ratio: number }[] }`
   - `listPageStats(projectId: string, limit: number): Promise<PageStats[]>`
 
-- [ ] **Step 1: 실패하는 계약 테스트를 쓴다**
+- [x] **Step 1: 실패하는 계약 테스트를 쓴다**
 
 `store-contract.test.ts` 의 `describeTraceStoreContract` 본문에 더한다. 스토어는 **`open()`** 으로 얻는다.
 
@@ -941,12 +941,12 @@ it("page_leave 가 하나도 없으면 평균 체류가 undefined 다", async ()
 });
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `npm test --workspace @trace/api -- src/store/store-contract.test.ts`
 Expected: FAIL — `store.listPageStats is not a function`
 
-- [ ] **Step 3: 계약을 타입에 적는다**
+- [x] **Step 3: 계약을 타입에 적는다**
 
 `apps/api/src/store/types.ts`, `SessionSummary` 아래에 더한다.
 
@@ -974,7 +974,7 @@ export interface PageStats {
   listPageStats(projectId: string, limit: number): Promise<PageStats[]>;
 ```
 
-- [ ] **Step 4: 공용 집계 함수를 만든다**
+- [x] **Step 4: 공용 집계 함수를 만든다**
 
 두 스토어가 같은 계산을 해야 하므로 이벤트 배열에서 통계를 내는 순수 함수를 만들고 둘이 함께 쓴다. `apps/api/src/store/page-stats.ts` 를 새로 만든다.
 
@@ -1060,7 +1060,7 @@ export function computePageStats(events: TraceEvent[], limit: number): PageStats
 }
 ```
 
-- [ ] **Step 5: 두 스토어에 붙인다**
+- [x] **Step 5: 두 스토어에 붙인다**
 
 `sqlite-store.ts` 와 `memory-store.ts` 에 각각 더한다. 둘 다 이벤트를 모아 같은 함수에 넘긴다.
 
@@ -1073,12 +1073,12 @@ export function computePageStats(events: TraceEvent[], limit: number): PageStats
 
 `import { computePageStats } from "./page-stats.js";` 와 `PageStats` 타입 import 를 각 파일에 더한다.
 
-- [ ] **Step 6: 통과를 확인한다**
+- [x] **Step 6: 통과를 확인한다**
 
 Run: `npm test --workspace @trace/api -- src/store/store-contract.test.ts`
 Expected: PASS — 두 구현 모두
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```bash
 git add apps/api/src/store/types.ts apps/api/src/store/page-stats.ts apps/api/src/store/memory-store.ts apps/api/src/store/sqlite-store.ts apps/api/src/store/store-contract.test.ts
@@ -1121,7 +1121,7 @@ EOF
   - `getPageStats(projectId: string): Promise<PageStatsResponse[]>`
   - `<PageStatsPage pages={...} onBack={...} />`
 
-- [ ] **Step 1: 실패하는 라우트 테스트를 쓴다**
+- [x] **Step 1: 실패하는 라우트 테스트를 쓴다**
 
 `admin-recording.test.ts` 에 더한다. 상단 헬퍼(`authConfig`·`createAuthenticatedOwner`)는 이미 그 파일에 있다.
 
@@ -1212,12 +1212,12 @@ describe("GET /admin/api/projects/:projectId/page-stats", () => {
 
 > 하위 사용자의 이메일은 소유자의 `admin@example.com` 과 달라야 한다. 같으면 `upsertAdminUserFromGoogle` 이 `admin_email_conflict` 를 던져 라우트와 무관하게 실패한다.
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `npm test --workspace @trace/api -- src/routes/admin-recording.test.ts`
 Expected: FAIL — 404
 
-- [ ] **Step 3: 라우트를 더한다**
+- [x] **Step 3: 라우트를 더한다**
 
 `admin-proxy.ts` 의 `/sessions` 라우트 아래에 더한다. 상단 상수 옆에 상한을 둔다.
 
@@ -1241,12 +1241,12 @@ const PAGE_STATS_LIMIT = 50;
   });
 ```
 
-- [ ] **Step 4: 통과를 확인한다**
+- [x] **Step 4: 통과를 확인한다**
 
 Run: `npm test --workspace @trace/api -- src/routes/admin-recording.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 클라이언트 함수를 더한다**
+- [x] **Step 5: 클라이언트 함수를 더한다**
 
 `apps/admin/src/api.ts` 에 타입과 함수를 더한다. 이 계층은 얇은 전달이라 단위 테스트를 두지 않는다 — 기존 `getSessionTimeline` 도 같다.
 
@@ -1267,7 +1267,7 @@ export async function getPageStats(projectId: string): Promise<PageStatsResponse
 }
 ```
 
-- [ ] **Step 6: 실패하는 화면 테스트를 쓴다**
+- [x] **Step 6: 실패하는 화면 테스트를 쓴다**
 
 `apps/admin/src/pages/PageStatsPage.test.tsx`
 
@@ -1336,12 +1336,12 @@ describe("PageStatsPage", () => {
 });
 ```
 
-- [ ] **Step 7: 실패를 확인한다**
+- [x] **Step 7: 실패를 확인한다**
 
 Run: `npm test --workspace @trace/admin -- src/pages/PageStatsPage.test.tsx`
 Expected: FAIL — 모듈이 없다
 
-- [ ] **Step 8: 화면을 구현한다**
+- [x] **Step 8: 화면을 구현한다**
 
 `apps/admin/src/pages/PageStatsPage.tsx`
 
@@ -1414,12 +1414,12 @@ export function PageStatsPage({
 }
 ```
 
-- [ ] **Step 9: 통과를 확인한다**
+- [x] **Step 9: 통과를 확인한다**
 
 Run: `npm test --workspace @trace/admin -- src/pages/PageStatsPage.test.tsx`
 Expected: PASS. 출력이 깨끗해야 한다 — React 경고가 뜨면 고친다.
 
-- [ ] **Step 10: App 에 배선한다**
+- [x] **Step 10: App 에 배선한다**
 
 `App.tsx` 의 `AppState` 에 상태를 더한다.
 
@@ -1439,7 +1439,7 @@ Expected: PASS. 출력이 깨끗해야 한다 — React 경고가 뜨면 고친�
 
 `DashboardPage` 에 `onShowPageStats` prop 을 더하고(기본값 `() => {}`), 헤더 버튼으로 `getPageStats` 를 불러 위 상태로 전환한다. `onBack` 은 `ready` 로 되돌린다 — 기존 `settings`·`audit` 상태의 되돌아가기와 같은 모양을 따른다.
 
-- [ ] **Step 11: README 를 고친다**
+- [x] **Step 11: README 를 고친다**
 
 `README.md` 의 「수집하는 것과 수집하지 않는 것」 표에 세 줄을 더한다.
 
@@ -1449,12 +1449,12 @@ Expected: PASS. 출력이 깨끗해야 한다 — React 경고가 뜨면 고친�
 | 스크롤 | 25·50·75·100% 도달 시점만 기록합니다. 위치를 연속으로 기록하지 않습니다 |
 ```
 
-- [ ] **Step 12: 전체를 돌린다**
+- [x] **Step 12: 전체를 돌린다**
 
 Run: `npm test && npm run typecheck && npm run build`
 Expected: 전부 통과
 
-- [ ] **Step 13: 커밋**
+- [x] **Step 13: 커밋**
 
 ```bash
 git add -A
