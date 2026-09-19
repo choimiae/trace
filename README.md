@@ -97,7 +97,7 @@ npm run dev:admin
 <script src="http://localhost:4000/trace.js" data-project-id="proj_xxxxxxxxxx"></script>
 ```
 
-허용 도메인은 이벤트를 받을 사이트의 origin입니다. 로컬 데모 사이트로 확인하려면 `http://localhost:5174`를 입력합니다.
+허용 도메인은 이벤트를 받을 사이트의 origin입니다. 로컬 데모 사이트로 확인하려면 `http://localhost:3000`를 입력합니다.
 
 세션 리플레이는 기본으로 꺼져 있습니다. 켜려면 관리자 페이지의 `프로젝트 설정`에서 `세션 리플레이 켜기`를 체크하고 저장합니다. 같은 화면에서 마스킹 셀렉터를 한 줄에 하나씩 최대 50개까지 지정할 수 있고, 여기 걸린 요소의 텍스트는 통째로 `*`로 가려집니다. 누가 언제 켰는지는 `활동 이력`에 남습니다.
 
@@ -116,7 +116,7 @@ npm run dev:demo
 프로젝트 생성 후 표시된 프로젝트 ID를 query string으로 넘깁니다.
 
 ```text
-http://localhost:5174/?projectId=<projectId>
+http://localhost:3000/?projectId=<projectId>
 ```
 
 데모 사이트에서 버튼을 몇 번 클릭하면 관리자 페이지의 설치 화면이 첫 이벤트 도착을 알려줍니다. 이후 대시보드에서 수집된 이벤트와 감지된 문제를 확인할 수 있습니다.
