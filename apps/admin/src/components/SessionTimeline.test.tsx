@@ -25,35 +25,4 @@ describe("SessionTimeline", () => {
 
     expect(screen.getByText("2026-09-01 15:00:00")).toBeInTheDocument();
   });
-
-  it("renders screen context evidence inside the timeline", () => {
-    render(
-      <SessionTimeline
-        events={[
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              target: {
-                tagName: "button",
-                role: "button",
-                textMaskedOrLimited: "저장",
-                rect: { x: 620, y: 420, width: 96, height: 40 },
-              },
-              layoutHints: [],
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(screen.getByText("저장")).toBeInTheDocument();
-    expect(screen.getByLabelText("화면 맥락 미리보기")).toBeInTheDocument();
-  });
 });

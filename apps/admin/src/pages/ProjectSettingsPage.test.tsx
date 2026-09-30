@@ -11,78 +11,37 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const ownerProject = {
+const baseProject = {
   projectId: "proj_demo",
   name: "Demo",
   allowedDomains: ["https://demo.example.com", "https://app.example.com"],
   replay: { enabled: false, maskSelectors: [] },
-  role: "owner" as const,
 };
-
-const members = [
-  {
-    adminUserId: "admin_owner",
-    email: "owner@example.com",
-    name: "Owner",
-    role: "owner" as const,
-    createdAt: "2026-08-25T00:00:00.000Z",
-  },
-  {
-    adminUserId: "admin_viewer",
-    email: "viewer@example.com",
-    role: "viewer" as const,
-    createdAt: "2026-08-26T00:00:00.000Z",
-  },
-];
-
-const memberCandidates = [
-  {
-    adminUserId: "admin_owner",
-    email: "owner@example.com",
-    name: "Owner",
-    membership: { role: "owner" as const },
-  },
-  { adminUserId: "admin_new", email: "new@example.com", name: "New Member" },
-  { adminUserId: "admin_nameless", email: "nameless@example.com" },
-];
 
 function renderRequiredProps(
   overrides: Partial<React.ComponentProps<typeof ProjectSettingsPage>> = {},
 ) {
   return render(
     <ProjectSettingsPage
-      project={ownerProject}
-      members={members}
-      currentAdminUserId="admin_owner"
-      memberCandidates={memberCandidates}
+      project={baseProject}
       onBack={() => undefined}
       onSave={() => undefined}
-      onAddMember={() => undefined}
-      onUpdateMemberRole={() => undefined}
-      onRemoveMember={() => undefined}
-      onSearchMemberCandidates={() => undefined}
-      onSelectMemberCandidate={() => undefined}
       {...overrides}
     />,
   );
 }
 
-const missingMemberProps = (
-  // @ts-expect-error ProjectSettingsPage requires member data and an add handler.
-  <ProjectSettingsPage
-    project={ownerProject}
-    onBack={() => undefined}
-    onSave={() => undefined}
-  />
-);
-void missingMemberProps;
-
 describe("ProjectSettingsPage", () => {
-  it("renders editable project settings for owners", () => {
+  it("멤버 관리 영역을 보여주지 않는다", () => {
+    renderRequiredProps();
+    expect(screen.queryByText(/멤버/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/활동 이력/)).not.toBeInTheDocument();
+  });
+
+  it("renders editable project settings", () => {
     renderRequiredProps();
 
     expect(screen.getByRole("heading", { name: "프로젝트 설정" })).toBeInTheDocument();
-    expect(screen.getByText("소유자", { selector: ".user-email" })).toBeInTheDocument();
     expect(screen.getByLabelText("프로젝트 이름")).toHaveValue("Demo");
     expect(screen.getByLabelText("허용 도메인")).toHaveValue(
       "https://demo.example.com\nhttps://app.example.com",
@@ -107,35 +66,11 @@ describe("ProjectSettingsPage", () => {
     });
   });
 
-  it("allows admins to save project settings", () => {
-    const onSave = vi.fn();
-    renderRequiredProps({ project: { ...ownerProject, role: "admin" }, onSave });
-
-    fireEvent.click(screen.getByRole("button", { name: "저장" }));
-
-    expect(screen.getByText("관리자")).toBeInTheDocument();
-    expect(onSave).toHaveBeenCalledWith({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com", "https://app.example.com"],
-      replay: { enabled: false, maskSelectors: [] },
-    });
-  });
-
   it("disables saving when required fields are empty", () => {
     renderRequiredProps();
 
     fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "" } });
 
-    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
-  });
-
-  it("renders viewer settings as read-only", () => {
-    renderRequiredProps({ project: { ...ownerProject, role: "viewer" } });
-
-    expect(screen.getByText("읽기 전용 권한입니다.")).toBeInTheDocument();
-    expect(screen.getByText("조회자", { selector: ".user-email" })).toBeInTheDocument();
-    expect(screen.getByLabelText("프로젝트 이름")).toBeDisabled();
-    expect(screen.getByLabelText("허용 도메인")).toBeDisabled();
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
   });
 
@@ -152,290 +87,6 @@ describe("ProjectSettingsPage", () => {
     fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "새 프로젝트" } });
 
     expect(screen.queryByText("저장했습니다.")).not.toBeInTheDocument();
-  });
-
-  it("renders project members and owner add form", () => {
-    renderRequiredProps();
-
-    expect(screen.getByRole("heading", { name: "멤버" })).toBeInTheDocument();
-    const memberList = screen.getByText("viewer@example.com").closest(".members-list")!;
-    expect(within(memberList as HTMLElement).getByText("Owner")).toBeInTheDocument();
-    expect(within(memberList as HTMLElement).getByText("owner@example.com")).toBeInTheDocument();
-    expect(screen.getByText("조회자", { selector: ".member-meta span" })).toBeInTheDocument();
-    expect(screen.getByText("2026-08-25 09:00:00")).toBeInTheDocument();
-    expect(screen.getByLabelText("멤버 검색")).toBeInTheDocument();
-    expect(screen.getByLabelText("멤버 역할")).toHaveValue("viewer");
-    expect(screen.getByRole("button", { name: "멤버 추가" })).toBeDisabled();
-  });
-
-  it("submits the selected candidate and role", () => {
-    const onAddMember = vi.fn();
-    renderRequiredProps({ onAddMember, selectedMemberCandidate: memberCandidates[1] });
-
-    fireEvent.change(screen.getByLabelText("멤버 역할"), { target: { value: "admin" } });
-    fireEvent.click(screen.getByRole("button", { name: "멤버 추가" }));
-
-    expect(onAddMember).toHaveBeenCalledWith({ email: "new@example.com", role: "admin" });
-  });
-
-  it("renders the candidate search input and candidate list for owners", () => {
-    renderRequiredProps();
-
-    expect(screen.getByLabelText("멤버 검색")).toBeInTheDocument();
-    expect(screen.getByText("이름 또는 이메일로 검색")).toBeInTheDocument();
-    expect(screen.getByText("new@example.com")).toBeInTheDocument();
-    expect(screen.getByText("nameless@example.com")).toBeInTheDocument();
-    expect(screen.queryByLabelText("멤버 이메일")).not.toBeInTheDocument();
-  });
-
-  it("calls onSearchMemberCandidates when the search input changes", () => {
-    const onSearchMemberCandidates = vi.fn();
-    renderRequiredProps({ onSearchMemberCandidates });
-
-    fireEvent.change(screen.getByLabelText("멤버 검색"), { target: { value: "new" } });
-
-    expect(onSearchMemberCandidates).toHaveBeenCalledWith("new");
-  });
-
-  it("calls onSelectMemberCandidate for an addable candidate", () => {
-    const onSelectMemberCandidate = vi.fn();
-    renderRequiredProps({ onSelectMemberCandidate });
-
-    fireEvent.click(screen.getByRole("button", { name: /new@example\.com/ }));
-
-    expect(onSelectMemberCandidate).toHaveBeenCalledWith(memberCandidates[1]);
-  });
-
-  it("labels an existing member candidate with its role and blocks selection", () => {
-    const onSelectMemberCandidate = vi.fn();
-    renderRequiredProps({ onSelectMemberCandidate });
-
-    expect(screen.getByText("이미 멤버 · 소유자")).toBeInTheDocument();
-    const candidateList = screen.getByText("이미 멤버 · 소유자").closest(".member-candidate-list")!;
-    const ownerCandidate = within(candidateList as HTMLElement)
-      .getByRole("button", { name: /owner@example\.com/ });
-    expect(ownerCandidate).toBeDisabled();
-
-    fireEvent.click(ownerCandidate);
-
-    expect(onSelectMemberCandidate).not.toHaveBeenCalled();
-  });
-
-  it("labels an addable candidate as addable", () => {
-    renderRequiredProps();
-
-    expect(screen.getAllByText("추가 가능")).toHaveLength(2);
-  });
-
-  it("renders a nameless candidate with only its email", () => {
-    renderRequiredProps();
-
-    const nameless = screen.getByRole("button", { name: /nameless@example\.com/ });
-    expect(nameless.querySelector("strong")).toBeNull();
-  });
-
-  it("disables the add button when no candidate is selected", () => {
-    renderRequiredProps();
-
-    expect(screen.getByRole("button", { name: "멤버 추가" })).toBeDisabled();
-  });
-
-  it("summarizes the selected candidate", () => {
-    renderRequiredProps({ selectedMemberCandidate: memberCandidates[1] });
-
-    expect(screen.getByText("선택됨: New Member · new@example.com")).toBeInTheDocument();
-  });
-
-  it("summarizes a nameless selected candidate with only its email", () => {
-    renderRequiredProps({ selectedMemberCandidate: memberCandidates[2] });
-
-    expect(screen.getByText("선택됨: nameless@example.com")).toBeInTheDocument();
-  });
-
-  it("defaults the added member role to viewer", () => {
-    const onAddMember = vi.fn();
-    renderRequiredProps({ onAddMember, selectedMemberCandidate: memberCandidates[1] });
-
-    fireEvent.click(screen.getByRole("button", { name: "멤버 추가" }));
-
-    expect(onAddMember).toHaveBeenCalledWith({ email: "new@example.com", role: "viewer" });
-  });
-
-  it("shows the candidate search loading state", () => {
-    renderRequiredProps({ memberCandidateSearchLoading: true });
-
-    expect(screen.getByText("검색 중")).toBeInTheDocument();
-  });
-
-  it("shows the candidate search error", () => {
-    renderRequiredProps({ memberCandidateSearchError: "사용자를 검색하지 못했습니다." });
-
-    expect(screen.getByText("사용자를 검색하지 못했습니다.")).toBeInTheDocument();
-  });
-
-  it("shows an empty candidate result message", () => {
-    renderRequiredProps({ memberCandidates: [] });
-
-    expect(screen.getByText("검색 결과가 없습니다.")).toBeInTheDocument();
-  });
-
-  it("does not show the empty candidate message while searching", () => {
-    renderRequiredProps({ memberCandidates: [], memberCandidateSearchLoading: true });
-
-    expect(screen.queryByText("검색 결과가 없습니다.")).not.toBeInTheDocument();
-  });
-
-  it("renders non-owner member management as read-only", () => {
-    renderRequiredProps({ project: { ...ownerProject, role: "admin" } });
-
-    expect(screen.getByText("멤버 추가 권한이 없습니다.")).toBeInTheDocument();
-    expect(screen.queryByLabelText("멤버 검색")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "멤버 추가" })).not.toBeInTheDocument();
-  });
-
-  it("shows member add state messages", () => {
-    renderRequiredProps({
-      memberError: "이미 이 프로젝트의 멤버입니다.",
-      memberSavedMessage: "멤버를 추가했습니다.",
-    });
-
-    expect(screen.getByText("이미 이 프로젝트의 멤버입니다.")).toBeInTheDocument();
-    expect(screen.getByText("멤버를 추가했습니다.")).toBeInTheDocument();
-  });
-
-  it("renders owner-only member row actions", () => {
-    renderRequiredProps();
-
-    expect(screen.getByLabelText("owner@example.com 역할")).toHaveValue("owner");
-    expect(screen.getByLabelText("viewer@example.com 역할")).toHaveValue("viewer");
-    expect(screen.getByRole("button", { name: "owner@example.com 제거" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "viewer@example.com 제거" })).toBeInTheDocument();
-  });
-
-  it("hides member row actions from admins and viewers", () => {
-    const { rerender } = renderRequiredProps({ project: { ...ownerProject, role: "admin" } });
-
-    expect(screen.queryByLabelText("owner@example.com 역할")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: / 제거$/ })).not.toBeInTheDocument();
-
-    rerender(
-      <ProjectSettingsPage
-        project={{ ...ownerProject, role: "viewer" }}
-        members={members}
-        currentAdminUserId="admin_owner"
-        memberCandidates={memberCandidates}
-        onBack={() => undefined}
-        onSave={() => undefined}
-        onAddMember={() => undefined}
-        onUpdateMemberRole={() => undefined}
-        onRemoveMember={() => undefined}
-        onSearchMemberCandidates={() => undefined}
-        onSelectMemberCandidate={() => undefined}
-      />,
-    );
-
-    expect(screen.queryByLabelText("owner@example.com 역할")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: / 제거$/ })).not.toBeInTheDocument();
-  });
-
-  it("calls onUpdateMemberRole when owner changes a role select", () => {
-    const onUpdateMemberRole = vi.fn();
-    renderRequiredProps({ onUpdateMemberRole });
-
-    fireEvent.change(screen.getByLabelText("viewer@example.com 역할"), { target: { value: "admin" } });
-
-    expect(onUpdateMemberRole).toHaveBeenCalledWith("admin_viewer", "admin");
-  });
-
-  it("does not call onRemoveMember when the owner cancels removal confirmation", () => {
-    const onRemoveMember = vi.fn();
-    vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderRequiredProps({ onRemoveMember });
-
-    fireEvent.click(screen.getByRole("button", { name: "viewer@example.com 제거" }));
-
-    expect(onRemoveMember).not.toHaveBeenCalled();
-  });
-
-  it("calls onRemoveMember after removal confirmation", () => {
-    const onRemoveMember = vi.fn();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    renderRequiredProps({ onRemoveMember });
-
-    fireEvent.click(screen.getByRole("button", { name: "viewer@example.com 제거" }));
-
-    expect(onRemoveMember).toHaveBeenCalledWith("admin_viewer");
-  });
-
-  it("disables controls for the member action in flight", () => {
-    renderRequiredProps({ memberActionsInFlight: new Set(["admin_viewer"]) });
-
-    expect(screen.getByLabelText("viewer@example.com 역할")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "viewer@example.com 제거" })).toBeDisabled();
-  });
-
-  it("disables self owner loss controls", () => {
-    renderRequiredProps({
-      members: [
-        ...members,
-        {
-          adminUserId: "admin_second_owner",
-          email: "second-owner@example.com",
-          role: "owner",
-          createdAt: "2026-08-27T00:00:00.000Z",
-        },
-      ],
-    });
-
-    const ownerRole = screen.getByLabelText("owner@example.com 역할");
-    expect(screen.getByRole("button", { name: "owner@example.com 제거" })).toBeDisabled();
-    expect(ownerRole.querySelector('option[value="admin"]')).toBeDisabled();
-    expect(ownerRole.querySelector('option[value="viewer"]')).toBeDisabled();
-    expect(ownerRole).toHaveValue("owner");
-  });
-
-  it("disables last owner loss controls", () => {
-    renderRequiredProps();
-
-    expect(screen.getByRole("button", { name: "owner@example.com 제거" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "viewer@example.com 제거" })).toBeEnabled();
-    const ownerRole = screen.getByLabelText("owner@example.com 역할");
-    expect(ownerRole.querySelector('option[value="admin"]')).toBeDisabled();
-    expect(ownerRole.querySelector('option[value="viewer"]')).toBeDisabled();
-  });
-
-  it("renders member action error and success messages", () => {
-    renderRequiredProps({
-      memberActionError: "멤버 역할을 변경하지 못했습니다.",
-      memberActionSavedMessage: "멤버 역할을 변경했습니다.",
-    });
-
-    expect(screen.getByText("멤버 역할을 변경하지 못했습니다.")).toBeInTheDocument();
-    expect(screen.getByText("멤버 역할을 변경했습니다.")).toBeInTheDocument();
-  });
-
-  it("owner 에게 활동 이력 버튼을 보여주고 클릭을 전달한다", () => {
-    const onShowAuditLog = vi.fn();
-    renderRequiredProps({ onShowAuditLog });
-
-    fireEvent.click(screen.getByRole("button", { name: "활동 이력" }));
-
-    expect(onShowAuditLog).toHaveBeenCalledTimes(1);
-  });
-
-  it("handler 가 없으면 활동 이력 버튼을 보여주지 않는다", () => {
-    renderRequiredProps();
-
-    expect(screen.queryByRole("button", { name: "활동 이력" })).not.toBeInTheDocument();
-  });
-
-  it.each(["admin", "viewer"] as const)("%s 에게는 활동 이력 버튼을 보여주지 않는다", (role) => {
-    renderRequiredProps({
-      project: { ...ownerProject, role },
-      onShowAuditLog: () => undefined,
-    });
-
-    expect(screen.queryByRole("button", { name: "활동 이력" })).not.toBeInTheDocument();
   });
 
   it("리플레이를 켜면 경고와 마스킹 셀렉터 입력이 나타난다", () => {
@@ -500,20 +151,12 @@ describe("ProjectSettingsPage", () => {
     rerender(
       <ProjectSettingsPage
         project={{
-          ...ownerProject,
+          ...baseProject,
           projectId: "proj_other",
           replay: { enabled: true, maskSelectors: [".customer-name"] },
         }}
-        members={members}
-        currentAdminUserId="admin_owner"
-        memberCandidates={memberCandidates}
         onBack={() => undefined}
         onSave={() => undefined}
-        onAddMember={() => undefined}
-        onUpdateMemberRole={() => undefined}
-        onRemoveMember={() => undefined}
-        onSearchMemberCandidates={() => undefined}
-        onSelectMemberCandidate={() => undefined}
       />,
     );
 
@@ -531,7 +174,7 @@ describe("ProjectSettingsPage", () => {
 
   it("마스킹 셀렉터를 고치면 이전 저장 성공 메시지를 숨긴다", () => {
     renderRequiredProps({
-      project: { ...ownerProject, replay: { enabled: true, maskSelectors: [] } },
+      project: { ...baseProject, replay: { enabled: true, maskSelectors: [] } },
       savedMessage: "저장했습니다.",
     });
 
@@ -542,22 +185,9 @@ describe("ProjectSettingsPage", () => {
     expect(screen.queryByText("저장했습니다.")).not.toBeInTheDocument();
   });
 
-  it("viewer 에게는 리플레이 항목을 읽기 전용으로 보여준다", () => {
-    renderRequiredProps({
-      project: {
-        ...ownerProject,
-        role: "viewer",
-        replay: { enabled: true, maskSelectors: [".customer-name"] },
-      },
-    });
-
-    expect(screen.getByLabelText("세션 리플레이 켜기")).toBeDisabled();
-    expect(screen.getByLabelText(/마스킹 셀렉터/)).toBeDisabled();
-  });
-
   it("저장 중에는 리플레이 항목을 잠근다", () => {
     renderRequiredProps({
-      project: { ...ownerProject, replay: { enabled: true, maskSelectors: [] } },
+      project: { ...baseProject, replay: { enabled: true, maskSelectors: [] } },
       saving: true,
     });
 
@@ -570,7 +200,7 @@ describe("ProjectSettingsPage", () => {
   it("리플레이를 꺼도 지정해 둔 셀렉터는 그대로 저장한다", () => {
     const onSave = vi.fn();
     renderRequiredProps({
-      project: { ...ownerProject, replay: { enabled: true, maskSelectors: [".customer-name"] } },
+      project: { ...baseProject, replay: { enabled: true, maskSelectors: [".customer-name"] } },
       onSave,
     });
 
@@ -586,7 +216,7 @@ describe("ProjectSettingsPage", () => {
 
   it("경고 안에서 가리지 못하는 것 목록을 펼쳐 볼 수 있다", () => {
     renderRequiredProps({
-      project: { ...ownerProject, replay: { enabled: true, maskSelectors: [] } },
+      project: { ...baseProject, replay: { enabled: true, maskSelectors: [] } },
     });
 
     const disclosure = screen.getByText("가리지 못하는 것 전체 보기");

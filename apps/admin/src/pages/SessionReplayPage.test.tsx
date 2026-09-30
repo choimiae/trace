@@ -94,7 +94,7 @@ describe("SessionReplayPage", () => {
     );
 
     expect(
-      await screen.findByText(/트리거가 걸린 세션만 올라오고 기본 7일 뒤 지워집니다/),
+      await screen.findByText("이 세션은 녹화가 없습니다. 리플레이를 켜기 전이거나 보존 기간이 지났습니다."),
     ).toBeInTheDocument();
   });
 
@@ -119,8 +119,8 @@ describe("SessionReplayPage", () => {
   });
 
   // 최종 리뷰 지적: 매니페스트가 청크를 줬는데 재생을 시작하기 전에 실패하면
-  // (500 이든 seq 0 이 깨졌든) 화면이 "empty" 로 떨어져 보존 문구("기본 7일
-  // 뒤 지워집니다")를 보여줬다 - 운영자가 DB 에 있는 기록을 없는 것으로
+  // (500 이든 seq 0 이 깨졌든) 화면이 "empty" 로 떨어져 보존 문구("보존 기간이
+  // 지났습니다")를 보여줬다 - 운영자가 DB 에 있는 기록을 없는 것으로
   // 오해한다. manifest.length === 0 일 때만 "empty" 를 쓰고, 나머지 실패는
   // 새 상태(읽지 못함)로 갈라야 한다.
   it("매니페스트는 청크를 줬는데 첫 청크 요청이 실패하면 읽지 못했다고 알린다 (기록 없음이 아니다)", async () => {
@@ -137,8 +137,8 @@ describe("SessionReplayPage", () => {
     );
 
     expect(await screen.findByText(/기록을 읽지 못했습니다/)).toBeInTheDocument();
-    expect(screen.queryByText(/기본 7일 뒤 지워집니다/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/이 세션에는 기록이 없습니다/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/보존 기간이 지났습니다/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/이 세션은 녹화가 없습니다/)).not.toBeInTheDocument();
   });
 
   it("매니페스트는 청크를 줬는데 첫 청크가 깨져 있으면 읽지 못했다고 알린다 (기록 없음이 아니다)", async () => {
@@ -155,7 +155,7 @@ describe("SessionReplayPage", () => {
     );
 
     expect(await screen.findByText(/기록을 읽지 못했습니다/)).toBeInTheDocument();
-    expect(screen.queryByText(/기본 7일 뒤 지워집니다/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/보존 기간이 지났습니다/)).not.toBeInTheDocument();
   });
 
   // 최종 리뷰 지적: forbidden·empty 에서도 재생/일시정지/배속 버튼이 살아
@@ -194,7 +194,7 @@ describe("SessionReplayPage", () => {
       />,
     );
 
-    expect(await screen.findByText(/트리거가 걸린 세션만 올라오고 기본 7일 뒤 지워집니다/)).toBeInTheDocument();
+    expect(await screen.findByText(/리플레이를 켜기 전이거나 보존 기간이 지났습니다/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "재생" })).not.toBeInTheDocument();
   });
 

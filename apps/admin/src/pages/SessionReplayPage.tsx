@@ -144,8 +144,7 @@ export function SessionReplayPage({
 
       {state === "empty" ? (
         <p className="empty-state">
-          이 세션에는 기록이 없습니다. 리플레이는 트리거가 걸린 세션만 올라오고 기본 7일 뒤
-          지워집니다.
+          이 세션은 녹화가 없습니다. 리플레이를 켜기 전이거나 보존 기간이 지났습니다.
         </p>
       ) : null}
 

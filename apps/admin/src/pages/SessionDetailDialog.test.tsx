@@ -87,7 +87,7 @@ describe("SessionDetailDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  // 기록이 없는 세션이 대부분이다. 없는데 버튼을 두면 눌러도 아무 일이 없다.
+  // 리플레이를 켜기 전이거나 보존 기간이 지난 세션은 기록이 없다. 없는데 버튼을 두면 눌러도 아무 일이 없다.
   it("기록이 없으면 재생 버튼을 두지 않는다", () => {
     api.getSessionTimeline.mockResolvedValue([]);
     renderDialog({ hasRecording: false });

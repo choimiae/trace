@@ -47,8 +47,8 @@ export function SessionTable({
       align: "end",
       render: (row) => (
         <span className="session-actions">
-          {/* 기록은 트리거가 걸린 세션만 올라온다. 없는 행에 비활성 버튼을
-              두면 대부분의 행이 회색 버튼을 달고 있게 된다. */}
+          {/* 리플레이를 켜기 전 세션이나 보존 기간이 지난 세션은 기록이 없다.
+              누를 수 없는 버튼을 두지 않는다. */}
           {row.hasRecording ? (
             <Button onClick={() => onReplaySession(row.sessionId)}>재생</Button>
           ) : null}

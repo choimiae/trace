@@ -44,7 +44,7 @@ describe("SessionTable", () => {
     expect(screen.getByText("120")).toBeInTheDocument();
   });
 
-  // 기록은 트리거가 걸린 세션만 올라온다. 대부분의 행에는 재생이 없다.
+  // 리플레이를 켜기 전 세션이나 보존 기간이 지난 세션에는 기록이 없다.
   it("기록이 있는 세션에만 재생을 붙인다", () => {
     renderTable();
 

@@ -1,41 +1,19 @@
-import type { DashboardSummary, Issue } from "@trace/shared";
-import { lazy, Suspense } from "react";
 import type { SessionResponse } from "../api.js";
-import { IssueDashboardOverview } from "../components/IssueDashboardOverview.js";
-import { IssueTable } from "../components/IssueTable.js";
-import { MetricStrip } from "../components/MetricStrip.js";
 import { SessionTable } from "../components/SessionTable.js";
 import { Button } from "../ui/Button.js";
 import { Card } from "../ui/Card.js";
-import { Chip } from "../ui/Chip.js";
-
-const FrictionTrendChart = lazy(() =>
-  import("../components/charts/FrictionTrendChart.js").then((module) => ({
-    default: module.FrictionTrendChart,
-  })),
-);
-
-const IssueTypeChart = lazy(() =>
-  import("../components/charts/IssueTypeChart.js").then((module) => ({
-    default: module.IssueTypeChart,
-  })),
-);
 
 export type ProjectOption = {
   projectId: string;
-  role: "owner" | "admin" | "viewer";
 };
 
 export function DashboardPage({
-  summary,
-  issues,
   userEmail,
   projects = [],
   projectId = "",
   onSelectProject = () => {},
   settingsError,
   onLogout,
-  onSelectIssue,
   onCreateProject,
   onShowInstall,
   onShowSettings,
@@ -43,18 +21,13 @@ export function DashboardPage({
   sessions = [],
   onSelectSession = () => {},
   onReplaySession = () => {},
-  showPreviewLabels = false,
-  onTogglePreviewLabels = () => {},
 }: {
-  summary: DashboardSummary;
-  issues: Issue[];
   userEmail: string;
   projects: ProjectOption[];
   projectId: string;
   onSelectProject: (projectId: string) => void;
   settingsError?: string | undefined;
   onLogout: () => void;
-  onSelectIssue?: ((issue: Issue) => void) | undefined;
   onCreateProject: () => void;
   onShowInstall: () => void;
   onShowSettings: () => void;
@@ -62,15 +35,13 @@ export function DashboardPage({
   sessions?: SessionResponse[];
   onSelectSession?: (sessionId: string) => void;
   onReplaySession?: (sessionId: string) => void;
-  showPreviewLabels?: boolean;
-  onTogglePreviewLabels?: (next: boolean) => void;
 }) {
   return (
     <main className="app-shell">
       <header className="page-header">
         <div>
           <p className="eyebrow">Trace 관리자</p>
-          <h1>문제 인박스</h1>
+          <h1>세션</h1>
         </div>
         <div className="header-actions">
           <label className="project-switcher">
@@ -96,42 +67,8 @@ export function DashboardPage({
           {settingsError}
         </p>
       ) : null}
-      {/* 화면 먼저, 숫자는 보조. 대표 막힘 문장과 화면 맥락이 지표보다 앞에 온다. */}
-      <IssueDashboardOverview
-        summary={summary}
-        issues={issues}
-        onSelectIssue={onSelectIssue}
-        showPreviewLabels={showPreviewLabels}
-        onTogglePreviewLabels={onTogglePreviewLabels}
-      />
-      <MetricStrip summary={summary} />
-      <section className="insight">
-        <Chip status="crit" label="심각" />
-        <span>{summary.insight}</span>
-      </section>
-      <section className="chart-grid" aria-label="막힘 분석 차트">
-        <Suspense
-          fallback={
-            <>
-              <Card as="section" className="chart-panel" />
-              <Card as="section" className="chart-panel" />
-            </>
-          }
-        >
-          <FrictionTrendChart data={summary.trend} />
-          <IssueTypeChart data={summary.issueTypeDistribution} />
-        </Suspense>
-      </section>
-      <IssueTable issues={issues} onSelectIssue={onSelectIssue} />
       <Card as="section" className="sessions-panel">
-        <div className="panel-heading">
-          <h2>세션</h2>
-        </div>
-        <SessionTable
-          sessions={sessions}
-          onSelectSession={onSelectSession}
-          onReplaySession={onReplaySession}
-        />
+        <SessionTable sessions={sessions} onSelectSession={onSelectSession} onReplaySession={onReplaySession} />
       </Card>
     </main>
   );

@@ -73,8 +73,8 @@ export function SessionDetailDialog({
     };
   }, [projectId, sessionId]);
 
-  // 문제 상세와 같은 방식이다. target 비교를 쓰면 안쪽에서 시작한 클릭이
-  // 버블링으로 배경에 닿아도 닫지 않는다.
+  // target 비교를 쓰면 안쪽에서 시작한 클릭이 버블링으로 배경에 닿아도
+  // 닫지 않는다.
   const handleBackdropClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) onClose();
   };
@@ -90,7 +90,7 @@ export function SessionDetailDialog({
             </h2>
           </div>
           <div className="header-actions">
-            {/* 기록은 트리거가 걸린 세션만 올라온다. 없으면 버튼도 없다. */}
+            {/* 리플레이를 켜기 전 세션이나 보존 기간이 지난 세션은 기록이 없다. 없으면 버튼도 없다. */}
             {hasRecording ? <Button onClick={onReplay}>재생</Button> : null}
             <Button variant="icon" aria-label="닫기" onClick={onClose}>
               <X aria-hidden="true" size={18} />

@@ -1,6 +1,5 @@
 import type { SessionTimelineEvent } from "@trace/shared";
 import { formatKoreanDateTime } from "../time.js";
-import { ScreenContextPreview } from "./ScreenContextPreview.js";
 
 export function SessionTimeline({ events }: { events: SessionTimelineEvent[] }) {
   return (
@@ -18,9 +17,6 @@ export function SessionTimeline({ events }: { events: SessionTimelineEvent[] }) 
                   <strong>{event.type}</strong>
                   <span>{event.urlPath}</span>
                 </div>
-                {event.screenContext ? (
-                  <ScreenContextPreview context={event.screenContext} event={event} compact />
-                ) : null}
               </div>
             </li>
           ))}
