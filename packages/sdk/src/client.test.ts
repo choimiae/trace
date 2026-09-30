@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MAX_SCREEN_LAYOUT_HINTS, traceEventSchema, type TraceEvent } from "@trace/shared";
+import { type TraceEvent } from "@trace/shared";
 import { installCollectors } from "./collectors.js";
 import { TraceClient } from "./client.js";
 
@@ -12,31 +12,16 @@ function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).length;
 }
 
-// 실제 클릭 이벤트와 같은 모양으로 크기를 만든다. 힌트 예산이 20 → 50 이 되면서
-// 이벤트 하나가 약 2.7KB → 약 5.3KB 가 된 것이 배치가 한도를 넘게 된 원인이다.
-//
-// 힌트 텍스트를 일부러 한글로 둔다. 한글은 UTF-8 로 글자당 3바이트인데
-// String.length 는 1로 세므로, 크기를 문자 수로 재는 구현이면 예산을 크게 넘긴
-// 본문을 만들어 낸다 — ASCII 픽스처였다면 그 구현도 이 테스트를 통과해 버린다.
-// 그 대가로 힌트마다 글자가 실려 이벤트 하나가 약 13KB(실측 화면의 약 5.3KB 보다
-// 크다). 예산에서 잘린다는 성질은 같고, 바이트/문자 비(약 1.28)가 판별력을 준다.
-function clickEventWithHints(client: TraceClient, eventId: string, hintCount: number): TraceEvent {
+// 바이트 예산 테스트용 큰 클릭 이벤트. 글자를 일부러 한글로 둔다. 한글은 UTF-8 로
+// 글자당 3바이트인데 String.length 는 1로 세므로, 크기를 문자 수로 재는 구현이면
+// 예산을 크게 넘긴 본문을 만들어 낸다 — ASCII 픽스처였다면 그 구현도 통과해 버린다.
+function bigClickEvent(client: TraceClient, eventId: string, chars: number): TraceEvent {
   return client.createEvent({
     eventId,
     type: "click",
     urlPath: "/reports",
+    elementTextMaskedOrLimited: "결".repeat(chars),
     metadata: {},
-    screenContext: {
-      viewport: { width: 1440, height: 900 },
-      layoutHints: Array.from({ length: hintCount }, (_unused, index) => ({
-        tagName: "button",
-        role: "button",
-        textMaskedOrLimited: `결재 문서함 상세 조회 화면에서 반려 사유를 입력하고 저장하는 버튼 ${index}`,
-        selectorHash: index.toString(16).padStart(16, "0"),
-        masked: false,
-        rect: { x: index % 1440, y: (index * 7) % 900, width: 240, height: 64 },
-      })),
-    },
   });
 }
 
@@ -50,32 +35,10 @@ describe("TraceClient", () => {
       consent: "denied",
     });
 
-    client.track("report_export_clicked", { email: "choi@example.com" });
+    client.enqueue(client.createEvent({ eventId: "evt_test1", type: "click", urlPath: "/", metadata: {} }));
     await client.flush();
 
     expect(fetcher).not.toHaveBeenCalled();
-  });
-
-  it("redacts custom metadata and sends a sanitized batch when consent is granted", async () => {
-    window.history.pushState({}, "", "/reports/123?email=choi@example.com&tab=export");
-    const fetcher = vi.fn().mockResolvedValue({ ok: true });
-    const client = new TraceClient({
-      projectId: "proj_1",
-      endpoint: "https://trace.example.com/v1/events/batch",
-      fetcher,
-      consent: "granted",
-    });
-
-    client.track("report_export_clicked", { email: "choi@example.com" });
-    await client.flush();
-
-    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
-    const payload = JSON.parse(String(init.body));
-    expect(payload.url).toBe("http://localhost:3000/reports/:id?redacted_param_1=[redacted]&tab=[redacted]");
-    expect(payload.events[0].metadata).toEqual({
-      eventName: "report_export_clicked",
-    });
-    expect(payload.events[0].sessionId).toBe(payload.sessionId);
   });
 
   it("sends collector events with sanitized dynamic URL paths", async () => {
@@ -127,48 +90,6 @@ describe("TraceClient", () => {
     window.innerHeight = originalHeight;
   });
 
-  it("sends screen context for click collector events", async () => {
-    const fetcher = vi.fn().mockResolvedValue({ ok: true });
-    const client = new TraceClient({
-      projectId: "proj_1",
-      endpoint: "https://collector.example.com/ingest",
-      fetcher,
-      consent: "granted",
-    });
-
-    window.innerWidth = 1440;
-    window.innerHeight = 900;
-    document.body.innerHTML = `<button id="save">저장</button>`;
-    const button = document.querySelector("#save") as HTMLButtonElement;
-    button.getBoundingClientRect = vi.fn(() => ({
-      x: 620,
-      y: 420,
-      width: 96,
-      height: 40,
-      top: 420,
-      left: 620,
-      right: 716,
-      bottom: 460,
-      toJSON: () => ({}),
-    }));
-
-    installCollectors(client);
-    button.click();
-    await client.flush();
-
-    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
-    const payload = JSON.parse(String(init.body)) as { events: Array<{ type: string; screenContext?: unknown }> };
-    expect(payload.events.find((event) => event.type === "click")?.screenContext).toMatchObject({
-      viewport: { width: 1440, height: 900 },
-      target: {
-        tagName: "button",
-        role: "button",
-        textMaskedOrLimited: "저장",
-        rect: { x: 620, y: 420, width: 96, height: 40 },
-      },
-    });
-  });
-
   it("영구 실패(4xx) 배치는 버려서 큐가 막히지 않게 한다", async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 400 });
     const client = new TraceClient({
@@ -178,7 +99,7 @@ describe("TraceClient", () => {
       consent: "granted",
     });
 
-    client.track("report_export_clicked");
+    client.enqueue(client.createEvent({ eventId: "evt_test1", type: "click", urlPath: "/", metadata: {} }));
     await client.flush();
 
     expect(client.queueLength).toBe(0);
@@ -197,7 +118,7 @@ describe("TraceClient", () => {
       consent: "granted",
     });
 
-    client.track("report_export_clicked");
+    client.enqueue(client.createEvent({ eventId: "evt_test1", type: "click", urlPath: "/", metadata: {} }));
     await client.flush();
 
     expect(client.queueLength).toBe(1);
@@ -223,7 +144,7 @@ describe("TraceClient", () => {
       consent: "granted",
     });
 
-    client.track("report_export_clicked");
+    client.enqueue(client.createEvent({ eventId: "evt_test1", type: "click", urlPath: "/", metadata: {} }));
     await client.flush();
 
     expect(client.queueLength).toBe(1);
@@ -243,7 +164,7 @@ describe("TraceClient", () => {
       consent: "granted",
     });
 
-    client.track("report_export_clicked");
+    client.enqueue(client.createEvent({ eventId: "evt_test1", type: "click", urlPath: "/", metadata: {} }));
 
     await expect(client.flush()).resolves.toBeUndefined();
     await client.flush();
@@ -251,117 +172,7 @@ describe("TraceClient", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     const [, retryInit] = fetcher.mock.calls[1] as [string, RequestInit];
     const payload = JSON.parse(String(retryInit.body));
-    expect(payload.events[0].metadata).toEqual({ eventName: "report_export_clicked" });
-  });
-
-  it("오류 이벤트에 종류·스크립트 경로·라인을 싣는다", async () => {
-    const fetcher = vi.fn().mockResolvedValue({ ok: true });
-    const client = new TraceClient({
-      projectId: "proj_1",
-      endpoint: "https://trace.example.com/v1/events/batch",
-      fetcher,
-      consent: "granted",
-    });
-
-    installCollectors(client);
-    window.dispatchEvent(
-      new ErrorEvent("error", {
-        error: new TypeError("Cannot read property 'id' of undefined"),
-        filename: "https://app.example.com/assets/checkout.js?v=2",
-        lineno: 412,
-        message: "Cannot read property 'id' of undefined",
-      }),
-    );
-    await client.flush();
-
-    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
-    const payload = JSON.parse(String(init.body)) as { events: Array<Record<string, unknown>> };
-    const error = payload.events.find((event) => event.type === "js_error");
-
-    expect(error?.errorName).toBe("TypeError");
-    expect(error?.errorSource).toBe("/assets/checkout.js");
-    expect(error?.errorLine).toBe(412);
-    // 메시지와 스택은 어디에도 실리지 않는다.
-    expect(JSON.stringify(payload)).not.toContain("Cannot read property");
-  });
-
-  it("정상 오류는 세 필드를 모두 담고, cross-origin 오류(error 없음, filename 빈 값)는 모두 생략한다", async () => {
-    const fetcher = vi.fn().mockResolvedValue({ ok: true });
-    const client = new TraceClient({
-      projectId: "proj_1",
-      endpoint: "https://trace.example.com/v1/events/batch",
-      fetcher,
-      consent: "granted",
-    });
-
-    installCollectors(client);
-    // 양성 대조군: 정상적인 오류는 세 필드가 반드시 실려야 한다.
-    window.dispatchEvent(
-      new ErrorEvent("error", {
-        error: new TypeError("Cannot read property 'id' of undefined"),
-        filename: "https://app.example.com/assets/checkout.js?v=2",
-        lineno: 412,
-        message: "Cannot read property 'id' of undefined",
-      }),
-    );
-    // 음성 대조군: cross-origin 오류는 세 필드가 모두 생략되어야 한다.
-    window.dispatchEvent(new ErrorEvent("error", { message: "Script error.", filename: "", lineno: 0 }));
-    await client.flush();
-
-    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
-    const payload = JSON.parse(String(init.body)) as { events: Array<Record<string, unknown>> };
-    const errors = payload.events.filter((event) => event.type === "js_error");
-    expect(errors).toHaveLength(2);
-
-    const [wellFormed, crossOrigin] = errors;
-    expect(wellFormed?.errorName).toBe("TypeError");
-    expect(wellFormed?.errorSource).toBe("/assets/checkout.js");
-    expect(wellFormed?.errorLine).toBe(412);
-
-    expect(crossOrigin).not.toHaveProperty("errorName");
-    expect(crossOrigin).not.toHaveProperty("errorSource");
-    expect(crossOrigin).not.toHaveProperty("errorLine");
-  });
-
-  it("errorSource 는 계약을 어길 수 있는 산출물(과도한 길이·선행 슬래시 없는 경로)을 생략한다 — traceEventSchema 로 왕복 검증", async () => {
-    const fetcher = vi.fn().mockResolvedValue({ ok: true });
-    const client = new TraceClient({
-      projectId: "proj_1",
-      endpoint: "https://trace.example.com/v1/events/batch",
-      fetcher,
-      consent: "granted",
-    });
-
-    installCollectors(client);
-
-    const cases: Array<{ filename: string; expectSource: string | undefined }> = [
-      { filename: "https://app.example.com/assets/checkout.js?v=2", expectSource: "/assets/checkout.js" },
-      { filename: `https://app.example.com/${"a".repeat(300)}.js`, expectSource: undefined },
-      { filename: "data:text/javascript,alert(1)", expectSource: undefined },
-      { filename: "about:blank", expectSource: undefined },
-    ];
-
-    for (const { filename } of cases) {
-      window.dispatchEvent(new ErrorEvent("error", { error: new TypeError("x"), filename, lineno: 10 }));
-    }
-    await client.flush();
-
-    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
-    const payload = JSON.parse(String(init.body)) as { events: Array<Record<string, unknown>> };
-    const errors = payload.events.filter((event) => event.type === "js_error");
-    expect(errors).toHaveLength(cases.length);
-
-    errors.forEach((event, index) => {
-      const expectSource = cases[index]?.expectSource;
-      if (expectSource === undefined) {
-        expect(event).not.toHaveProperty("errorSource");
-      } else {
-        expect(event.errorSource).toBe(expectSource);
-      }
-      // 산출물이 서버 계약을 실제로 만족하는지 왕복 검증한다 — 이 체크가 없었던
-      // 것이 safeErrorSource 가 계약 위반 값을 그대로 흘려보내는 결함을 놓친 원인이었다.
-      expect(traceEventSchema.safeParse(event).success).toBe(true);
-    });
+    expect(payload.events[0].eventId).toBe("evt_test1");
   });
 
   // 브라우저는 keepalive fetch 의 본문을 64 KiB 로 제한하고, 넘으면 HTTP 상태가
@@ -379,7 +190,7 @@ describe("TraceClient", () => {
     });
 
     for (let index = 0; index < 20; index += 1) {
-      client.enqueue(clickEventWithHints(client, `evt_${index.toString().padStart(10, "0")}`, MAX_SCREEN_LAYOUT_HINTS));
+      client.enqueue(bigClickEvent(client, `evt_${index.toString().padStart(10, "0")}`, 3000));
     }
     await client.flush();
 
@@ -406,7 +217,7 @@ describe("TraceClient", () => {
 
     const eventIds = Array.from({ length: 20 }, (_unused, index) => `evt_${index.toString().padStart(10, "0")}`);
     for (const eventId of eventIds) {
-      client.enqueue(clickEventWithHints(client, eventId, MAX_SCREEN_LAYOUT_HINTS));
+      client.enqueue(bigClickEvent(client, eventId, 3000));
     }
     await client.flush();
 
@@ -435,12 +246,11 @@ describe("TraceClient", () => {
       consent: "granted",
     });
 
-    // 계약 상한(50)을 넘는 힌트 수다. 정상 경로는 이런 이벤트를 만들지 않지만,
-    // 어떻게든 커진 이벤트 하나가 큐를 영구히 막지 못한다는 것이 이 가드의 요지다.
-    const oversized = clickEventWithHints(client, "evt_0000000000", 600);
+    // 정상 경로는 이런 이벤트를 만들지 않지만, 어떻게든 커진 이벤트 하나가 큐를 영구히 막지 못한다는 것이 이 가드의 요지다.
+    const oversized = bigClickEvent(client, "evt_0000000000", 20000);
     expect(utf8ByteLength(JSON.stringify(oversized))).toBeGreaterThan(MAX_BATCH_BODY_BYTES);
     client.enqueue(oversized);
-    client.enqueue(clickEventWithHints(client, "evt_0000000001", MAX_SCREEN_LAYOUT_HINTS));
+    client.enqueue(bigClickEvent(client, "evt_0000000001", 3000));
 
     await client.flush();
 

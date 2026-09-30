@@ -89,4 +89,36 @@ describe("installCollectors", () => {
       { metric: "scroll_depth", score: 50 },
     ]);
   });
+
+  it("클릭 이벤트에 화면 맥락을 싣지 않는다", () => {
+    document.body.innerHTML = '<main><button id="save">저장</button></main>';
+    installCollectors(makeClient());
+    captured = [];
+
+    document.querySelector("#save")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const click = captured.find((event) => event.type === "click");
+    expect(click).toBeDefined();
+    expect(click).not.toHaveProperty("screenContext");
+  });
+
+  it("JS 오류를 수집하지 않는다", () => {
+    installCollectors(makeClient());
+    captured = [];
+
+    // jsdom 은 처리되지 않은 error 를 테스트 러너에 uncaught 로 보고한다. 기본 동작을 막는다.
+    const swallow = (event: Event) => event.preventDefault();
+    window.addEventListener("error", swallow);
+    window.dispatchEvent(
+      new ErrorEvent("error", {
+        error: new TypeError("x"),
+        filename: "https://app.example.com/a.js",
+        lineno: 3,
+        cancelable: true,
+      }),
+    );
+    window.removeEventListener("error", swallow);
+
+    expect(captured.some((event) => event.type === "js_error")).toBe(false);
+  });
 });

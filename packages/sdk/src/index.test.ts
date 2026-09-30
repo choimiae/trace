@@ -124,3 +124,10 @@ describe("init 의 동의 게이트", () => {
     expect(replayScripts()).toHaveLength(0);
   });
 });
+
+describe("window.trace", () => {
+  it("track 을 두지 않는다", () => {
+    expect(window.trace).toBeDefined();
+    expect(Object.keys(window.trace!).sort()).toEqual(["consent", "init"]);
+  });
+});

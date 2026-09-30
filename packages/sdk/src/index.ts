@@ -30,10 +30,6 @@ export function init(options: { projectId: string; endpoint?: string; consent?: 
   return client;
 }
 
-export function track(name: string, metadata?: Record<string, unknown>) {
-  client?.track(name, metadata);
-}
-
 export const consent = {
   grant() {
     consentState = "granted";
@@ -52,12 +48,12 @@ export const consent = {
 
 declare global {
   interface Window {
-    trace?: { init: typeof init; track: typeof track; consent: typeof consent };
+    trace?: { init: typeof init; consent: typeof consent };
   }
 }
 
 if (typeof window !== "undefined") {
-  window.trace = { init, track, consent };
+  window.trace = { init, consent };
 
   if (typeof document !== "undefined") {
     autoInstall(document.currentScript, (options: InstallOptions) => init(options));

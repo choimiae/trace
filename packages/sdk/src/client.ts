@@ -1,4 +1,4 @@
-import { redactMetadata, redactUrl } from "@trace/shared/privacy";
+import { redactUrl } from "@trace/shared/privacy";
 import type { EventBatch, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
 import type { Consent } from "./install.js";
@@ -83,20 +83,6 @@ export class TraceClient {
   denyConsent() {
     this.consent = "denied";
     this.queue = [];
-  }
-
-  track(name: string, metadata: Record<string, unknown> = {}) {
-    const redactedUrl = currentRedactedUrl();
-
-    this.enqueue(
-      this.createEvent({
-        eventId: `evt_${nanoid(10)}`,
-        type: "custom_event",
-        urlPath: redactedUrl.urlPath,
-        ...(redactedUrl.urlQueryRedacted ? { urlQueryRedacted: redactedUrl.urlQueryRedacted } : {}),
-        metadata: redactMetadata({ name, ...metadata }),
-      }),
-    );
   }
 
   createEvent(event: Omit<TraceEvent, "sessionId" | "pageId" | "timestamp"> & { timestamp?: string }): TraceEvent {
