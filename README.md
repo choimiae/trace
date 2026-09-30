@@ -101,7 +101,7 @@ npm run dev:admin
 
 세션 리플레이는 기본으로 꺼져 있습니다. 켜려면 관리자 페이지의 `프로젝트 설정`에서 `세션 리플레이 켜기`를 체크하고 저장합니다. 같은 화면에서 마스킹 셀렉터를 한 줄에 하나씩 최대 50개까지 지정할 수 있고, 여기 걸린 요소의 텍스트는 통째로 `*`로 가려집니다.
 
-올라온 기록은 대시보드의 `기록된 세션`에서 재생합니다. 기록은 스타일을 링크로 두므로 재생기가 원본 사이트의 스타일시트를 불러옵니다 — 그 사이트가 떠 있지 않거나 주소가 바뀌었으면 재생 화면이 원본과 다르게 보입니다.
+올라온 기록은 관리자 홈 `세션` 목록에서 해당 행의 `재생` 버튼으로 재생합니다. 기록은 스타일을 링크로 두므로 재생기가 원본 사이트의 스타일시트를 불러옵니다 — 그 사이트가 떠 있지 않거나 주소가 바뀌었으면 재생 화면이 원본과 다르게 보입니다.
 
 세션 리플레이를 켜도 설치는 같은 한 줄입니다. `trace.js`가 프로젝트 설정을 받아 켜진 경우에만 `trace-replay.js`를 스스로 불러옵니다. 둘 다 trace API가 직접 서빙하므로 CSP에 추가할 항목이 없습니다. 무엇을 저장하고 무엇이 가려지지 않는지는 [세션 리플레이가 가리지 못하는 것](#세션-리플레이가-가리지-못하는-것)을 보세요.
 
@@ -119,7 +119,7 @@ npm run dev:demo
 http://localhost:3000/?projectId=<projectId>
 ```
 
-데모 사이트에서 버튼을 몇 번 클릭하면 관리자 페이지의 설치 화면이 첫 이벤트 도착을 알려줍니다. 이후 대시보드에서 수집된 이벤트와 세션을 확인할 수 있습니다.
+데모 사이트에서 버튼을 몇 번 클릭하면 관리자 페이지의 설치 화면이 첫 이벤트 도착을 알려줍니다. 이후 관리자 홈의 `세션` 화면에서 수집된 이벤트와 세션을 확인할 수 있습니다.
 
 ## 수집하는 것과 수집하지 않는 것
 
@@ -133,7 +133,7 @@ http://localhost:3000/?projectId=<projectId>
 | URL 경로 | 식별자로 보이는 부분을 `:id`로 바꿉니다. `/users/alice/settings` -> `/users/:id/settings` |
 | URL 쿼리 | 값을 전부 `[redacted]`로 바꿉니다 |
 | 요소 텍스트 | 마스킹하고 120자로 제한합니다. 선택자는 해시로 저장합니다. **클릭한 요소의 글자를 태그 종류와 무관하게 저장합니다** — 화면에 보이는 사람 이름·고객명이 있으면 그것도 저장됩니다 |
-| 페이지 제목 | 마스킹하고 120자로 제한합니다. 제목에 사람 이름이 들어가는 사이트라면 그 이름은 저장됩니다 |
+| 페이지 제목 | 지금은 수집하지 않습니다(이후 단계에서 다시 들어옵니다) |
 | 입력값 원문 | 수집하지 않습니다 |
 | 클릭 좌표, 화면 크기 | 수집합니다 |
 | 화면 이동 | 경로 기반 라우팅과 `#/`·`#!/` 해시 라우팅에서 페이지가 바뀔 때마다 경로를 기록합니다. 쿼리 값은 `[redacted]`로 바꿉니다. `#dashboard`처럼 슬래시 없는 해시는 페이지 내 앵커 이동과 구분할 수 없어 기록하지 않습니다 |
@@ -183,7 +183,7 @@ window.trace.consent.grant();
 | `GOOGLE_REDIRECT_URI` | 운영 필수 | - | OAuth 콜백 주소 |
 | `SESSION_SECRET` | 필수 | - | 세션 쿠키 서명 키. 32자 이상 |
 | `ADMIN_APP_ORIGIN` | 필수 | - | 관리자 페이지 origin. CORS 허용 대상 |
-| `ADMIN_ALLOWED_EMAILS` | 필수 | - | 로그인 허용 이메일. 쉼표로 구분 |
+| `ADMIN_ALLOWED_EMAILS` | 필수 | - | 로그인 허용 이메일. 쉼표로 구분. 여기 적힌 관리자는 모든 프로젝트를 보고 수정할 수 있습니다. 이메일을 빼면 그 관리자의 기존 세션도 다음 요청부터 차단됩니다 |
 | `GOOGLE_ALLOWED_DOMAIN` | 선택 | - | 특정 Google Workspace 도메인으로 제한 |
 | `LOCAL_ADMIN_LOGIN` | 선택 | `false` | `true`이면 로컬 개발에서 Google OAuth 없이 로그인합니다 |
 | `NODE_ENV` | 선택 | - | `development` 또는 `test`일 때만 `COOKIE_SECURE=false`와 `LOCAL_ADMIN_LOGIN=true`를 허용합니다 |
@@ -220,5 +220,5 @@ npm run test --workspace @trace/api -- src/routes/auth.test.ts src/routes/admin.
 
 ## 스펙과 계획
 
-- 설계: docs/superpowers/specs/2026-09-30-behavior-analytics-redefinition-design.md
-- 계획(① 걷어내기): docs/superpowers/plans/2026-09-30-simplify-stage1-removal.md
+- 설계: `docs/superpowers/specs/2026-09-30-behavior-analytics-redefinition-design.md`
+- 계획(① 걷어내기): `docs/superpowers/plans/2026-09-30-simplify-stage1-removal.md`
