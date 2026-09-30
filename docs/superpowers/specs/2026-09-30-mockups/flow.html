@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이동 흐름 목업 v2</title>
+<style>
+  :root {
+    --ground: #f5f7fa; --surface: #fff; --surface-sunk: #eef2f7; --border: #dde4ec;
+    --ink: #16202b; --ink-muted: #64748b; --ink-faint: #94a3b8;
+    --accent: #1e6091; --accent-soft: #f0f5fa;
+    --radius-sm: 4px; --radius: 7px; --pad: 12px; --row-y: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; font-size: 13px; line-height: 1.6; letter-spacing: -0.011em; -webkit-font-smoothing: antialiased; }
+  .note-banner { background: #fff8e6; border-bottom: 1px solid #f3e1b0; padding: 6px 16px; font-size: 12px; color: #6b5412; }
+  .layout { display: flex; min-height: calc(100vh - 31px); }
+  nav { width: 200px; background: var(--surface); border-right: 1px solid var(--border); padding: 16px 10px; flex-shrink: 0; }
+  .brand { font-weight: 700; font-size: 15px; padding: 0 8px 12px; }
+  .proj { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; margin-bottom: 16px; display: flex; justify-content: space-between; }
+  .proj small { color: var(--ink-faint); display: block; font-size: 11px; line-height: 1.2; }
+  nav a { display: block; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--ink-muted); text-decoration: none; margin-bottom: 2px; }
+  nav a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  nav .sep { border-top: 1px solid var(--border); margin: 14px 4px; }
+  main { flex: 1; padding: 24px 28px 48px; min-width: 0; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 16px; gap: 16px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 22px; line-height: 1.2; }
+  .sub { color: var(--ink-muted); margin: 4px 0 0; }
+  .controls { display: flex; gap: 8px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .seg span { padding: 5px 12px; border-right: 1px solid var(--border); color: var(--ink-muted); }
+  .seg span:last-child { border-right: 0; }
+  .seg .on { background: var(--accent); color: #fff; font-weight: 600; }
+  .select { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 5px 10px; min-width: 160px; display: flex; justify-content: space-between; gap: 8px; }
+  .select .lbl { color: var(--ink-faint); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; }
+  .card-h { padding: 10px var(--pad); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .card-h h2 { margin: 0; font-size: 15px; }
+  .tag { font-size: 11px; font-weight: 700; color: #fff; background: var(--ink); border-radius: 4px; padding: 1px 7px; margin-right: 8px; }
+  .muted { color: var(--ink-muted); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 500; color: var(--ink-faint); font-size: 12px; padding: 7px var(--pad); border-bottom: 1px solid var(--border); }
+  td { padding: var(--row-y) var(--pad); border-bottom: 1px solid var(--surface-sunk); vertical-align: middle; }
+  tr:hover td { background: var(--ground); }
+  .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rank { color: var(--ink-faint); width: 28px; }
+  .route { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  .step { padding: 1px 8px; border-radius: 999px; background: var(--surface-sunk); white-space: nowrap; }
+  .step.exit { background: transparent; color: var(--ink-faint); border: 1px dashed var(--border); }
+  .step.goal { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .ar { color: var(--ink-faint); font-size: 11px; }
+  .barcell { width: 160px; }
+  .bar { height: 6px; background: var(--surface-sunk); border-radius: 3px; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; opacity: .8; }
+  .link { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .foot { padding: 8px var(--pad); color: var(--ink-muted); font-size: 12px; }
+  svg text { font-size: 12px; fill: var(--ink); }
+  svg .sm { font-size: 11px; fill: var(--ink-muted); }
+  svg .node { fill: var(--accent); }
+  svg .nodeX { fill: var(--ink-faint); }
+  svg .band { fill: var(--accent); opacity: .16; }
+  svg .bandX { fill: var(--ink-faint); opacity: .18; }
+  svg .band.hl { opacity: .38; }
+</style>
+</head>
+<body>
+<div class="note-banner">목업 · 실제 관리자 화면의 색·글꼴·밀도를 그대로 썼습니다. 한 페이지에 두 안을 위아래로 놓았습니다 — 실제로는 둘 중 하나만 들어갑니다.</div>
+<div class="layout">
+  <nav>
+    <div class="brand">Trace</div>
+    <div class="proj"><div><small>프로젝트</small>업무시스템</div><span>▾</span></div>
+    <a href="#">기능 사용</a>
+    <a href="#" class="on">이동 흐름</a>
+    <a href="#">세션</a>
+    <div class="sep"></div>
+    <a href="#">설치 안내</a>
+    <a href="#">프로젝트 설정</a>
+  </nav>
+  <main>
+    <div class="head">
+      <div>
+        <h1>이동 흐름</h1>
+        <p class="sub">사용자들이 실제로 어떤 순서로 화면을 이동했는지 봅니다.</p>
+      </div>
+      <div class="controls">
+        <div class="select"><span><span class="lbl">시작 화면</span>&nbsp; 전체</span><span>▾</span></div>
+        <div class="seg"><span>1일</span><span class="on">7일</span><span>30일</span></div>
+      </div>
+    </div>
+
+    <!-- A안 -->
+    <div class="card">
+      <div class="card-h"><h2><span class="tag">A안</span>많이 다닌 경로 순위</h2><span class="muted">세션 1,850 · 처음 5개 화면까지</span></div>
+      <table>
+        <tr><th></th><th>경로</th><th class="n">세션</th><th class="n">비율</th><th></th><th></th></tr>
+        <tr><td class="rank">1</td><td><div class="route"><span class="step">홈</span><span class="ar">›</span><span class="step">견적 목록</span><span class="ar">›</span><span class="step goal">견적 등록</span><span class="ar">›</span><span class="step">견적 목록</span></div></td><td class="n">310</td><td class="n">16.8%</td><td class="barcell"><div class="bar"><i style="width:100%"></i></div></td><td class="link">세션 보기</td></tr>
+<tr><td class="rank">2</td><td><div class="route"><span class="step">홈</span><span class="ar">›</span><span class="step">결재함</span><span class="ar">›</span><span class="step exit">이탈</span></div></td><td class="n">281</td><td class="n">15.2%</td><td class="barcell"><div class="bar"><i style="width:91%"></i></div></td><td class="link">세션 보기</td></tr>
+<tr><td class="rank">3</td><td><div class="route"><span class="step">홈</span><span class="ar">›</span><span class="step">견적 목록</span><span class="ar">›</span><span class="step exit">이탈</span></div></td><td class="n">253</td><td class="n">13.7%</td><td class="barcell"><div class="bar"><i style="width:82%"></i></div></td><td class="link">세션 보기</td></tr>
+<tr><td class="rank">4</td><td><div class="route"><span class="step">홈</span><span class="ar">›</span><span class="step">견적 목록</span><span class="ar">›</span><span class="step">견적 상세</span><span class="ar">›</span><span class="step">견적 목록</span></div></td><td class="n">244</td><td class="n">13.2%</td><td class="barcell"><div class="bar"><i style="width:79%"></i></div></td><td class="link">세션 보기</td></tr>
+<tr><td class="rank">5</td><td><div class="route"><span class="step">홈</span><span class="ar">›</span><span class="step exit">이탈</span></div></td><td class="n">185</td><td class="n">10.0%</td><td class="barcell"><div class="bar"><i style="width:60%"></i></div></td><td class="link">세션 보기</td></tr>
+<tr><td class="rank">6</td><td><div class="route"><span class="step">홈</span><span class="ar">›</span><span class="step">견적 목록</span><span class="ar">›</span><span class="step goal">견적 등록</span><span class="ar">›</span><span class="step exit">이탈</span></div></td><td class="n">160</td><td class="n">8.6%</td><td class="barcell"><div class="bar"><i style="width:52%"></i></div></td><td class="link">세션 보기</td></tr>
+      </table>
+      <div class="foot">한 줄 = 한 경로. 위에서부터 읽으면 끝. 시작 화면을 고르면 그 화면에서 시작한 경로만 남습니다.</div>
+    </div>
+
+    <!-- B안 -->
+    <div class="card">
+      <div class="card-h"><h2><span class="tag">B안</span>흐름도 + 경로 순위</h2><span class="muted">위: 전체 모양 · 아래: A안 표 그대로</span></div>
+      <div style="padding: 12px var(--pad) 4px">
+        <svg viewBox="0 0 1000 190" width="100%" height="190">
+          <!-- column labels -->
+          <text x="0" y="12" class="sm">1단계</text><text x="250" y="12" class="sm">2단계</text><text x="500" y="12" class="sm">3단계</text><text x="750" y="12" class="sm">4단계</text>
+          <!-- step1 -->
+          <rect class="node" x="0" y="22" width="8" height="160" rx="2"/><text x="14" y="104">홈</text><text x="14" y="119" class="sm">1,850</text>
+          <!-- 1->2 -->
+          <path class="band hl" d="M8,22 C130,22 130,22 250,22 L250,121 C130,121 130,121 8,121 Z"/>
+          <path class="band" d="M8,121 C130,121 130,135 250,135 L250,180 C130,180 130,166 8,166 Z"/>
+          <path class="bandX" d="M8,166 C130,166 130,186 250,186 L250,188 C130,188 130,182 8,182 Z"/>
+          <!-- step2 -->
+          <rect class="node" x="250" y="22" width="8" height="99" rx="2"/><text x="264" y="66">견적 목록</text><text x="264" y="81" class="sm">1,147 · 62%</text>
+          <rect class="node" x="250" y="135" width="8" height="45" rx="2"/><text x="264" y="156">결재함</text><text x="264" y="170" class="sm">518 · 28%</text>
+          <!-- 2->3 -->
+          <path class="band hl" d="M258,22 C380,22 380,22 500,22 L500,63 C380,63 380,63 258,63 Z"/>
+          <path class="band" d="M258,63 C380,63 380,73 500,73 L500,110 C380,110 380,100 258,100 Z"/>
+          <path class="bandX" d="M258,100 C380,100 380,120 500,120 L500,141 C380,141 380,121 258,121 Z"/>
+          <!-- step3 -->
+          <rect class="node" x="500" y="22" width="8" height="41" rx="2"/><text x="514" y="40">견적 등록</text><text x="514" y="55" class="sm">470 · 41%</text>
+          <rect class="node" x="500" y="73" width="8" height="37" rx="2"/><text x="514" y="90">견적 상세</text><text x="514" y="104" class="sm">424 · 37%</text>
+          <rect class="nodeX" x="500" y="120" width="8" height="21" rx="2"/><text x="514" y="135" class="sm">이탈 253</text>
+          <!-- 3->4 -->
+          <path class="band hl" d="M508,22 C630,22 630,22 750,22 L750,49 C630,49 630,49 508,49 Z"/>
+          <path class="bandX" d="M508,49 C630,49 630,59 750,59 L750,73 C630,73 630,63 508,63 Z"/>
+          <!-- step4 -->
+          <rect class="node" x="750" y="22" width="8" height="27" rx="2"/><text x="764" y="40">견적 목록</text><text x="764" y="54" class="sm" dy="0"></text>
+          <text x="850" y="40" class="sm">310 · 66%</text>
+          <rect class="nodeX" x="750" y="59" width="8" height="14" rx="2"/><text x="764" y="70" class="sm">이탈 160</text>
+        </svg>
+      </div>
+      <div class="foot">띠 굵기 = 사람 수. 띠·화면에 마우스를 올리면 수치, 누르면 그 경로의 세션. 진하게 칠한 띠는 A안 표에서 고른 경로(1위)를 따라 강조한 것.</div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

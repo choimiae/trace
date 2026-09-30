@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기능 사용 · 세션 목업</title>
+<style>
+  :root {
+    --ground: #f5f7fa; --surface: #fff; --surface-sunk: #eef2f7; --border: #dde4ec;
+    --ink: #16202b; --ink-muted: #64748b; --ink-faint: #94a3b8;
+    --accent: #1e6091; --accent-soft: #f0f5fa; --crit: #d03b3b;
+    --radius-sm: 4px; --radius: 7px; --pad: 12px; --row-y: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; font-size: 13px; line-height: 1.6; letter-spacing: -0.011em; -webkit-font-smoothing: antialiased; }
+  .note-banner { background: #fff8e6; border-bottom: 1px solid #f3e1b0; padding: 6px 16px; font-size: 12px; color: #6b5412; }
+  .screen-label { margin: 28px 0 8px 16px; font-weight: 700; font-size: 12px; color: #6b5412; }
+  .layout { display: flex; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); position: relative; }
+  nav { width: 200px; background: var(--surface); border-right: 1px solid var(--border); padding: 16px 10px; flex-shrink: 0; }
+  .brand { font-weight: 700; font-size: 15px; padding: 0 8px 12px; }
+  .proj { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; margin-bottom: 16px; display: flex; justify-content: space-between; }
+  .proj small { color: var(--ink-faint); display: block; font-size: 11px; line-height: 1.2; }
+  nav a { display: block; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--ink-muted); text-decoration: none; margin-bottom: 2px; }
+  nav a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  nav .sep { border-top: 1px solid var(--border); margin: 14px 4px; }
+  main { flex: 1; padding: 24px 28px 32px; min-width: 0; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 16px; gap: 16px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 22px; line-height: 1.2; }
+  .sub { color: var(--ink-muted); margin: 4px 0 0; }
+  .controls { display: flex; gap: 8px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .seg span { padding: 5px 12px; border-right: 1px solid var(--border); color: var(--ink-muted); }
+  .seg span:last-child { border-right: 0; }
+  .seg .on { background: var(--accent); color: #fff; font-weight: 600; }
+  .search { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 5px 10px; width: 220px; color: var(--ink-faint); }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px var(--pad); }
+  .kpi span { color: var(--ink-muted); font-size: 12px; }
+  .kpi b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 500; color: var(--ink-faint); font-size: 12px; padding: 7px var(--pad); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th.sorted { color: var(--ink); }
+  td { padding: var(--row-y) var(--pad); border-bottom: 1px solid var(--surface-sunk); vertical-align: middle; }
+  .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.scr td { background: #fafbfd; }
+  tr.scr .name { font-weight: 600; }
+  tr.feat td:first-child { padding-left: 34px; }
+  .path { color: var(--ink-faint); font-size: 11px; margin-left: 6px; }
+  .role { color: var(--ink-faint); font-size: 11px; margin-left: 6px; }
+  .tw { color: var(--ink-faint); width: 14px; display: inline-block; }
+  .link { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .bar { height: 6px; background: var(--surface-sunk); border-radius: 3px; width: 120px; display: inline-block; vertical-align: middle; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; opacity: .8; }
+  .muted { color: var(--ink-muted); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 10px; font-weight: 600; margin-bottom: 12px; }
+  .route { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; }
+  .step { padding: 0 7px; border-radius: 999px; background: var(--surface-sunk); white-space: nowrap; font-size: 12px; }
+  .step.exit { background: transparent; color: var(--ink-faint); border: 1px dashed var(--border); }
+  .ar { color: var(--ink-faint); font-size: 11px; }
+  .rec { color: var(--ink-faint); font-size: 12px; }
+  .rec.on { color: var(--accent); }
+  /* dialog */
+  .scrim { position: absolute; inset: 0; background: rgb(22 32 43 / 38%); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .dialog { background: var(--surface); border-radius: 10px; width: 100%; max-width: 1180px; height: 560px; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgb(22 32 43 / 25%); }
+  .dlg-h { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .dlg-h b { font-size: 15px; }
+  .dlg-b { flex: 1; display: flex; min-height: 0; }
+  .player { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 8px; border-right: 1px solid var(--border); }
+  .stage { flex: 1; background: var(--surface-sunk); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; color: var(--ink-faint); position: relative; }
+  .fake { width: 78%; height: 78%; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 12px; color: var(--ink-muted); font-size: 12px; }
+  .fake .fbar { height: 10px; background: var(--surface-sunk); border-radius: 3px; margin: 8px 0; }
+  .ctrl { display: flex; align-items: center; gap: 10px; }
+  .play { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .track { flex: 1; height: 6px; background: var(--surface-sunk); border-radius: 3px; position: relative; }
+  .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; background: var(--accent); border-radius: 3px; }
+  .track .mk { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--ink-faint); }
+  .speed { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 8px; }
+  .tl { width: 340px; overflow: auto; }
+  .tl-h { padding: 8px 12px; color: var(--ink-faint); font-size: 11px; font-weight: 600; letter-spacing: .06em; border-bottom: 1px solid var(--border); }
+  .ev { display: flex; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--surface-sunk); cursor: pointer; }
+  .ev:hover { background: var(--ground); }
+  .ev.cur { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .ev time { color: var(--ink-faint); font-variant-numeric: tabular-nums; width: 42px; flex-shrink: 0; }
+  .ev .k { font-size: 11px; color: var(--ink-faint); width: 44px; flex-shrink: 0; }
+  .ev.page .d { font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="note-banner">목업 · 실제 관리자 화면의 색·글꼴·밀도를 그대로 썼습니다. 숫자는 예시입니다. 아래로 스크롤하면 ① 기능 사용 → ② 세션 목록 → ③ 세션을 연 창 순서입니다.</div>
+
+<!-- ① 기능 사용 -->
+<div class="screen-label">① 기능 사용 (첫 화면)</div>
+<div class="layout">
+  <nav>
+    <div class="brand">Trace</div>
+    <div class="proj"><div><small>프로젝트</small>업무시스템</div><span>▾</span></div>
+    <a href="#" class="on">기능 사용</a><a href="#">이동 흐름</a><a href="#">세션</a>
+    <div class="sep"></div><a href="#">설치 안내</a><a href="#">프로젝트 설정</a>
+  </nav>
+  <main>
+    <div class="head">
+      <div><h1>기능 사용</h1><p class="sub">화면마다 어떤 기능(버튼·메뉴·링크)이 얼마나 쓰였는지 봅니다.</p></div>
+      <div class="controls"><div class="search">화면·기능 이름 검색</div><div class="seg"><span>1일</span><span class="on">7일</span><span>30일</span></div></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><span>방문자</span><b>312</b></div>
+      <div class="kpi"><span>세션</span><b>1,850</b></div>
+      <div class="kpi"><span>평균 세션 길이</span><b>6분 10초</b></div>
+    </div>
+    <div class="card">
+      <table>
+        <tr><th>화면 / 기능</th><th class="n sorted">방문·클릭 ▾</th><th class="n">방문자</th><th></th><th class="n">평균 체류</th><th class="n">이탈률</th><th></th></tr>
+        <tr class="scr"><td><span class="tw">▾</span><span class="name">견적 목록</span><span class="path">/quote</span></td><td class="n">1,850</td><td class="n">290</td><td><span class="bar"><i style="width:100%"></i></span></td><td class="n">1분 40초</td><td class="n">12%</td><td class="link">세션 보기</td></tr>
+        <tr class="feat"><td>검색<span class="role">버튼</span></td><td class="n">2,410</td><td class="n">290</td><td><span class="bar"><i style="width:100%"></i></span></td><td></td><td></td><td class="link">세션 보기</td></tr>
+        <tr class="feat"><td>신규 등록<span class="role">버튼</span></td><td class="n">410</td><td class="n">180</td><td><span class="bar"><i style="width:62%"></i></span></td><td></td><td></td><td class="link">세션 보기</td></tr>
+        <tr class="feat"><td>견적서 번호 (목록 행)<span class="role">링크</span></td><td class="n">385</td><td class="n">170</td><td><span class="bar"><i style="width:59%"></i></span></td><td></td><td></td><td class="link">세션 보기</td></tr>
+        <tr class="feat"><td>엑셀 다운로드<span class="role">버튼</span></td><td class="n">96</td><td class="n">41</td><td><span class="bar"><i style="width:14%"></i></span></td><td></td><td></td><td class="link">세션 보기</td></tr>
+        <tr class="scr"><td><span class="tw">▸</span><span class="name">견적 등록</span><span class="path">/quote/new</span></td><td class="n">520</td><td class="n">180</td><td><span class="bar"><i style="width:62%"></i></span></td><td class="n">3분 05초</td><td class="n">33%</td><td class="link">세션 보기</td></tr>
+        <tr class="scr"><td><span class="tw">▸</span><span class="name">결재함</span><span class="path">/approval</span></td><td class="n">480</td><td class="n">150</td><td><span class="bar"><i style="width:52%"></i></span></td><td class="n">55초</td><td class="n">20%</td><td class="link">세션 보기</td></tr>
+        <tr class="scr"><td><span class="tw">▸</span><span class="name">견적 상세</span><span class="path">/quote/:id</span></td><td class="n">430</td><td class="n">170</td><td><span class="bar"><i style="width:59%"></i></span></td><td class="n">1분 12초</td><td class="n">9%</td><td class="link">세션 보기</td></tr>
+      </table>
+    </div>
+    <p class="muted" style="margin-top:8px">막대는 방문자 수 기준(같은 묶음 안에서 가장 큰 값 = 100%). 화면 행을 누르면 펼치고 접습니다.</p>
+  </main>
+</div>
+
+<!-- ② 세션 목록 -->
+<div class="screen-label">② 세션 — 기능 사용에서 "신규 등록 · 세션 보기"를 누르고 들어온 상태</div>
+<div class="layout">
+  <nav>
+    <div class="brand">Trace</div>
+    <div class="proj"><div><small>프로젝트</small>업무시스템</div><span>▾</span></div>
+    <a href="#">기능 사용</a><a href="#">이동 흐름</a><a href="#" class="on">세션</a>
+    <div class="sep"></div><a href="#">설치 안내</a><a href="#">프로젝트 설정</a>
+  </nav>
+  <main>
+    <div class="head">
+      <div><h1>세션</h1><p class="sub">한 사용자가 들어와서 나갈 때까지의 기록입니다. 열면 리플레이와 타임라인을 봅니다.</p></div>
+      <div class="controls"><div class="seg"><span>1일</span><span class="on">7일</span><span>30일</span></div></div>
+    </div>
+    <div class="chip">견적 목록 · 신규 등록을 누른 세션 <span>✕</span></div>
+    <div class="card">
+      <table>
+        <tr><th>시작</th><th>방문자</th><th class="n">길이</th><th class="n">화면 수</th><th>지나간 화면</th><th>리플레이</th><th></th></tr>
+        <tr><td class="n" style="text-align:left">09-29 (월) 09:12</td><td class="muted">방문자 7f3a</td><td class="n">6분 02초</td><td class="n">4</td><td><div class="route"><span class="step">홈</span><span class="ar">›</span><span class="step">견적 목록</span><span class="ar">›</span><span class="step">견적 등록</span><span class="ar">›</span><span class="step exit">이탈</span></div></td><td class="rec on">● 있음</td><td class="link">열기</td></tr>
+        <tr><td class="n" style="text-align:left">09-29 (월) 10:40</td><td class="muted">방문자 19cc</td><td class="n">12분 30초</td><td class="n">7</td><td><div class="route"><span class="step">견적 목록</span><span class="ar">›</span><span class="step">견적 등록</span><span class="ar">›</span><span class="step">견적 목록</span><span class="ar">›</span><span class="step">견적 상세</span><span class="ar">…</span></div></td><td class="rec on">● 있음</td><td class="link">열기</td></tr>
+        <tr><td class="n" style="text-align:left">09-28 (일) 16:05</td><td class="muted">방문자 a0e1</td><td class="n">2분 11초</td><td class="n">3</td><td><div class="route"><span class="step">홈</span><span class="ar">›</span><span class="step">견적 목록</span><span class="ar">›</span><span class="step">견적 등록</span></div></td><td class="rec">— 없음</td><td class="link">열기</td></tr>
+      </table>
+    </div>
+    <p class="muted" style="margin-top:8px">최근 순. 필터 칩의 ✕를 누르면 기간 안 전체 세션. 리플레이가 없는 세션(녹화를 끈 프로젝트·7일 지난 녹화)은 열면 타임라인만 보입니다.</p>
+  </main>
+</div>
+
+<!-- ③ 세션 창 -->
+<div class="screen-label">③ 세션을 연 창 — 화면 대부분을 덮는 창 (지금 있는 창을 그대로 씁니다)</div>
+<div class="layout" style="height: 620px; background: var(--ground)">
+  <div class="scrim">
+    <div class="dialog">
+      <div class="dlg-h"><div><b>세션 · 09-29 (월) 09:12</b> <span class="muted">&nbsp;방문자 7f3a · 6분 02초 · 화면 4개</span></div><span class="muted" style="font-size:18px">✕</span></div>
+      <div class="dlg-b">
+        <div class="player">
+          <div class="stage"><div class="fake"><b style="color:var(--ink)">견적 등록</b><div class="fbar" style="width:60%"></div><div class="fbar"></div><div class="fbar" style="width:80%"></div><div class="fbar" style="width:40%"></div><div style="margin-top:16px; display:inline-block; padding:3px 12px; background:var(--accent); color:#fff; border-radius:4px">저장</div></div></div>
+          <div class="ctrl"><span class="play">▶</span><span class="muted" style="font-variant-numeric:tabular-nums">02:18 / 06:02</span><div class="track"><i></i><span class="mk" style="left:3%"></span><span class="mk" style="left:12%"></span><span class="mk" style="left:34%"></span><span class="mk" style="left:92%"></span></div><span class="speed">1x ▾</span><span class="muted">화면 글자 보기</span></div>
+        </div>
+        <div class="tl">
+          <div class="tl-h">타임라인 · 누르면 그 시점으로 이동</div>
+          <div class="ev page"><time>00:00</time><span class="k">화면</span><span class="d">홈</span></div>
+          <div class="ev"><time>00:07</time><span class="k">클릭</span><span class="d">견적 관리 (메뉴)</span></div>
+          <div class="ev page"><time>00:08</time><span class="k">화면</span><span class="d">견적 목록</span></div>
+          <div class="ev"><time>00:15</time><span class="k">클릭</span><span class="d">검색</span></div>
+          <div class="ev"><time>00:28</time><span class="k">스크롤</span><span class="d">75% 도달</span></div>
+          <div class="ev"><time>00:43</time><span class="k">클릭</span><span class="d">신규 등록</span></div>
+          <div class="ev page cur"><time>00:44</time><span class="k">화면</span><span class="d">견적 등록</span></div>
+          <div class="ev"><time>05:31</time><span class="k">클릭</span><span class="d">저장</span></div>
+          <div class="ev"><time>06:02</time><span class="k">이탈</span><span class="d muted">창 닫음</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div style="height:40px"></div>
+</body>
+</html>
