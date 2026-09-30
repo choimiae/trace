@@ -178,8 +178,8 @@ describe("TraceClient", () => {
   // 브라우저는 keepalive fetch 의 본문을 64 KiB 로 제한하고, 넘으면 HTTP 상태가
   // 아니라 네트워크 오류로 거절한다. 그러면 catch 가 배치를 큐 앞으로 되돌리고
   // 큐가 다시 임계치를 넘어 같은 본문을 또 보낸다 — 영구 head-of-line blocking 이다.
-  // 개수(100)만으로는 못 막는다: 실측 화면의 이벤트(힌트 50개, 약 5.3KB)는 전송
-  // 계층이 flush 하는 큐 20개만 모여도 약 106KB 다.
+  // 개수(100)만으로는 못 막는다: 이 픽스처의 이벤트(한글 3000자, 약 9KB)는 전송
+  // 계층이 flush 하는 큐 20개만 모여도 약 180KB 다.
   it("배치 본문은 개수가 아니라 직렬화 바이트 예산에서 먼저 잘린다", async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: true });
     const client = new TraceClient({
