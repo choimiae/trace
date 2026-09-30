@@ -44,7 +44,7 @@ describe("init 의 동의 게이트", () => {
 
   // 가장 크게 수집하는 경로가 동의를 건너뛰고 있었다. data-consent="pending" 은
   // README 가 동의 배너 지역에 권하는 바로 그 설정인데, 평범한 이벤트는 한 건도
-  // 나가지 않는 동안 리플레이는 설정을 받고 rrweb 을 켜 첫 트리거에 DOM 스냅샷을
+  // 나가지 않는 동안 리플레이는 설정을 받고 rrweb 을 켜 첫 업로드에 DOM 스냅샷을
   // 통째로 올렸다.
   it("동의가 보류면 설정조차 받지 않는다", async () => {
     const { configRequests } = stubFetch();
@@ -94,7 +94,7 @@ describe("init 의 동의 게이트", () => {
   });
 
   // deny() 가 이벤트 큐만 비우고 기록기를 그대로 두면, 동의를 철회한 사용자의
-  // 화면이 계속 버퍼에 담기고 다음 트리거에 그대로 올라간다.
+  // 화면이 계속 기록되어 다음 10 초 업로드나 pagehide 에 그대로 올라간다.
   it("동의를 철회하면 돌고 있던 기록기를 멈춘다", async () => {
     stubFetch();
     init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "granted" });

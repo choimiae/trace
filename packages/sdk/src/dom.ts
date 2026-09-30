@@ -72,7 +72,7 @@ const STABLE_ATTRIBUTES = ["data-trace-id", "data-testid", "name", "type"] as co
 const ATTRIBUTE_VALUE_LIMIT = 64;
 
 // React useId 는 `:r1:` 처럼 콜론을 포함한 id 를 렌더마다 새로 만든다. 그 id 를
-// 지문에 넣으면 같은 버튼이 렌더마다 다른 요소로 갈려 이슈가 폭증한다.
+// 지문에 넣으면 같은 버튼이 렌더마다 다른 요소 키로 갈려 같은 요소가 수없이 쪼개진다.
 // 콜론을 쓰지 않는 다른 생성기(무작위 UUID 등)는 이 가드가 잡지 못한다.
 function stableId(element: Element): string {
   return element.id && !element.id.includes(":") ? `#${element.id}` : "";

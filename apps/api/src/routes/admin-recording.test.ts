@@ -239,7 +239,7 @@ describe("GET /admin/api/sessions/:sessionId/recording/chunks/:seq", () => {
 describe("GET /admin/api/projects/:projectId/sessions", () => {
   it("모든 세션을 최근 순으로 돌려준다", async () => {
     const { app, store, project, headers } = await createAuthenticatedOwner();
-    // 기록이 없는 세션도 목록에 들어간다 - 이슈 없이 흐름을 보려는 것이 이
+    // 기록이 없는 세션도 목록에 들어간다 - 기록 유무와 상관없이 흐름을 보려는 것이 이
     // 화면의 목적이다.
     await store.saveBatch({
       projectId: project.projectId,

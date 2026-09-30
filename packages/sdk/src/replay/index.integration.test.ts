@@ -74,7 +74,7 @@ function recordAndDrain(
     flush: vi.fn(async () => true),
   };
 
-  document.body.innerHTML = `${html}<button id="trigger">확인</button>`;
+  document.body.innerHTML = `${html}`;
   const stop = startReplay({ ...config, maskSelectors }, { uploader });
 
   window.dispatchEvent(new Event("pagehide"));
@@ -99,7 +99,7 @@ async function recordMutateAndDrain(html: string, mutate: () => void): Promise<s
     flush: vi.fn(async () => true),
   };
 
-  document.body.innerHTML = `${html}<button id="trigger">확인</button>`;
+  document.body.innerHTML = `${html}`;
   const stop = startReplay(config, { uploader });
 
   mutate();
@@ -154,7 +154,7 @@ describe("startReplay (진짜 rrweb)", () => {
       flush: vi.fn(async () => true),
     };
 
-    document.body.innerHTML = '<div class="note">준비 중</div><button id="trigger">확인</button>';
+    document.body.innerHTML = '<div class="note">준비 중</div>';
     const stop = startReplay(config, { uploader });
 
     const text = document.querySelector(".note")!.firstChild as Text;
@@ -269,7 +269,7 @@ describe("startReplay (진짜 rrweb)", () => {
     };
 
     document.body.innerHTML =
-      '<style id="s1">.a{z-index:999999999}</style><button id="trigger">확인</button>';
+      '<style id="s1">.a{z-index:999999999}</style>';
     const stop = startReplay(config, { uploader });
 
     const styleText = document.querySelector("#s1")!.firstChild as Text;
@@ -309,8 +309,7 @@ describe("startReplay (진짜 rrweb)", () => {
     document.body.innerHTML =
       '<input type="radio" name="c" id="r1" value="hong@example.com">' +
       '<input type="radio" name="c" id="r2" value="lee@example.com">' +
-      '<input type="radio" name="c" id="r3" value="010-9876-5432">' +
-      '<button id="trigger">확인</button>';
+      '<input type="radio" name="c" id="r3" value="010-9876-5432">';
     const stop = startReplay(config, { uploader });
 
     document.querySelector<HTMLInputElement>("#r1")!.click();
@@ -335,7 +334,7 @@ describe("startReplay (진짜 rrweb)", () => {
     };
     window.history.replaceState({}, "", "/customers/42?email=hong@example.com&phone=010-1234-5678");
 
-    document.body.innerHTML = '<button id="trigger">확인</button>';
+    document.body.innerHTML = "";
     const stop = startReplay(config, { uploader });
     window.dispatchEvent(new Event("pagehide"));
     stop();

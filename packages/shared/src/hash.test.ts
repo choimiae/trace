@@ -76,9 +76,10 @@ describe("hash64Hex", () => {
     expect(combinations).toEqual(new Set(["same", "complement"]));
   });
 
-  it("영속 이슈 id 에 박히는 출력이므로 알고리즘을 고정한다", () => {
-    // hash.ts 의 경고대로 이 값은 issues.issue_id 에 저장된다. 이 리터럴이
-    // 깨졌다면 해시를 "고친" 것이 아니라 저장된 이슈 id 형식을 바꾼 것이므로
+  it("events.element_key 에 저장되는 출력이므로 알고리즘을 고정한다", () => {
+    // hash.ts 의 경고대로 이 값은 events.element_key 에 저장된다
+    // (apps/api/src/store/element-key.ts). 이 리터럴이
+    // 깨졌다면 해시를 "고친" 것이 아니라 저장된 요소 키 형식을 바꾼 것이므로
     // 마이그레이션이 필요하다. 느슨한 검사로 바꾸지 말고 값을 다시 계산할지
     // 마이그레이션을 쓸지 판단한다. Math.imul 을 평범한 곱셈으로 바꾸면
     // 2^53 을 넘겨 하위 비트를 잃는데, 그 회귀도 이 리터럴이 잡는다.

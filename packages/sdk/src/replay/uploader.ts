@@ -140,7 +140,7 @@ export class RecordingUploader {
     // 시도만 바꾼다.
     //
     // 켜는 것과 똑같이 끈다(라운드 4). keepalive flush 는 마지막이라는 보장이
-    // 없다 - visibilitychange→hidden 도(이 SDK 자신의 트리거 패턴,
+    // 없다 - visibilitychange→hidden 도(이 SDK 자신의 전송 시점 패턴,
     // transport.ts 참고) bfcache 의 pagehide 도 페이지를 살려 둔 채 지나간다.
     // 한 번 켜고 두면 그 뒤의 평상시 flush 가 backlog 를 계속 keepalive 로
     // 보내고, 64 KiB 예산을 넘는 본문은 HTTP 상태가 아니라 네트워크 오류로

@@ -47,7 +47,7 @@ const meta = (timestamp: number, extra: Record<string, unknown> = {}): RecordedE
 });
 
 describe("RecordingUploader", () => {
-  // 이 계획에서 가장 중요한 불변식이다. 트리거가 없으면 아무것도 브라우저를
+  // 이 계획에서 가장 중요한 불변식이다. 올릴 것이 없으면 아무것도 브라우저를
   // 떠나지 않는다.
   it("대기열이 비어 있으면 아무것도 보내지 않는다", async () => {
     const fetcher = vi.fn();
@@ -716,7 +716,7 @@ describe("RecordingUploader", () => {
   //
   // keepalive 는 "지금 이 순간 페이지가 사라지고 있는가" 의 속성이다(라운드 3
   // 의 모델). 그런데 라운드 3 은 켜기만 했다. keepalive flush 는 마지막이라는
-  // 보장이 없다 - visibilitychange→hidden(이 저장소 자신의 트리거 패턴,
+  // 보장이 없다 - visibilitychange→hidden(이 저장소 자신의 전송 시점 패턴,
   // packages/sdk/src/transport.ts 참고)도, bfcache 의 pagehide 도 페이지를
   // 살려 둔 채 지나간다. 그 뒤의 평상시 flush 가 backlog 를 계속 keepalive 로
   // 보내면, 64 KiB 예산을 넘는 본문이 HTTP 상태가 아니라 네트워크 오류로

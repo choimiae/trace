@@ -20,7 +20,7 @@ describe("DataTable", () => {
         columns={columns}
         rows={[{ id: "a", name: "결제 버튼 반복 클릭" }]}
         rowKey={(row) => row.id}
-        empty="아직 감지된 문제가 없습니다."
+        empty="아직 수집된 세션이 없습니다."
       />,
     );
     expect(screen.getByText("결제 버튼 반복 클릭")).toBeInTheDocument();
@@ -28,9 +28,9 @@ describe("DataTable", () => {
 
   it("행이 없으면 빈 문구를 보여준다", () => {
     render(
-      <DataTable columns={columns} rows={[]} rowKey={(row) => row.id} empty="아직 감지된 문제가 없습니다." />,
+      <DataTable columns={columns} rows={[]} rowKey={(row) => row.id} empty="아직 수집된 세션이 없습니다." />,
     );
-    expect(screen.getByText("아직 감지된 문제가 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("아직 수집된 세션이 없습니다.")).toBeInTheDocument();
   });
 
   it("headerLabel 이 있으면 헤더 글자 대신 접근 가능한 이름으로 쓴다", () => {

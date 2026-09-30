@@ -41,7 +41,7 @@ export const consent = {
   deny() {
     consentState = "denied";
     client?.denyConsent();
-    // 큐를 비우는 것만으로는 리플레이가 멈추지 않는다 - 버퍼가 따로 있다.
+    // 큐를 비우는 것만으로는 리플레이가 멈추지 않는다 - 기록기·업로드 타이머가 따로 돈다.
     stopReplay();
   },
 };

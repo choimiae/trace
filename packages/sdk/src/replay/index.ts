@@ -91,6 +91,9 @@ export function startReplay(
       redactEventUrl(recorded);
       pending.push(recorded);
     },
+    // 주기적 전체 스냅샷은 계속 남긴다. 청크 하나가 유실돼도 다음
+    // 스냅샷부터 재생을 이어 갈 수 있다. 대역폭 비용(스냅샷을 자주 올린다)은
+    // ② 단계에서 다시 따진다.
     checkoutEveryNms: CHECKPOINT_INTERVAL_MS,
     // maskAllInputs: true 가 아니라 명시 집합인 것이 중요하다. 그 플래그가
     // 펼쳐지는 집합에는 **"input" 태그명 키가 없다** - type 이름들(text·email·

@@ -110,7 +110,7 @@ describe("startReplay", () => {
     expect(snapshot.data.node.attributes.src).not.toContain("base64,AAAA");
   });
 
-  it("트리거 없이도 주기마다 기록을 올린다", () => {
+  it("별도 신호 없이도 10 초 주기마다 기록을 올린다", () => {
     vi.useFakeTimers();
     const uploader = { enqueue: vi.fn(), flush: vi.fn(async () => true) };
     startReplay(config, { uploader });

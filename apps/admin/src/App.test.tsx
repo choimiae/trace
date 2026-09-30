@@ -119,7 +119,7 @@ describe("App auth state", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "세션" })).toBeInTheDocument();
   });
 
-  it("로그인하면 세션 화면을 열고 문제 요약은 부르지 않는다", async () => {
+  it("로그인하면 인증과 세션 목록 말고는 아무 API 도 부르지 않는다", async () => {
     api.getAuthMe.mockResolvedValue({
       user: { adminUserId: "adm_1", email: "admin@example.com" },
       projects: [{ projectId: "proj_1" }],
@@ -133,7 +133,7 @@ describe("App auth state", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "세션" })).toBeInTheDocument();
     expect(api.getSessions).toHaveBeenCalledWith("proj_1");
     // 이 파일은 fetch 대신 api 모듈을 목으로 바꾼다. 인증과 세션 목록 말고는
-    // 어떤 API 도 부르지 않아야 한다 - 문제 요약(/summary)·목록(/issues)이 여기에 든다.
+    // 어떤 API 도 부르지 않아야 한다 - 걷어낸 화면의 API 가 되살아나 로그인 직후 불리는 것을 막는다.
     const otherCalls = Object.entries(api)
       .filter(([name]) => name !== "getAuthMe" && name !== "getSessions")
       .filter(([, fn]) => vi.isMockFunction(fn) && fn.mock.calls.length > 0)
