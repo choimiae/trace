@@ -324,49 +324,12 @@ function billingView() {
   return `
     <header>
       <h1>청구 현황</h1>
-      <p>여기는 의도적으로 막히게 만든 구역입니다. 각 버튼이 무엇을 남겨야 하는지 옆에 적어 뒀습니다.</p>
+      <p>여기는 SPA 경로 이동이 잡히는지 확인하는 구역입니다. 버튼이 무엇을 남겨야 하는지 옆에 적어 뒀습니다.</p>
     </header>
 
-    <div class="notice">
-      <strong>버튼 사이에 2초씩 쉬어 주세요.</strong> 반응 없는 클릭은 "누른 뒤 2초 안에 아무 일도 없었다" 로
-      판정합니다. 곧바로 다른 버튼을 누르면 그 클릭이 반응으로 잡혀 앞 버튼이 정상으로 기록됩니다.
-    </div>
-
     <section class="panel">
-      <h2>마찰 구역</h2>
+      <h2>라우팅 확인</h2>
       <div class="friction">
-        <div class="friction-row">
-          <button id="dead-click">권한 추가</button>
-          <span class="expect">
-            아무 일도 일어나지 않습니다 → <strong>반응 없는 클릭</strong>
-            (<code>dead_click_cluster</code>) 이 뜨면 정상입니다.
-          </span>
-        </div>
-
-        <div class="friction-row">
-          <button id="rage-click">결제 재시도</button>
-          <span class="expect">
-            <strong>3초 안에 세 번 이상</strong> 누르세요 → <strong>분노 클릭</strong>
-            (<code>rage_click</code>). 역시 아무 반응도 하지 않습니다.
-          </span>
-        </div>
-
-        <div class="friction-row">
-          <button id="js-error">명세서 다시 계산</button>
-          <span class="expect">
-            JS 오류를 냅니다 → <code>js_error</code> 이벤트와 <strong>오류 마찰</strong>
-            (<code>error_friction</code>).
-          </span>
-        </div>
-
-        <div class="friction-row">
-          <button id="custom-event" class="primary">명세서 내보내기</button>
-          <span class="expect">
-            <code>track("invoice_exported")</code> 를 부릅니다 → <code>custom_event</code>.
-            반응이 있으니 반응 없는 클릭으로는 잡히지 않아야 합니다.
-          </span>
-        </div>
-
         <div class="friction-row">
           <button id="push-route">경로 라우팅으로 이동</button>
           <span class="expect">
@@ -483,19 +446,8 @@ function bindViewHandlers() {
   if (settingsForm) {
     settingsForm.addEventListener("submit", (event) => {
       event.preventDefault();
-      window.trace?.track("workspace_settings_saved");
     });
   }
-
-  // 마찰 버튼 — 반응 없는 두 개는 정말로 아무것도 하지 않아야 한다.
-  // 로그 한 줄이라도 DOM 을 건드리면 클릭이 반응한 것으로 잡힌다.
-  document.getElementById("js-error")?.addEventListener("click", () => {
-    throw new Error("Demo billing recalculation failed");
-  });
-
-  document.getElementById("custom-event")?.addEventListener("click", () => {
-    window.trace?.track("invoice_exported", { period: "2026-09" });
-  });
 
   document.getElementById("push-route")?.addEventListener("click", () => {
     window.history.pushState({}, "", "/invoices/2026-09");
