@@ -224,5 +224,4 @@ npm run test --workspace @trace/api -- src/routes/auth.test.ts src/routes/admin.
 
 ## 스펙과 계획
 
-- 설계: `docs/superpowers/specs/2026-08-24-trace-mvp-design.md`
-- 구현 계획: `docs/superpowers/plans/2026-08-24-trace-mvp-implementation.md`
+- 설계: docs/superpowers/specs/2026-09-30-behavior-analytics-redefinition-design.md

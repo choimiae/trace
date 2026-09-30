@@ -1,5 +1,4 @@
 /* 색·간격·타이포의 단일 출처. 컴포넌트는 의미값 층만 참조한다.
-   값의 근거는 docs/superpowers/specs/2026-08-26-admin-ui-refresh-design.md 참고.
    기존 청록은 채도 기준 미달이라 회색으로 읽혀 교체했다. */
 
 :root {

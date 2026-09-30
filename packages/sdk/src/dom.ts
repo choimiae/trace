@@ -676,7 +676,6 @@ function collectLayoutHints(target: Element, viewport: ScreenViewport): ScreenLa
 //
 // 대가는 그대로다 — 제목에 든 사람 이름은 저장된다. README 의 개인정보 표에
 // 그 사실을 적었고, 끄는 방법은 아직 없다.
-// 설계: docs/superpowers/specs/2026-09-10-screen-hint-density-design.md §1
 export function getScreenContext(element: Element): ScreenContext | undefined {
   try {
     const viewport: ScreenViewport = {
