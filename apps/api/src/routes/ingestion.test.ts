@@ -3,6 +3,84 @@ import { createApp } from "../app.js";
 import { MemoryStore } from "../store/memory-store.js";
 
 describe("ingestion routes", () => {
+  function batchPayload(projectId: string, events: unknown[]) {
+    return {
+      projectId,
+      anonymousUserId: "anon_1",
+      sessionId: "sess_1",
+      sentAt: "2026-09-30T00:00:00.000Z",
+      sdkVersion: "0.1.0",
+      url: "https://app.example.com/quote",
+      events,
+    };
+  }
+
+  it("모르는 종류의 이벤트는 버리고 나머지를 저장한다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://app.example.com" },
+      payload: batchPayload(project.projectId, [
+        { eventId: "evt_1", sessionId: "sess_1", pageId: "page_1", timestamp: "2026-09-30T00:00:00.000Z", type: "js_error", urlPath: "/quote", metadata: {} },
+        { eventId: "evt_2", sessionId: "sess_1", pageId: "page_1", timestamp: "2026-09-30T00:00:01.000Z", type: "click", urlPath: "/quote", metadata: {} },
+      ]),
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: 1 });
+    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(timeline.map((event) => event.type)).toEqual(["click"]);
+    await app.close();
+  });
+
+  it("남는 이벤트가 없어도 202 로 받는다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://app.example.com" },
+      payload: batchPayload(project.projectId, [
+        { eventId: "evt_1", sessionId: "sess_1", pageId: "page_1", timestamp: "2026-09-30T00:00:00.000Z", type: "custom_event", urlPath: "/quote", metadata: {} },
+      ]),
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: 0 });
+    await app.close();
+  });
+
+  it("화면 맥락과 오류 필드는 저장하지 않는다", async () => {
+    const store = new MemoryStore();
+    const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
+    const app = createApp({ store });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://app.example.com" },
+      payload: batchPayload(project.projectId, [
+        {
+          eventId: "evt_1", sessionId: "sess_1", pageId: "page_1", timestamp: "2026-09-30T00:00:00.000Z",
+          type: "click", urlPath: "/quote", metadata: {},
+          errorName: "TypeError", screenContext: { viewport: { width: 100, height: 100 }, layoutHints: [] },
+        },
+      ]),
+    });
+
+    const [click] = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(click).toBeDefined();
+    expect(click).not.toHaveProperty("screenContext");
+    expect(click).not.toHaveProperty("errorName");
+    await app.close();
+  });
+
   it("accepts a valid raw batch from an allowed domain and stores sanitized events", async () => {
     const store = new MemoryStore();
     const project = await store.createProject({
@@ -28,7 +106,7 @@ describe("ingestion routes", () => {
             sessionId: "sess_1",
             pageId: "page_1",
             timestamp: "2026-08-24T00:00:01.000Z",
-            type: "custom_event",
+            type: "click",
             metadata: {
               name: "member_invite_started",
               email: "choi@example.com",
@@ -41,7 +119,7 @@ describe("ingestion routes", () => {
 
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({ accepted: 1 });
-    const events = await store.listEvents(project.projectId);
+    const events = await store.getSessionTimeline(project.projectId, "sess_1");
     expect(events[0]?.urlPath).toBe("/users/:id/settings");
     expect(events[0]?.urlQueryRedacted).toBe("?redacted_param_1=[redacted]&tab=[redacted]");
     expect(events[0]?.metadata).toEqual({ eventName: "member_invite_started" });
@@ -83,7 +161,8 @@ describe("ingestion routes", () => {
     });
 
     expect(response.statusCode).toBe(202);
-    const [event] = await store.listEvents(project.projectId);
+    const [session] = await store.listSessions(project.projectId, 10);
+    const [event] = await store.getSessionTimeline(project.projectId, session?.sessionId ?? "");
     expect(event?.eventId).toMatch(/^evt_/);
     expect(event?.sessionId).toMatch(/^sess_/);
     expect(event?.pageId).toMatch(/^page_/);
@@ -136,581 +215,8 @@ describe("ingestion routes", () => {
     });
 
     expect(response.statusCode).toBe(202);
-    const events = await store.listEvents(project.projectId);
+    const events = await store.getSessionTimeline(project.projectId, "sess_1");
     expect(events.map((event) => event.urlPath)).toEqual(["/users/:id/settings", "/reports/:id"]);
-  });
-
-  it("stores safe screen context from ingested events", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:01.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              target: {
-                tagName: "button",
-                role: "button",
-                textMaskedOrLimited: "저장",
-                rect: { x: 620, y: 420, width: 96, height: 40 },
-              },
-              layoutHints: [],
-            },
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    expect(timeline[0]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
-  });
-
-  it("마스킹되지 않은 화면 맥락 텍스트는 배치를 거절하지 않고 다시 마스킹한다", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:01.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              target: {
-                tagName: "button",
-                role: "button",
-                textMaskedOrLimited: "user@example.com",
-                rect: { x: 620, y: 420, width: 96, height: 40 },
-              },
-              layoutHints: [],
-            },
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    expect(timeline[0]?.screenContext?.target?.textMaskedOrLimited).toBe("[redacted]");
-  });
-
-  it("일상적인 고객 DOM 에서 온 화면 맥락을 거절하지 않고 정리해서 저장한다", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-    // redactText 를 1회만 적용한 제목. 자체 slice(0, 120) 경계 때문에 아직
-    // 마스킹 대상이 남아 있어 screenContextSchema 를 그대로는 통과하지 못한다.
-    const onceRedactedTitle = `${"가".repeat(107)}1234567890123`;
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_hostile",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              titleMasked: onceRedactedTitle,
-              viewport: { width: 1440.4, height: 900 },
-              target: {
-                tagName: "DIV",
-                role: "none presentation",
-                selectorHash: "not a hash",
-                rect: { x: -20, y: 0, width: 12000, height: 30000 },
-              },
-              layoutHints: Array.from({ length: 20 }, (_unused, index) => ({
-                tagName: "section",
-                masked: true,
-                rect: { x: index, y: index, width: 40, height: 40 },
-              })),
-            },
-          },
-          {
-            eventId: "evt_ok",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:01.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              titleMasked: "설정",
-              viewport: { width: 1440, height: 900 },
-              target: {
-                tagName: "button",
-                role: "button",
-                textMaskedOrLimited: "저장",
-                rect: { x: 620, y: 420, width: 96, height: 40 },
-              },
-              layoutHints: [],
-            },
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    expect(response.json()).toEqual({ accepted: 2 });
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    expect(timeline.map((event) => event.eventId)).toEqual(["evt_hostile", "evt_ok"]);
-    expect(timeline[0]?.screenContext).toMatchObject({
-      titleMasked: `${"가".repeat(107)}[redacted]`,
-      viewport: { width: 1440, height: 900 },
-      target: {
-        tagName: "div",
-        rect: { x: 0, y: 0, width: 10000, height: 10000 },
-      },
-    });
-    expect(timeline[0]?.screenContext?.target).not.toHaveProperty("role");
-    expect(timeline[0]?.screenContext?.target).not.toHaveProperty("selectorHash");
-    expect(timeline[0]?.screenContext?.layoutHints).toHaveLength(20);
-    expect(timeline[1]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
-  });
-
-  // 계약(screenContextSchema)은 layoutHints 를 50개까지 받는데, 수집 API 가 한때
-  // 자신만의 사본 상수로 12개에서 잘랐다. 두 벌로 갈라 둔 상한이 계약만 넓히고
-  // 수집 API 는 조용히 좁은 채로 남는 drift 를 낳았던 회귀를 고정한다.
-  it("화면 힌트 50개를 계약 상한 그대로 저장한다 (계약-수집 API 상한 drift 회귀 고정)", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              layoutHints: Array.from({ length: 50 }, (_unused, index) => ({
-                tagName: "section",
-                masked: false,
-                rect: { x: index, y: index, width: 40, height: 40 },
-              })),
-            },
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    expect(timeline[0]?.screenContext?.layoutHints).toHaveLength(50);
-  });
-
-  it("masked 힌트가 텍스트를 실어 보내도 서버가 텍스트를 지운다", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              target: { tagName: "button", rect: { x: 10, y: 10, width: 90, height: 40 } },
-              layoutHints: [
-                {
-                  tagName: "textarea",
-                  masked: true,
-                  textMaskedOrLimited: "고객 메모 원문",
-                  rect: { x: 20, y: 60, width: 400, height: 120 },
-                },
-                {
-                  tagName: "a",
-                  masked: false,
-                  textMaskedOrLimited: "도움말",
-                  rect: { x: 20, y: 200, width: 80, height: 24 },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    const hints = timeline[0]?.screenContext?.layoutHints ?? [];
-    const masked = hints.find((hint) => hint.tagName === "textarea");
-    const link = hints.find((hint) => hint.tagName === "a");
-
-    expect(masked?.masked).toBe(true);
-    expect(masked).not.toHaveProperty("textMaskedOrLimited");
-    expect(link?.textMaskedOrLimited).toBe("도움말");
-    expect(JSON.stringify(timeline)).not.toContain("고객 메모 원문");
-  });
-
-  // 서버가 태그 화이트리스트(button·a·h1~h3)로 힌트 텍스트를 지우고 있었다.
-  // 비시맨틱 화면은 메뉴가 span 이고 버튼이 div 라 그 게이트에서 글자가 전부
-  // 사라져, SDK 가 보내도 저장되지 않았다. masked 재판정은 유지하고 태그
-  // 게이트만 연다.
-  it("화이트리스트 밖 태그의 힌트 텍스트도 저장한다", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              layoutHints: [
-                {
-                  tagName: "span",
-                  masked: false,
-                  textMaskedOrLimited: "회계관리",
-                  rect: { x: 0, y: 100, width: 48, height: 44 },
-                },
-                {
-                  tagName: "div",
-                  masked: false,
-                  textMaskedOrLimited: "저장",
-                  rect: { x: 20, y: 200, width: 80, height: 24 },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    const hints = timeline[0]?.screenContext?.layoutHints ?? [];
-
-    expect(hints.find((hint) => hint.tagName === "span")?.textMaskedOrLimited).toBe("회계관리");
-    expect(hints.find((hint) => hint.tagName === "div")?.textMaskedOrLimited).toBe("저장");
-  });
-
-  // 태그 화이트리스트를 걷어내면서 **방어 한 겹이 줄었다.** 전에는 구식·손상된
-  // SDK 가 컨테이너 글자를 보내도 서버가 태그로 지웠는데, 이제 컨테이너를 비우는
-  // 책임이 SDK 의 ownElementText(자기 텍스트 노드만) 한 곳에만 있다. 입력 계열
-  // 재판정은 그대로 남는다 — 그것이 개인정보 경계의 마지막 선이다.
-  it("구식 SDK 가 masked:false 로 보낸 입력 계열 텍스트는 서버가 태그로 직접 판정해 지운다", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              target: { tagName: "button", rect: { x: 10, y: 10, width: 90, height: 40 } },
-              layoutHints: [
-                {
-                  tagName: "input",
-                  masked: false,
-                  textMaskedOrLimited: "hunter2Password",
-                  rect: { x: 20, y: 60, width: 200, height: 32 },
-                },
-                {
-                  tagName: "select",
-                  masked: false,
-                  textMaskedOrLimited: "선택된 옵션 라벨",
-                  rect: { x: 20, y: 100, width: 200, height: 32 },
-                },
-                {
-                  tagName: "main",
-                  masked: false,
-                  textMaskedOrLimited: "김철수 고객 상세 화면",
-                  rect: { x: 0, y: 0, width: 1440, height: 900 },
-                },
-                {
-                  tagName: "a",
-                  masked: false,
-                  textMaskedOrLimited: "도움말",
-                  rect: { x: 20, y: 200, width: 80, height: 24 },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    const hints = timeline[0]?.screenContext?.layoutHints ?? [];
-    const input = hints.find((hint) => hint.tagName === "input");
-    const select = hints.find((hint) => hint.tagName === "select");
-    const main = hints.find((hint) => hint.tagName === "main");
-    const link = hints.find((hint) => hint.tagName === "a");
-    const serialized = JSON.stringify(timeline);
-
-    expect(input?.masked).toBe(true);
-    expect(input).not.toHaveProperty("textMaskedOrLimited");
-    expect(select?.masked).toBe(true);
-    expect(select).not.toHaveProperty("textMaskedOrLimited");
-    // main 의 글자는 이제 서버가 안 지운다. 넓힌 정책의 대가를 눈에 보이게
-    // 남긴다 — 픽스처가 사람 이름인 것도 그대로 둔다.
-    expect(main?.masked).toBe(false);
-    expect(main?.textMaskedOrLimited).toBe("김철수 고객 상세 화면");
-    expect(link?.masked).toBe(false);
-    expect(link?.textMaskedOrLimited).toBe("도움말");
-    expect(serialized).not.toContain("hunter2Password");
-    expect(serialized).not.toContain("선택된 옵션 라벨");
-    expect(serialized).toContain("도움말");
-  });
-
-  it("힌트의 masked 가 불린이 아니면 화면 맥락 전체를 버리고도 배치는 받는다 (fail-closed 회귀 고정)", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const makeEvent = (eventId: string, layoutHint: Record<string, unknown>) => ({
-      eventId,
-      sessionId: "sess_1",
-      pageId: "page_1",
-      timestamp: "2026-09-02T01:00:00.000Z",
-      type: "click",
-      urlPath: "/settings",
-      metadata: {},
-      screenContext: {
-        viewport: { width: 1440, height: 900 },
-        layoutHints: [layoutHint],
-      },
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          makeEvent("evt_masked_missing", { tagName: "div", rect: { x: 0, y: 0, width: 10, height: 10 } }),
-          makeEvent("evt_masked_string", {
-            tagName: "div",
-            masked: "true",
-            rect: { x: 0, y: 0, width: 10, height: 10 },
-          }),
-          makeEvent("evt_masked_null", {
-            tagName: "div",
-            masked: null,
-            rect: { x: 0, y: 0, width: 10, height: 10 },
-          }),
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    expect(response.json()).toEqual({ accepted: 3 });
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    expect(timeline.map((event) => event.eventId)).toEqual([
-      "evt_masked_missing",
-      "evt_masked_string",
-      "evt_masked_null",
-    ]);
-    expect(timeline[0]?.screenContext).toBeUndefined();
-    expect(timeline[1]?.screenContext).toBeUndefined();
-    expect(timeline[2]?.screenContext).toBeUndefined();
-  });
-
-  it("복구할 수 없는 화면 맥락은 필드만 버리고 같은 배치의 다른 이벤트를 저장한다", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_broken",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: "화면 맥락 아님",
-          },
-          {
-            eventId: "evt_ok",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:01.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              target: {
-                tagName: "button",
-                role: "button",
-                textMaskedOrLimited: "저장",
-                rect: { x: 620, y: 420, width: 96, height: 40 },
-              },
-              layoutHints: [],
-            },
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    expect(response.json()).toEqual({ accepted: 2 });
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-    expect(timeline).toHaveLength(2);
-    expect(timeline[0]).not.toHaveProperty("screenContext");
-    expect(timeline[1]?.screenContext?.target?.textMaskedOrLimited).toBe("저장");
   });
 
   it("측정 불가한 뷰포트 크기는 배치를 거절하지 않고 필드만 버린다", async () => {
@@ -823,66 +329,7 @@ describe("ingestion routes", () => {
     expect(response.statusCode).toBe(403);
   });
 
-  it("detects and stores friction issues after accepting a batch", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-08-24T00:00:04.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/#/settings",
-        events: [
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-08-24T00:00:00.000Z",
-            type: "click",
-            elementSelectorHash: "abc123",
-            metadata: {},
-          },
-          {
-            eventId: "evt_2",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-08-24T00:00:01.000Z",
-            type: "click",
-            elementSelectorHash: "abc123",
-            metadata: {},
-          },
-          {
-            eventId: "evt_3",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-08-24T00:00:02.000Z",
-            type: "click",
-            elementSelectorHash: "abc123",
-            metadata: {},
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    const issues = await store.listIssues(project.projectId);
-    expect(issues[0]).toMatchObject({
-      issueType: "rage_click",
-      relatedUrlPath: "/settings",
-    });
-  });
-
-  it("prunes old events after storing detected issues when event retention is configured", async () => {
+  it("prunes old events after storing a batch when event retention is configured", async () => {
     const store = new MemoryStore();
     const project = await store.createProject({
       name: "Demo",
@@ -950,112 +397,7 @@ describe("ingestion routes", () => {
     });
 
     expect(response.statusCode).toBe(202);
-    expect((await store.listEvents(project.projectId)).map((event) => event.eventId)).toEqual(["evt_new"]);
-    expect((await store.listIssues(project.projectId)).map((issue) => issue.issueType)).toContain("rage_click");
+    expect((await store.getSessionTimeline(project.projectId, "sess_1")).map((event) => event.eventId)).toEqual(["evt_new"]);
   });
 
-  it("잘못된 오류 식별자는 배치를 거절하지 않고 필드만 버린다", async () => {
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/checkout",
-        events: [
-          {
-            eventId: "evt_bad",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "js_error",
-            urlPath: "/checkout",
-            errorName: "TypeError: 김철수 저장 실패",
-            errorSource: "https://app.example.com/a.js?token=abc",
-            errorLine: -3,
-            metadata: {},
-          },
-          {
-            eventId: "evt_good",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:01.000Z",
-            type: "js_error",
-            urlPath: "/checkout",
-            errorName: "RangeError",
-            errorSource: "/assets/pay.js",
-            errorLine: 88,
-            metadata: {},
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    expect(response.json()).toEqual({ accepted: 2 });
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-
-    expect(timeline[0]).not.toHaveProperty("errorName");
-    expect(timeline[0]).not.toHaveProperty("errorSource");
-    expect(timeline[0]).not.toHaveProperty("errorLine");
-    expect(timeline[1]?.errorName).toBe("RangeError");
-    expect(timeline[1]?.errorSource).toBe("/assets/pay.js");
-    expect(JSON.stringify(timeline)).not.toContain("김철수");
-    expect(JSON.stringify(timeline)).not.toContain("token=abc");
-  });
-
-  it("선행 이중 슬래시 경로를 버리지 않고 접어서 저장한다", async () => {
-    // new URL("https://cdn.example.com//vendor/lib.js").pathname 은 "//vendor/lib.js" 다.
-    // 계약이 선행 "//" 를 거절하므로 sanitize 단계에서 접어야 멀쩡한 경로가 살아남는다.
-    const store = new MemoryStore();
-    const project = await store.createProject({
-      name: "Demo",
-      allowedDomains: ["https://demo.example.com"],
-    });
-    const app = createApp({ store });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/events/batch",
-      headers: { origin: "https://demo.example.com" },
-      payload: {
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:02.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/checkout",
-        events: [
-          {
-            eventId: "evt_double",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "js_error",
-            urlPath: "/checkout",
-            errorName: "TypeError",
-            errorSource: "//vendor/lib.js",
-            errorLine: 7,
-            metadata: {},
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(202);
-    const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-
-    expect(timeline[0]?.errorSource).toBe("/vendor/lib.js");
-  });
 });

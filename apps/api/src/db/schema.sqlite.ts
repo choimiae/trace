@@ -30,38 +30,12 @@ CREATE TABLE IF NOT EXISTS events (
   viewport_x INTEGER,
   viewport_y INTEGER,
   metadata TEXT NOT NULL DEFAULT '{}',
-  screen_context TEXT,
-  error_name TEXT,
-  error_source TEXT,
-  error_line INTEGER,
   element_key TEXT
 );
 
 CREATE INDEX IF NOT EXISTS events_project_timestamp ON events (project_id, timestamp);
 CREATE INDEX IF NOT EXISTS events_project_session ON events (project_id, session_id);
 CREATE INDEX IF NOT EXISTS events_project_session_timestamp ON events (project_id, session_id, timestamp);
-
-CREATE TABLE IF NOT EXISTS issues (
-  issue_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  issue_type TEXT NOT NULL,
-  title TEXT NOT NULL,
-  summary TEXT NOT NULL,
-  affected_sessions_count INTEGER NOT NULL,
-  affected_users_count INTEGER NOT NULL,
-  severity_score INTEGER NOT NULL,
-  first_seen_at TEXT NOT NULL,
-  last_seen_at TEXT NOT NULL,
-  trend TEXT NOT NULL,
-  related_url_path TEXT,
-  related_feature_id TEXT,
-  example_session_ids TEXT NOT NULL DEFAULT '[]',
-  status TEXT NOT NULL,
-  related_error_signature TEXT,
-  element_key TEXT
-);
-
-CREATE INDEX IF NOT EXISTS issues_project_severity ON issues (project_id, severity_score DESC);
 
 CREATE TABLE IF NOT EXISTS admin_users (
   admin_user_id TEXT PRIMARY KEY,

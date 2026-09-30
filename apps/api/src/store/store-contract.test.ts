@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { TraceEvent } from "@trace/shared";
-import { elementKey } from "../detection/element-identity.js";
+import { elementKey } from "./element-key.js";
 import { MemoryStore } from "./memory-store.js";
 import { SqliteStore } from "./sqlite-store.js";
-import { assertDeployableTraceStore, SCREEN_CONTEXT_CANDIDATE_LIMIT, type TraceStore } from "./types.js";
+import { assertDeployableTraceStore, type TraceStore } from "./types.js";
 
 interface StoreUnderTest {
   store: TraceStore;
@@ -1141,518 +1141,7 @@ function describeTraceStoreContract(
         events: [event],
       });
 
-      expect(await store.listEvents(project.projectId)).toHaveLength(1);
       expect(await store.getSessionTimeline(project.projectId, "sess_1")).toHaveLength(1);
-    });
-
-    it("요소 지문과 마스킹 글자를 모두 왕복 보존한다", async () => {
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-
-      await store.saveBatch({
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-03T01:00:01.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_identity",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-03T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            elementSelectorHash: "aaaaaaaabbbbbbbb",
-            elementTextMaskedOrLimited: "오류 발생",
-            metadata: {},
-          },
-        ],
-      });
-
-      const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-      const event = timeline.find((candidate) => candidate.eventId === "evt_identity");
-
-      expect(event?.elementSelectorHash).toBe("aaaaaaaabbbbbbbb");
-      expect(event?.elementTextMaskedOrLimited).toBe("오류 발생");
-    });
-
-    it("오류 식별자를 타임라인에서 보존한다", async () => {
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-
-      await store.saveBatch({
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:01.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/checkout",
-        events: [
-          {
-            eventId: "evt_err",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "js_error",
-            urlPath: "/checkout",
-            errorName: "TypeError",
-            errorSource: "/assets/checkout.js",
-            errorLine: 412,
-            metadata: {},
-          },
-          {
-            eventId: "evt_plain",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.500Z",
-            type: "click",
-            urlPath: "/checkout",
-            metadata: {},
-          },
-        ],
-      });
-
-      const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-
-      expect(timeline[0]?.errorName).toBe("TypeError");
-      expect(timeline[0]?.errorSource).toBe("/assets/checkout.js");
-      expect(timeline[0]?.errorLine).toBe(412);
-      expect(timeline[1]).not.toHaveProperty("errorName");
-    });
-
-    it("이슈 오류 서명을 보존한다", async () => {
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-
-      await store.upsertIssues(project.projectId, [
-        {
-          issueId: "issue_err",
-          projectId: project.projectId,
-          issueType: "error_friction",
-          title: "/checkout 화면에서 오류 기반 막힘이 감지되었습니다",
-          summary: "사용자 행동 흐름 중 js_error 이벤트가 발생했습니다.",
-          affectedSessionsCount: 1,
-          affectedUsersCount: 1,
-          severityScore: 45,
-          firstSeenAt: "2026-09-02T01:00:00.000Z",
-          lastSeenAt: "2026-09-02T01:00:00.000Z",
-          trend: "flat",
-          relatedUrlPath: "/checkout",
-          exampleSessionIds: ["sess_1"],
-          status: "new",
-          relatedErrorSignature: "TypeError · /assets/checkout.js:412",
-        },
-      ]);
-
-      const issues = await store.listIssues(project.projectId);
-
-      expect(issues[0]?.relatedErrorSignature).toBe("TypeError · /assets/checkout.js:412");
-    });
-
-    // INSERT OR REPLACE 의 컬럼 목록·플레이스홀더·run() 인자 셋이 어긋나도
-    // 타입 오류가 아니라 실행 시점 오류다. 왕복으로 잡는다.
-    it("이슈의 요소 키가 저장 후 그대로 돌아온다", async () => {
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-
-      await store.upsertIssues(project.projectId, [
-        {
-          issueId: "issue__settings|0fd2102e520470ad|rage_click",
-          projectId: project.projectId,
-          issueType: "rage_click",
-          title: "제목",
-          summary: "요약",
-          affectedSessionsCount: 1,
-          affectedUsersCount: 1,
-          severityScore: 70,
-          firstSeenAt: "2026-09-04T00:00:00.000Z",
-          lastSeenAt: "2026-09-04T00:00:01.000Z",
-          trend: "flat",
-          relatedUrlPath: "/settings",
-          exampleSessionIds: ["sess_1"],
-          status: "new",
-          elementKey: "0fd2102e520470ad",
-        },
-        {
-          issueId: "issue__settings|page|error_friction",
-          projectId: project.projectId,
-          issueType: "error_friction",
-          title: "오류",
-          summary: "요약",
-          affectedSessionsCount: 1,
-          affectedUsersCount: 1,
-          severityScore: 60,
-          firstSeenAt: "2026-09-04T00:00:00.000Z",
-          lastSeenAt: "2026-09-04T00:00:00.000Z",
-          trend: "flat",
-          relatedUrlPath: "/settings",
-          exampleSessionIds: ["sess_1"],
-          status: "new",
-        },
-      ]);
-
-      const issues = await store.listIssues(project.projectId);
-      const rage = issues.find((issue) => issue.issueType === "rage_click");
-      const error = issues.find((issue) => issue.issueType === "error_friction");
-
-      expect(rage?.elementKey).toBe("0fd2102e520470ad");
-      expect(error?.elementKey).toBeUndefined();
-    });
-
-    it("preserves screen context in session timeline events", async () => {
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-
-      await store.saveBatch({
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T01:00:01.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          {
-            eventId: "evt_1",
-            sessionId: "sess_1",
-            pageId: "page_1",
-            timestamp: "2026-09-02T01:00:00.000Z",
-            type: "click",
-            urlPath: "/settings",
-            metadata: {},
-            screenContext: {
-              viewport: { width: 1440, height: 900 },
-              target: {
-                tagName: "button",
-                role: "button",
-                textMaskedOrLimited: "저장",
-                rect: { x: 620, y: 420, width: 96, height: 40 },
-              },
-              layoutHints: [],
-            },
-          },
-        ],
-      });
-
-      const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
-
-      expect(timeline[0]?.screenContext).toMatchObject({
-        viewport: { width: 1440, height: 900 },
-        target: {
-          tagName: "button",
-          textMaskedOrLimited: "저장",
-          rect: { x: 620, y: 420, width: 96, height: 40 },
-        },
-      });
-    });
-
-    it("세션별로 시간 창·경로에 맞는 첫 화면 맥락 이벤트만 돌려준다", async () => {
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-      const screenContext = {
-        viewport: { width: 1440, height: 900 },
-        target: {
-          tagName: "button",
-          rect: { x: 620, y: 420, width: 96, height: 40 },
-        },
-        layoutHints: [],
-      };
-      const event = (
-        eventId: string,
-        sessionId: string,
-        timestamp: string,
-        type: "click" | "js_error",
-        urlPath: string,
-        withScreenContext = true,
-      ) => ({
-        eventId,
-        sessionId,
-        pageId: "page_1",
-        timestamp,
-        type,
-        urlPath,
-        metadata: {},
-        ...(withScreenContext ? { screenContext } : {}),
-      });
-
-      await store.saveBatch({
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T03:00:00.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          event("evt_too_early", "sess_1", "2026-09-02T01:00:00.000Z", "click", "/settings"),
-          event("evt_no_context", "sess_1", "2026-09-02T02:00:00.000Z", "click", "/settings", false),
-          event("evt_first_in_window", "sess_1", "2026-09-02T02:00:05.000Z", "click", "/settings"),
-          event("evt_other_path", "sess_1", "2026-09-02T02:00:06.000Z", "click", "/billing"),
-          event("evt_later_in_window", "sess_1", "2026-09-02T02:00:07.000Z", "click", "/settings"),
-          event("evt_too_late", "sess_1", "2026-09-02T02:30:00.000Z", "click", "/settings"),
-          event("evt_other_session", "sess_2", "2026-09-02T02:00:08.000Z", "js_error", "/settings"),
-          event("evt_unrelated_session", "sess_9", "2026-09-02T02:00:09.000Z", "click", "/settings"),
-        ],
-      });
-
-      const matched = await store.findScreenContextEvents({
-        projectId: project.projectId,
-        sessionIds: ["sess_1", "sess_2", "sess_missing"],
-        urlPath: "/settings",
-        from: "2026-09-02T02:00:00.000Z",
-        to: "2026-09-02T02:00:10.000Z",
-      });
-
-      expect(matched.map((matchedEvent) => matchedEvent.eventId)).toEqual([
-        "evt_first_in_window",
-        "evt_other_session",
-      ]);
-      expect(matched[0]?.screenContext?.target?.tagName).toBe("button");
-
-      const typed = await store.findScreenContextEvents({
-        projectId: project.projectId,
-        sessionIds: ["sess_1", "sess_2"],
-        urlPath: "/settings",
-        from: "2026-09-02T02:00:00.000Z",
-        to: "2026-09-02T02:00:10.000Z",
-        types: ["js_error"],
-      });
-
-      expect(typed.map((matchedEvent) => matchedEvent.eventId)).toEqual(["evt_other_session"]);
-
-      const anyPath = await store.findScreenContextEvents({
-        projectId: project.projectId,
-        sessionIds: ["sess_1"],
-        from: "2026-09-02T02:00:06.000Z",
-        to: "2026-09-02T02:00:06.000Z",
-      });
-
-      expect(anyPath.map((matchedEvent) => matchedEvent.eventId)).toEqual(["evt_other_path"]);
-
-      await expect(
-        store.findScreenContextEvents({
-          projectId: project.projectId,
-          sessionIds: [],
-          from: "2026-09-02T02:00:00.000Z",
-          to: "2026-09-02T02:00:10.000Z",
-        }),
-      ).resolves.toEqual([]);
-    });
-
-    it("클릭 지점이 있는 이벤트를 먼저 고르고, 없을 때만 프레임뿐인 이벤트를 쓴다", async () => {
-      // 뷰포트보다 큰 대상(body·전체 래퍼 등 전형적인 dead click 대상)은 SDK 가
-      // target 을 버리고 화면 프레임만 남긴다. 그런 이벤트가 시간상 앞선다는 이유로
-      // 뽑히면 대시보드 대표 화면에 클릭 지점이 없는 빈 프레임이 뜬다.
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-      const frameOnly = { viewport: { width: 1440, height: 900 }, layoutHints: [] };
-      const withTarget = {
-        viewport: { width: 1440, height: 900 },
-        target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
-        layoutHints: [],
-      };
-      const event = (eventId: string, sessionId: string, timestamp: string, screenContext: unknown) => ({
-        eventId,
-        sessionId,
-        pageId: "page_1",
-        timestamp,
-        type: "click" as const,
-        urlPath: "/settings",
-        metadata: {},
-        screenContext,
-      });
-
-      await store.saveBatch({
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-02T03:00:00.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          // sess_1: 프레임뿐인 이벤트가 더 이르다 -> 뒤의 target 있는 쪽을 골라야 한다.
-          event("evt_frame_only", "sess_1", "2026-09-02T02:00:01.000Z", frameOnly),
-          event("evt_has_target", "sess_1", "2026-09-02T02:00:02.000Z", withTarget),
-          // sess_2: 프레임뿐인 이벤트만 있다 -> 그거라도 돌려줘야 한다.
-          event("evt_only_frame", "sess_2", "2026-09-02T02:00:03.000Z", frameOnly),
-        ],
-      } as Parameters<typeof store.saveBatch>[0]);
-
-      const matched = await store.findScreenContextEvents({
-        projectId: project.projectId,
-        sessionIds: ["sess_1", "sess_2"],
-        urlPath: "/settings",
-        from: "2026-09-02T02:00:00.000Z",
-        to: "2026-09-02T02:00:10.000Z",
-      });
-
-      expect(matched.map((matchedEvent) => matchedEvent.eventId)).toEqual(["evt_has_target", "evt_only_frame"]);
-      expect(matched[0]?.screenContext?.target?.tagName).toBe("button");
-      expect(matched[1]?.screenContext?.target).toBeUndefined();
-    });
-
-    it("요소 키를 넘기면 그 요소의 클릭만 돌려준다", async () => {
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-      const screenContext = {
-        viewport: { width: 1440, height: 900 },
-        target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
-        layoutHints: [],
-      };
-      const click = (eventId: string, timestamp: string, hash: string | undefined, text: string) => ({
-        eventId,
-        sessionId: "sess_1",
-        pageId: "page_1",
-        timestamp,
-        type: "click" as const,
-        urlPath: "/settings",
-        ...(hash === undefined ? {} : { elementSelectorHash: hash }),
-        elementTextMaskedOrLimited: text,
-        metadata: {},
-        screenContext,
-      });
-
-      // 리포트 내보내기와 오류 발생은 지문이 같고 글자만 다르다. 실제 데모에서
-      // 관측된 형태이고, 이번 결함이 이 둘을 뭉갰다.
-      await store.saveBatch({
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-04T00:00:10.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [
-          click("evt_save", "2026-09-04T00:00:01.000Z", "1111111111111111", "저장"),
-          click("evt_report", "2026-09-04T00:00:02.000Z", "2222222222222222", "리포트 내보내기"),
-          click("evt_error", "2026-09-04T00:00:03.000Z", "2222222222222222", "오류 발생"),
-          click("evt_legacy", "2026-09-04T00:00:04.000Z", undefined, "지문 없음"),
-        ],
-      });
-
-      const query = {
-        projectId: project.projectId,
-        sessionIds: ["sess_1"],
-        urlPath: "/settings",
-        from: "2026-09-04T00:00:00.000Z",
-        to: "2026-09-04T00:00:09.000Z",
-      };
-
-      const reportKey = elementKey(click("x", "2026-09-04T00:00:02.000Z", "2222222222222222", "리포트 내보내기") as TraceEvent)!;
-      const errorKey = elementKey(click("x", "2026-09-04T00:00:03.000Z", "2222222222222222", "오류 발생") as TraceEvent)!;
-      expect(reportKey).not.toBe(errorKey);
-
-      const report = await store.findScreenContextEvents({ ...query, elementKey: reportKey });
-      expect(report.map((event) => event.eventId)).toEqual(["evt_report"]);
-
-      const error = await store.findScreenContextEvents({ ...query, elementKey: errorKey });
-      expect(error.map((event) => event.eventId)).toEqual(["evt_error"]);
-
-      // 키를 안 넘기면 지금 그대로 — 세션당 가장 이른 후보 하나.
-      const unfiltered = await store.findScreenContextEvents(query);
-      expect(unfiltered.map((event) => event.eventId)).toEqual(["evt_save"]);
-
-      // 지문이 없는 옛 이벤트는 element_key 가 NULL 이라 어떤 키 조회에도 걸리지
-      // 않는다. 위 두 단정이 evt_legacy 를 빼고 있지만, 요소 신원 마이그레이션이
-      // 과거 지문을 전부 NULL 로 만들었으므로 이 성질을 따로 못박는다.
-      const legacyKey = elementKey(click("x", "2026-09-04T00:00:04.000Z", undefined, "지문 없음") as TraceEvent);
-      expect(legacyKey).toBeUndefined();
-
-      const everyKeyed = await Promise.all(
-        [reportKey, errorKey].map((key) => store.findScreenContextEvents({ ...query, elementKey: key })),
-      );
-      // element_key 가 NULL 인 evt_legacy 는 두 키 조회 어느 쪽에도 들어오지
-      // 않아야 한다. 스토어가 elementKey 필터를 아예 무시하고 세션의 이벤트를
-      // 죄다 돌려주는 결함이 있다면 evt_legacy 도 섞여 나온다 — 그래서 이 배열이
-      // report·error 두 건만으로 정확히 채워지는지까지 함께 확인한다("아무것도
-      // 안 돌아온다" 로도 통과해 버리는 단정이면 그 결함을 못 잡는다).
-      expect(everyKeyed.flat().map((event) => event.eventId).sort()).toEqual(["evt_error", "evt_report"]);
-    });
-
-    it("후보가 SCREEN_CONTEXT_CANDIDATE_LIMIT 를 넘어도 요소 필터가 LIMIT 보다 먼저 적용된다", async () => {
-      // 대상 요소의 유일한 클릭을 시간순 11번째(상한 10건 밖)에 둔다. 요소 필터가
-      // SQL 의 LIMIT 뒤로 밀리는 구현(상위 10건만 읽고 그 다음 JS 에서 걸러내는
-      // 방식)이라면 그 클릭은 애초에 읽히지도 않아 결과가 비어 버린다. 지금
-      // 픽스처(4건)는 SCREEN_CONTEXT_CANDIDATE_LIMIT(10) 을 넘지 않아 이 순서
-      // 회귀를 구분하지 못했다.
-      const store = open();
-      const project = await store.createProject({
-        name: "Demo",
-        allowedDomains: ["https://demo.example.com"],
-      });
-      const screenContext = {
-        viewport: { width: 1440, height: 900 },
-        target: { tagName: "button", rect: { x: 620, y: 420, width: 96, height: 40 } },
-        layoutHints: [],
-      };
-      const click = (eventId: string, timestamp: string, hash: string, text: string) => ({
-        eventId,
-        sessionId: "sess_1",
-        pageId: "page_1",
-        timestamp,
-        type: "click" as const,
-        urlPath: "/settings",
-        elementSelectorHash: hash,
-        elementTextMaskedOrLimited: text,
-        metadata: {},
-        screenContext,
-      });
-
-      const noise = Array.from({ length: SCREEN_CONTEXT_CANDIDATE_LIMIT }, (_, index) =>
-        click(
-          `evt_noise_${index}`,
-          `2026-09-04T00:00:${String(index).padStart(2, "0")}.000Z`,
-          "9999999999999999",
-          "다른 버튼",
-        ),
-      );
-      const target = click("evt_target", `2026-09-04T00:00:${SCREEN_CONTEXT_CANDIDATE_LIMIT}.000Z`, "1111111111111111", "대상 버튼");
-
-      await store.saveBatch({
-        projectId: project.projectId,
-        anonymousUserId: "anon_1",
-        sessionId: "sess_1",
-        sentAt: "2026-09-04T00:01:00.000Z",
-        sdkVersion: "0.1.0",
-        url: "https://demo.example.com/settings",
-        events: [...noise, target],
-      });
-
-      const targetKey = elementKey(target as TraceEvent)!;
-
-      const matched = await store.findScreenContextEvents({
-        projectId: project.projectId,
-        sessionIds: ["sess_1"],
-        urlPath: "/settings",
-        from: "2026-09-04T00:00:00.000Z",
-        to: "2026-09-04T00:01:00.000Z",
-        elementKey: targetKey,
-      });
-
-      expect(matched.map((event) => event.eventId)).toEqual(["evt_target"]);
     });
 
     it("cutoff 이전 이벤트만 삭제한다", async () => {
@@ -1725,44 +1214,51 @@ function describeTraceStoreContract(
 
       await expect(store.deleteEventsBefore("2026-08-26T00:00:00.000Z")).resolves.toBe(2);
 
-      expect((await store.listEvents(project.projectId)).map((event) => event.eventId)).toEqual([
+      expect((await store.getSessionTimeline(project.projectId, "sess_1")).map((event) => event.eventId)).toEqual([
         "evt_cutoff",
         "evt_new",
       ]);
-      expect(await store.listEvents(otherProject.projectId)).toEqual([]);
+      expect(await store.getSessionTimeline(otherProject.projectId, "sess_2")).toEqual([]);
     });
 
-    it("대시보드 요약에 이벤트 총 개수를 담는다", async () => {
+    it("요소 지문과 마스킹 글자를 모두 왕복 보존한다", async () => {
       const store = open();
       const project = await store.createProject({
         name: "Demo",
         allowedDomains: ["https://demo.example.com"],
       });
 
-      expect((await store.getDashboardSummary(project.projectId)).totalEventsCount).toBe(0);
-
       await store.saveBatch({
         projectId: project.projectId,
         anonymousUserId: "anon_1",
         sessionId: "sess_1",
-        sentAt: "2026-08-25T00:00:01.000Z",
+        sentAt: "2026-09-03T01:00:01.000Z",
         sdkVersion: "0.1.0",
         url: "https://demo.example.com/settings",
         events: [
           {
-            eventId: "evt_1",
+            eventId: "evt_identity",
             sessionId: "sess_1",
             pageId: "page_1",
-            timestamp: "2026-08-25T00:00:00.000Z",
-            type: "page_view",
+            timestamp: "2026-09-03T01:00:00.000Z",
+            type: "click",
             urlPath: "/settings",
+            elementSelectorHash: "aaaaaaaabbbbbbbb",
+            elementTextMaskedOrLimited: "오류 발생",
             metadata: {},
           },
         ],
       });
 
-      expect((await store.getDashboardSummary(project.projectId)).totalEventsCount).toBe(1);
+      const timeline = await store.getSessionTimeline(project.projectId, "sess_1");
+      const event = timeline.find((candidate) => candidate.eventId === "evt_identity");
+
+      expect(event?.elementSelectorHash).toBe("aaaaaaaabbbbbbbb");
+      expect(event?.elementTextMaskedOrLimited).toBe("오류 발생");
     });
+
+    // INSERT OR REPLACE 의 컬럼 목록·플레이스홀더·run() 인자 셋이 어긋나도
+    // 타입 오류가 아니라 실행 시점 오류다. 왕복으로 잡는다.
 
     it("프로젝트 이름과 허용 도메인을 수정한다", async () => {
       const store = open();

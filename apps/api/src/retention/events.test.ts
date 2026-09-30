@@ -29,7 +29,7 @@ describe("event retention", () => {
     });
 
     await expect(runEventRetention(store, {}, new Date("2026-09-01T00:00:00.000Z"))).resolves.toBe(0);
-    await expect(store.listEvents(project.projectId)).resolves.toHaveLength(1);
+    await expect(store.getSessionTimeline(project.projectId, "sess_1")).resolves.toHaveLength(1);
   });
 
   it("deletes events older than the configured retention window", async () => {
@@ -67,6 +67,6 @@ describe("event retention", () => {
     await expect(
       runEventRetention(store, { eventRetentionDays: 30 }, new Date("2026-09-01T00:00:00.000Z")),
     ).resolves.toBe(1);
-    expect((await store.listEvents(project.projectId)).map((event) => event.eventId)).toEqual(["evt_kept"]);
+    expect((await store.getSessionTimeline(project.projectId, "sess_1")).map((event) => event.eventId)).toEqual(["evt_kept"]);
   });
 });

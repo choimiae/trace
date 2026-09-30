@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { Issue, TraceEvent } from "@trace/shared";
 import type { AdminAuthConfig } from "../auth/config.js";
 import { parseCookieHeader } from "../auth/cookies.js";
 import { verifyCsrfRequest } from "../auth/csrf.js";
@@ -17,7 +16,6 @@ import {
 
 const projectParamsSchema = z.object({ projectId: z.string() });
 const projectMemberParamsSchema = z.object({ projectId: z.string(), adminUserId: z.string() });
-const issueParamsSchema = z.object({ issueId: z.string() });
 const sessionParamsSchema = z.object({ sessionId: z.string() });
 const projectQuerySchema = z.object({ projectId: z.string() });
 const recordingChunkParamsSchema = z.object({
@@ -419,33 +417,6 @@ export async function registerAdminProxyRoutes(
     return toProjectSettingsResponse(updated, access.membership.role);
   });
 
-  app.get("/admin/api/projects/:projectId/summary", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "project_summary");
-    if ("error" in access) {
-      return reply.code(access.statusCode).send({ error: access.error });
-    }
-
-    return options.store.getDashboardSummary(projectId);
-  });
-
-  app.get("/admin/api/projects/:projectId/issues", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "project_issues");
-    if ("error" in access) {
-      return reply.code(access.statusCode).send({ error: access.error });
-    }
-
-    const issues = await options.store.listIssues(projectId);
-    return attachRepresentativeEvents(options.store, projectId, issues);
-  });
-
   app.get("/admin/api/projects/:projectId/sessions", async (request, reply) => {
     const authenticated = await authenticate(request, options);
     if ("error" in authenticated) return reply.code(401).send(authenticated);
@@ -472,28 +443,6 @@ export async function registerAdminProxyRoutes(
 
     const pages = await options.store.listPageStats(projectId, PAGE_STATS_LIMIT);
     return reply.header("cache-control", "no-store").send({ pages });
-  });
-
-  app.get("/admin/api/issues/:issueId", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const { issueId } = issueParamsSchema.parse(request.params);
-    const { projectId } = projectQuerySchema.parse(request.query);
-    const project = await options.store.getProject(projectId);
-    if (!project) return reply.code(404).send({ error: "project_not_found" });
-
-    const issue = await options.store.getIssue(issueId);
-    if (!issue || issue.projectId !== projectId) return reply.code(404).send({ error: "issue_not_found" });
-
-    const membership = await options.store.getProjectMembership(projectId, authenticated.adminUserId);
-    if (!membership) {
-      await auditProjectAccessDenied(options.store, projectId, authenticated, "issue_detail");
-      return reply.code(403).send({ error: "project_access_denied" });
-    }
-
-    const [enrichedIssue] = await attachRepresentativeEvents(options.store, issue.projectId, [issue]);
-    return enrichedIssue;
   });
 
   app.get("/admin/api/sessions/:sessionId/timeline", async (request, reply) => {
@@ -523,8 +472,9 @@ export async function registerAdminProxyRoutes(
 
     const chunks = await options.store.listSessionRecordingChunks(projectId, sessionId);
 
-    // 기록이 없어도 404 가 아니다. 보존 기간이 지나 지워진 것과 트리거가 안
-    // 걸린 것을 화면이 같은 빈 상태로 다룬다.
+    // 기록이 없어도 404 가 아니다. 기록은 세션 시작부터 모두 올라오므로 비어
+    // 있다면 보존 기간이 지나 지워졌거나 기록을 끈 프로젝트다. 화면이 같은 빈
+    // 상태로 다룬다.
     return reply.header("cache-control", "no-store").send({
       chunks: chunks.map((chunk) => ({
         seq: chunk.seq,
@@ -594,108 +544,6 @@ async function getProjectAccess(
   return { project, membership };
 }
 
-async function attachRepresentativeEvents(
-  store: TraceStore,
-  projectId: string,
-  issues: Issue[],
-): Promise<Issue[]> {
-  return Promise.all(
-    issues.map(async (issue) => {
-      const representativeEvent = await findRepresentativeEvent(store, projectId, issue);
-      return representativeEvent === undefined ? issue : { ...issue, representativeEvent };
-    }),
-  );
-}
-
-// 이슈 성격에 맞는 이벤트 타입. 같은 화면의 아무 클릭이 아니라 문제를 만든 행동을
-// 대표 화면으로 보여줘야 운영자가 클릭 지점을 오해하지 않는다.
-const REPRESENTATIVE_EVENT_TYPES: Record<Issue["issueType"], TraceEvent["type"][]> = {
-  dead_click_cluster: ["dead_click", "click"],
-  rage_click: ["rage_click", "click"],
-  long_pause: ["idle", "click"],
-  scroll_friction: ["scroll", "click"],
-  error_friction: ["js_error", "api_error", "click"],
-  form_friction: ["form_abandon", "form_submit", "form_start", "field_blur"],
-};
-
-// long_pause·error_friction 이슈는 firstSeenAt 과 lastSeenAt 이 같은 한 시점이고,
-// 화면 맥락은 그 직전 클릭에 실린다. 창을 그 시점으로만 잡으면 대표 화면이 사라지므로
-// 30초 앞까지만 열어 둔다. 그보다 먼 클릭은 그 문제가 난 화면이라고 볼 수 없다.
-const REPRESENTATIVE_LEAD_IN_MS = 30_000;
-
-// 요소 필터 갈래를 탈 수 있는 것은 이 두 유형뿐이다 — 이슈를 만든 증거 이벤트
-// 자체가 클릭이고, 클릭만 화면 맥락을 싣기 때문이다(설계 문서의 A 부류).
-//
-// long_pause·error_friction 은 issue.elementKey 가 값을 가질 수 있다 —
-// detectLongPauses·detectErrorFriction(detect.ts)이 elementKey(event) 를 조건
-// 없이 호출하고, 수집은 이벤트 타입을 가리지 않고 elementSelectorHash 를 남기기
-// 때문이다(누구든 그런 필드를 실은 js_error 를 보낼 수 있다 — sqlite-store.ts 의
-// 마이그레이션 주석대로 "오늘 SDK 의 우연이지 계약이 아니다"). 하지만 이 부류의
-// 증거 이벤트(idle·js_error·api_error)는 화면 맥락이 없다. 키가 실려 있다고 이
-// 갈래를 타면 창이 이슈의 한 순간으로 좁혀지는 데다 요소 필터까지 걸려, 화면
-// 맥락을 가진 주변 클릭이 있어도 근거가 통째로 사라진다.
-const ELEMENT_FILTERED_ISSUE_TYPES: ReadonlySet<Issue["issueType"]> = new Set([
-  "rage_click",
-  "dead_click_cluster",
-]);
-
-async function findRepresentativeEvent(
-  store: TraceStore,
-  projectId: string,
-  issue: Issue,
-): Promise<TraceEvent | undefined> {
-  const sessionIds = issue.exampleSessionIds.slice(0, 3);
-  if (sessionIds.length === 0) return undefined;
-
-  const base = {
-    projectId,
-    sessionIds,
-    ...(issue.relatedUrlPath === undefined ? {} : { urlPath: issue.relatedUrlPath }),
-  };
-
-  // 요소를 아는 이슈는 그 요소의 클릭만 쓴다. 화면 맥락을 싣는 이벤트가 클릭뿐이라
-  // 유형별 선호 타입을 거는 단계가 의미를 잃고, 조회가 한 번으로 끝난다.
-  //
-  // 창도 이슈 자신의 구간으로 좁힌다. 그 이슈를 만든 클릭들은 정의상 이 구간 안에
-  // 있고 전부 화면 맥락을 갖는다(2026-09-04 실측: 클릭 19건 전건). lead-in 은
-  // 요소를 모르는 이슈를 위한 장치다.
-  //
-  // 키 유무만으로 가르지 않는다 — ELEMENT_FILTERED_ISSUE_TYPES 에 없는 유형은
-  // elementKey 가 값을 가져도 이 갈래를 타면 안 된다(위 주석 참고).
-  if (issue.elementKey !== undefined && ELEMENT_FILTERED_ISSUE_TYPES.has(issue.issueType)) {
-    const matched = await store.findScreenContextEvents({
-      ...base,
-      elementKey: issue.elementKey,
-      from: issue.firstSeenAt,
-      to: issue.lastSeenAt,
-    });
-    return matched[0];
-  }
-
-  // 요소를 모르는 이슈(long_pause·error_friction). 근거 이벤트에 화면 맥락이 없어
-  // 주변 클릭을 빌려온다. 기존 동작을 그대로 유지한다.
-  const query = {
-    ...base,
-    from: representativeWindowStart(issue.firstSeenAt),
-    to: issue.lastSeenAt,
-  };
-
-  const preferred = await store.findScreenContextEvents({
-    ...query,
-    types: REPRESENTATIVE_EVENT_TYPES[issue.issueType],
-  });
-  if (preferred[0]) return preferred[0];
-
-  const withinWindow = await store.findScreenContextEvents(query);
-  return withinWindow[0];
-}
-
-function representativeWindowStart(firstSeenAt: string): string {
-  const firstSeenMs = Date.parse(firstSeenAt);
-  if (Number.isNaN(firstSeenMs)) return firstSeenAt;
-  return new Date(firstSeenMs - REPRESENTATIVE_LEAD_IN_MS).toISOString();
-}
-
 type ProjectAccess = {
   project: ProjectRecord;
   membership: ProjectMembershipRecord;
@@ -710,9 +558,6 @@ type ProjectResourceType =
   | "project_members"
   | "project_member_candidates"
   | "project_audit_logs"
-  | "project_summary"
-  | "project_issues"
-  | "issue_detail"
   | "session_timeline"
   | "session_recording"
   | "page_stats";

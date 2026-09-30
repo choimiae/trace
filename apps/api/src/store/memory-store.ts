@@ -1,13 +1,9 @@
-import type { DashboardSummary, EventBatch, Issue, TraceEvent } from "@trace/shared";
+import type { EventBatch, TraceEvent } from "@trace/shared";
 import { DEFAULT_REPLAY_CONFIG } from "@trace/shared";
 import { nanoid } from "nanoid";
-import { elementKey } from "../detection/element-identity.js";
-import { buildDashboardSummary } from "./dashboard-summary.js";
 import { computePageStats } from "./page-stats.js";
 import {
   normalizeAllowedDomains,
-  pickRepresentativeScreenContextEvent,
-  SCREEN_CONTEXT_CANDIDATE_LIMIT,
 } from "./types.js";
 import type {
   AddProjectMembershipInput,
@@ -23,7 +19,6 @@ import type {
   ProjectMembershipAuditLogFactory,
   ProjectRecord,
   SessionSummary,
-  ScreenContextEventQuery,
   SessionRecordingChunk,
   TraceStore,
   UpdateProjectInput,
@@ -35,7 +30,6 @@ export class MemoryStore implements TraceStore {
 
   private projects = new Map<string, ProjectRecord>();
   private events = new Map<string, TraceEvent[]>();
-  private issues = new Map<string, Issue>();
   private adminUsers = new Map<string, AdminUserRecord>();
   private adminUsersByEmail = new Map<string, string>();
   private adminSessions = new Map<string, AdminSessionRecord>();
@@ -306,62 +300,17 @@ export class MemoryStore implements TraceStore {
     return deleted;
   }
 
-  async listEvents(projectId: string): Promise<TraceEvent[]> {
+  private async loadEvents(projectId: string): Promise<TraceEvent[]> {
     return [...(this.events.get(projectId) ?? [])].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   }
 
   async listPageStats(projectId: string, limit: number): Promise<PageStats[]> {
-    const events = await this.listEvents(projectId);
+    const events = await this.loadEvents(projectId);
     return computePageStats(events, limit);
   }
 
-  async upsertIssues(projectId: string, issues: Issue[]): Promise<void> {
-    for (const issue of issues) {
-      if (issue.projectId === projectId) this.issues.set(issue.issueId, issue);
-    }
-  }
-
-  async listIssues(projectId: string): Promise<Issue[]> {
-    return [...this.issues.values()]
-      .filter((issue) => issue.projectId === projectId)
-      .sort((a, b) => b.severityScore - a.severityScore);
-  }
-
-  async getIssue(issueId: string): Promise<Issue | undefined> {
-    return this.issues.get(issueId);
-  }
-
   async getSessionTimeline(projectId: string, sessionId: string): Promise<TraceEvent[]> {
-    return (await this.listEvents(projectId)).filter((event) => event.sessionId === sessionId);
-  }
-
-  async findScreenContextEvents(query: ScreenContextEventQuery): Promise<TraceEvent[]> {
-    const events = await this.listEvents(query.projectId);
-    const matched: TraceEvent[] = [];
-
-    for (const sessionId of query.sessionIds) {
-      const candidates = events
-        .filter(
-          (event) =>
-            event.sessionId === sessionId &&
-            event.screenContext !== undefined &&
-            (query.urlPath === undefined || event.urlPath === query.urlPath) &&
-            event.timestamp >= query.from &&
-            event.timestamp <= query.to &&
-            (query.types === undefined || query.types.length === 0 || query.types.includes(event.type)) &&
-            (query.elementKey === undefined || elementKey(event) === query.elementKey),
-        )
-        .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
-      const picked = pickRepresentativeScreenContextEvent(candidates);
-      if (picked) matched.push(picked);
-    }
-
-    return matched;
-  }
-
-  async getDashboardSummary(projectId: string): Promise<DashboardSummary> {
-    const [issues, events] = await Promise.all([this.listIssues(projectId), this.listEvents(projectId)]);
-    return buildDashboardSummary(issues, events.length);
+    return (await this.loadEvents(projectId)).filter((event) => event.sessionId === sessionId);
   }
 
   async saveSessionRecordingChunk(chunk: SessionRecordingChunk): Promise<void> {
