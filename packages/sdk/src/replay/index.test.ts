@@ -10,7 +10,7 @@ vi.mock("rrweb", () => ({ record: (...args: unknown[]) => record(...(args as [un
 const { startReplay: start } = await import("./index.js");
 
 // startReplay 는 window 에 리스너를 단다. 테스트마다 정리하지 않으면 앞 테스트의
-// 트리거가 뒤 테스트의 클릭에 같이 반응해 진단이 어려워진다.
+// pagehide 리스너·타이머가 뒤 테스트에 섞이지 않게 한다.
 const stops: Array<() => void> = [];
 const startReplay: typeof start = (...args) => {
   const stop = start(...args);
@@ -24,6 +24,7 @@ describe("startReplay", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     while (stops.length > 0) stops.pop()!();
     document.body.innerHTML = "";
   });
@@ -109,36 +110,30 @@ describe("startReplay", () => {
     expect(snapshot.data.node.attributes.src).not.toContain("base64,AAAA");
   });
 
-  // 스펙 §6 이 "가장 중요하다" 고 적은 항목이다. 업로더 단위 테스트는 대기열이
-  // 비었을 때를 보고, 여기서는 엔트리가 트리거 전에 대기열을 채우지 않는지 본다.
-  it("트리거 전에는 업로더에 아무것도 넣지 않는다", () => {
+  it("트리거 없이도 주기마다 기록을 올린다", () => {
+    vi.useFakeTimers();
     const uploader = { enqueue: vi.fn(), flush: vi.fn(async () => true) };
     startReplay(config, { uploader });
     const emit = (record.mock.calls[0]![0] as { emit: (event: unknown, isCheckout?: boolean) => void }).emit;
 
-    emit({ type: 2, timestamp: 1, data: {} }, true);
-    emit({ type: 3, timestamp: 2, data: { source: 0 } });
-    document.body.innerHTML = '<button id="a">A</button>';
-    document.querySelector("#a")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(uploader.enqueue).not.toHaveBeenCalled();
-    expect(uploader.flush).not.toHaveBeenCalled();
-  });
-
-  it("분노 클릭이 걸리면 버퍼를 비워 올린다", () => {
-    const uploader = { enqueue: vi.fn(), flush: vi.fn(async () => true) };
-    startReplay(config, { uploader });
-    const emit = (record.mock.calls[0]![0] as { emit: (event: unknown, isCheckout?: boolean) => void }).emit;
-    emit({ type: 2, timestamp: 1, data: {} }, true);
-
-    document.body.innerHTML = '<button id="a">A</button>';
-    const button = document.querySelector("#a")!;
-    for (let index = 0; index < 3; index += 1) {
-      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    }
+    emit({ type: 4, timestamp: 1, data: {} });
+    emit({ type: 2, timestamp: 2, data: {} }, true);
+    vi.advanceTimersByTime(10_000);
 
     expect(uploader.enqueue).toHaveBeenCalledTimes(1);
-    expect(uploader.enqueue.mock.calls[0]![0]).toHaveLength(1);
+    expect(uploader.enqueue.mock.calls[0]![0]).toHaveLength(2);
     expect(uploader.flush).toHaveBeenCalledTimes(1);
+  });
+
+  it("페이지를 떠날 때 남은 기록을 keepalive 로 올린다", () => {
+    const uploader = { enqueue: vi.fn(), flush: vi.fn(async () => true) };
+    startReplay(config, { uploader });
+    const emit = (record.mock.calls[0]![0] as { emit: (event: unknown, isCheckout?: boolean) => void }).emit;
+
+    emit({ type: 2, timestamp: 1, data: {} }, true);
+    window.dispatchEvent(new Event("pagehide"));
+
+    expect(uploader.enqueue).toHaveBeenCalledWith([expect.objectContaining({ timestamp: 1 })]);
+    expect(uploader.flush).toHaveBeenLastCalledWith({ keepalive: true });
   });
 });

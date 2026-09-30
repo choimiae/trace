@@ -5,12 +5,6 @@
 /** 전체 스냅샷을 다시 찍는 주기. 버퍼가 거슬러 보는 시간의 하한을 정한다. */
 export const CHECKPOINT_INTERVAL_MS = 120_000;
 
-/**
- * 버퍼가 쥐고 있는 체크포인트 세대 수. 1 이면 0~2분(운에 달림), 2 면 2~4분을
- * 보장한다. 스냅샷은 압축 전 약 383 KB 라 세대마다 그만큼을 더 쓴다.
- */
-export const BUFFERED_CHECKPOINT_GENERATIONS = 2;
-
 /** 프로젝트마다 지정할 수 있는 마스킹 셀렉터 개수와 길이. */
 export const MAX_MASK_SELECTORS = 50;
 export const MAX_MASK_SELECTOR_LENGTH = 200;

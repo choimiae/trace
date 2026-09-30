@@ -1,7 +1,6 @@
 import { MAX_RECORDING_CHUNK_BYTES } from "@trace/shared/recording-limits";
 import { describe, expect, it, vi } from "vitest";
-import type { RecordedEvent } from "./buffer.js";
-import { RecordingUploader } from "./uploader.js";
+import { type RecordedEvent, RecordingUploader } from "./uploader.js";
 
 const identity = async (bytes: Uint8Array) => bytes;
 
@@ -240,7 +239,7 @@ describe("RecordingUploader", () => {
     expect(events.some((e) => e.marker === "old")).toBe(false);
   });
 
-  // 세대는 FullSnapshot 이 아니라 그 앞의 Meta 에서 시작한다. CheckpointBuffer 가
+  // 세대는 FullSnapshot 이 아니라 그 앞의 Meta 에서 시작한다. rrweb 이
   // isCheckout 으로 나누는 경계와 같은 자리여야 한다 - FullSnapshot 에서 자르면
   // 살아남은 세대가 자기 Meta 를 잃고, 그 구간은 뷰포트도 href 도 모르는 채
   // 재생된다(예외도, 실패하는 테스트도 없이).

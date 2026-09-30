@@ -61,7 +61,7 @@ function assertCaptured(batch: unknown[] | undefined, required: EventKind = SNAP
   return batch!;
 }
 
-/** 페이지를 세우고, 분노 클릭으로 드레인해, 실제로 업로더에 넘어간 것을 돌려준다. */
+/** 페이지를 세우고, pagehide 로 드레인해, 실제로 업로더에 넘어간 것을 돌려준다. */
 function recordAndDrain(
   html: string,
   maskSelectors: string[] = config.maskSelectors,
@@ -77,10 +77,7 @@ function recordAndDrain(
   document.body.innerHTML = `${html}<button id="trigger">확인</button>`;
   const stop = startReplay({ ...config, maskSelectors }, { uploader });
 
-  const button = document.querySelector("#trigger")!;
-  for (let index = 0; index < 3; index += 1) {
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  }
+  window.dispatchEvent(new Event("pagehide"));
 
   stop();
   document.body.innerHTML = "";
@@ -108,10 +105,7 @@ async function recordMutateAndDrain(html: string, mutate: () => void): Promise<s
   mutate();
   await new Promise((resolve) => setTimeout(resolve, 50));
 
-  const button = document.querySelector("#trigger")!;
-  for (let index = 0; index < 3; index += 1) {
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  }
+  window.dispatchEvent(new Event("pagehide"));
   stop();
   document.body.innerHTML = "";
 
@@ -167,10 +161,7 @@ describe("startReplay (진짜 rrweb)", () => {
     text.data = "담당자 lee@example.com";
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    const button = document.querySelector("#trigger")!;
-    for (let index = 0; index < 3; index += 1) {
-      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    }
+    window.dispatchEvent(new Event("pagehide"));
     stop();
     document.body.innerHTML = "";
 
@@ -285,10 +276,7 @@ describe("startReplay (진짜 rrweb)", () => {
     styleText.data = ".b{z-index:888888888}";
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    const button = document.querySelector("#trigger")!;
-    for (let index = 0; index < 3; index += 1) {
-      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    }
+    window.dispatchEvent(new Event("pagehide"));
     stop();
     document.body.innerHTML = "";
 
@@ -326,10 +314,7 @@ describe("startReplay (진짜 rrweb)", () => {
     const stop = startReplay(config, { uploader });
 
     document.querySelector<HTMLInputElement>("#r1")!.click();
-    const button = document.querySelector("#trigger")!;
-    for (let index = 0; index < 3; index += 1) {
-      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    }
+    window.dispatchEvent(new Event("pagehide"));
     stop();
     document.body.innerHTML = "";
 
@@ -352,10 +337,7 @@ describe("startReplay (진짜 rrweb)", () => {
 
     document.body.innerHTML = '<button id="trigger">확인</button>';
     const stop = startReplay(config, { uploader });
-    const button = document.querySelector("#trigger")!;
-    for (let index = 0; index < 3; index += 1) {
-      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    }
+    window.dispatchEvent(new Event("pagehide"));
     stop();
     document.body.innerHTML = "";
     window.history.replaceState({}, "", "/");
@@ -519,18 +501,15 @@ describe("startReplay (진짜 rrweb)", () => {
     expect(payload).not.toContain("홍길동");
   });
 
-  // 스펙 §6 이 가장 중요하다고 적은 항목을, 모킹 없이 네 조각이 배선된 채로 본다.
-  it("트리거 전에는 아무것도 업로더에 넘기지 않는다", async () => {
+  it("배선된 채로 첫 스냅샷부터 업로더에 넘긴다", async () => {
     const uploader = { enqueue: vi.fn(), flush: vi.fn(async () => true) };
 
     document.body.innerHTML = '<div class="note">주문</div>';
     const stop = startReplay(config, { uploader });
+    window.dispatchEvent(new Event("pagehide"));
 
-    document.body.appendChild(document.createElement("p"));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(uploader.enqueue).not.toHaveBeenCalled();
-    expect(uploader.flush).not.toHaveBeenCalled();
+    const sent = uploader.enqueue.mock.calls.flatMap((call) => call[0] as Array<{ type: number }>);
+    expect(sent.some((event) => event.type === 2)).toBe(true);
 
     stop();
     document.body.innerHTML = "";

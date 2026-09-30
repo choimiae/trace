@@ -1,6 +1,5 @@
 import { redactUrl } from "@trace/shared/privacy";
 import { MAX_RECORDING_CHUNK_BYTES } from "@trace/shared/recording-limits";
-import type { RecordedEvent } from "./buffer.js";
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<{ ok: boolean; status?: number }>;
 
@@ -19,10 +18,16 @@ const FULL_SNAPSHOT_EVENT_TYPE = 2;
 // rrweb 의 Meta 이벤트 타입 값. 체크포인트의 isCheckout 플래그는 FullSnapshot 이
 // 아니라 바로 앞의 Meta 에 실린다(rrweb 2.0.0-alpha.4 의 takeFullSnapshot 에서
 // 실측: Meta 는 isCheckout 을 받고, 뒤따르는 FullSnapshot 은 인자 없이 나간다).
-// 그래서 CheckpointBuffer 가 나누는 세대 경계도 Meta 자리이고, 아래 capPending()
+// 그래서 세대 경계는 Meta 자리이고, 아래 capPending()
 // 이 세대를 셀 때도 같은 자리를 써야 한다. Meta 에는 뷰포트 크기와 href 가
 // 들어 있어서, 여기서 한 칸 늦게 자르면 살아남은 세대가 그것을 잃는다.
 const META_EVENT_TYPE = 4;
+
+export interface RecordedEvent {
+  type: number;
+  timestamp: number;
+  [key: string]: unknown;
+}
 
 export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
   const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream("gzip"));
@@ -281,8 +286,8 @@ export class RecordingUploader {
    * 테스트도 없이) 재생되지 않는 이벤트로 남는다.
    *
    * 그래서 여기서는 세대(직전 FullSnapshot 부터 다음 FullSnapshot 전까지)
-   * 단위로만 자른다 - CheckpointBuffer 가 트리거 전에 오래된 세대를 통째로
-   * 버리는 것과 같은 단위다. 상한을 만족시키는 가장 오래된 세대 경계를
+   * 단위로만 자른다 - rrweb 체크포인트가 나누는 경계를 따라
+   * 오래된 세대를 통째로 버린다. 상한을 만족시키는 가장 오래된 세대 경계를
    * 찾아 그 앞을 버리고, 그 세대까지도 상한을 넘으면(체크포인트가 한참
    * 오지 않은 채로 계속 실패해 쌓인 경우) 마지막 남은 세대는 아무리 커도
    * 남긴다 - 더 자르면 앵커 자체가 사라져 그동안 쌓인 델타 전체가
