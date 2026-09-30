@@ -48,14 +48,6 @@ CREATE TABLE IF NOT EXISTS admin_users (
   last_login_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS project_memberships (
-  project_id TEXT NOT NULL,
-  admin_user_id TEXT NOT NULL,
-  role TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  PRIMARY KEY (project_id, admin_user_id)
-);
-
 CREATE TABLE IF NOT EXISTS admin_sessions (
   session_id_hash TEXT PRIMARY KEY,
   admin_user_id TEXT NOT NULL,
@@ -66,17 +58,6 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
   user_agent_hash TEXT,
   ip_hash TEXT
 );
-
-CREATE TABLE IF NOT EXISTS audit_logs (
-  audit_log_id TEXT PRIMARY KEY,
-  admin_user_id TEXT,
-  action TEXT NOT NULL,
-  project_id TEXT,
-  created_at TEXT NOT NULL,
-  metadata TEXT NOT NULL DEFAULT '{}'
-);
-
-CREATE INDEX IF NOT EXISTS audit_logs_project_created ON audit_logs (project_id, created_at DESC, audit_log_id DESC);
 
 CREATE TABLE IF NOT EXISTS session_recordings (
   session_id TEXT NOT NULL,

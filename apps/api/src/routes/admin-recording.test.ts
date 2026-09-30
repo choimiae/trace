@@ -39,16 +39,10 @@ async function signedInStore() {
 }
 
 async function createAuthenticatedOwner() {
-  const { store, user, cookie, csrfToken } = await signedInStore();
+  const { store, cookie, csrfToken } = await signedInStore();
   const project = await store.createProject({
     name: "Demo",
     allowedDomains: ["https://demo.example.com"],
-  });
-  await store.addProjectMembership({
-    projectId: project.projectId,
-    adminUserId: user.adminUserId,
-    role: "owner",
-    createdAt: "2026-08-27T00:00:00.000Z",
   });
   const app = createApp({ store, authConfig });
   const headers = { cookie, origin: authConfig.adminAppOrigin, "x-trace-csrf": csrfToken };
@@ -118,42 +112,13 @@ describe("GET /admin/api/sessions/:sessionId/recording", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("멤버가 아니면 403 이고 감사 로그를 남긴다", async () => {
-    const { app, store, project, headers } = await withRecording();
-    const outsider = await store.upsertAdminUserFromGoogle({
-      googleSub: "google_sub_outsider",
-      email: "outsider@example.com",
-      emailVerified: true,
-      now: "2026-09-15T00:00:00.000Z",
-    });
-    const session = await createAdminSessionForUser({ store, config: authConfig, user: outsider });
-    void headers;
-
-    const response = await app.inject({
-      method: "GET",
-      url: `/admin/api/sessions/sess_abc/recording?projectId=${project.projectId}`,
-      headers: { cookie: session.cookie.split(";")[0] as string },
-    });
-
-    expect(response.statusCode).toBe(403);
-    // listAuditLogs() 는 인자를 받지 않는다.
-    const logs = await store.listAuditLogs();
-    expect(logs.some((log) => log.action === "project.access_denied")).toBe(true);
-  });
-
-  it("조회자도 볼 수 있다", async () => {
+  it("프로젝트를 만들지 않은 관리자도 볼 수 있다", async () => {
     const { app, store, project, headers } = await withRecording();
     const viewer = await store.upsertAdminUserFromGoogle({
       googleSub: "google_sub_viewer",
       email: "viewer@example.com",
       emailVerified: true,
       now: "2026-09-15T00:00:00.000Z",
-    });
-    await store.addProjectMembership({
-      projectId: project.projectId,
-      adminUserId: viewer.adminUserId,
-      role: "viewer",
-      createdAt: "2026-09-15T00:00:00.000Z",
     });
     const session = await createAdminSessionForUser({ store, config: authConfig, user: viewer });
     void headers;
@@ -248,7 +213,7 @@ describe("GET /admin/api/sessions/:sessionId/recording/chunks/:seq", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("조회자도 받을 수 있다", async () => {
+  it("프로젝트를 만들지 않은 관리자도 받을 수 있다", async () => {
     const { app, store, project } = await withGzipChunk();
     // 주의: 브리프 원문은 이 sub-user 에 owner 와 같은 이메일(admin@example.com)을
     // 쓴다 — upsertAdminUserFromGoogle 이 admin_email_conflict 로 던진다. Task 2 와
@@ -258,12 +223,6 @@ describe("GET /admin/api/sessions/:sessionId/recording/chunks/:seq", () => {
       email: "viewer-chunk@example.com",
       emailVerified: true,
       now: "2026-09-15T00:00:00.000Z",
-    });
-    await store.addProjectMembership({
-      projectId: project.projectId,
-      adminUserId: viewer.adminUserId,
-      role: "viewer",
-      createdAt: "2026-09-15T00:00:00.000Z",
     });
     const session = await createAdminSessionForUser({ store, config: authConfig, user: viewer });
 
@@ -344,19 +303,13 @@ describe("GET /admin/api/projects/:projectId/sessions", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("조회자도 세션 목록을 볼 수 있다", async () => {
+  it("프로젝트를 만들지 않은 관리자도 세션 목록을 볼 수 있다", async () => {
     const { app, store, project } = await createAuthenticatedOwner();
     const viewer = await store.upsertAdminUserFromGoogle({
       googleSub: "google_sub_viewer_list",
       email: "viewer-list@example.com",
       emailVerified: true,
       now: "2026-09-15T00:00:00.000Z",
-    });
-    await store.addProjectMembership({
-      projectId: project.projectId,
-      adminUserId: viewer.adminUserId,
-      role: "viewer",
-      createdAt: "2026-09-15T00:00:00.000Z",
     });
     const session = await createAdminSessionForUser({ store, config: authConfig, user: viewer });
 
@@ -427,19 +380,13 @@ describe("GET /admin/api/projects/:projectId/page-stats", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("조회자도 볼 수 있다", async () => {
+  it("프로젝트를 만들지 않은 관리자도 볼 수 있다", async () => {
     const { app, store, project } = await createAuthenticatedOwner();
     const viewer = await store.upsertAdminUserFromGoogle({
       googleSub: "google_sub_viewer_stats",
       email: "viewer-stats@example.com",
       emailVerified: true,
       now: "2026-09-15T00:00:00.000Z",
-    });
-    await store.addProjectMembership({
-      projectId: project.projectId,
-      adminUserId: viewer.adminUserId,
-      role: "viewer",
-      createdAt: "2026-09-15T00:00:00.000Z",
     });
     const session = await createAdminSessionForUser({ store, config: authConfig, user: viewer });
 

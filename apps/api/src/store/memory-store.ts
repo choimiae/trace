@@ -6,17 +6,11 @@ import {
   normalizeAllowedDomains,
 } from "./types.js";
 import type {
-  AddProjectMembershipInput,
-  AdminRole,
   AdminSessionRecord,
   AdminUserRecord,
-  AuditLogRecord,
   CreateAdminSessionInput,
-  CreateAuditLogInput,
   CreateProjectInput,
   PageStats,
-  ProjectMembershipRecord,
-  ProjectMembershipAuditLogFactory,
   ProjectRecord,
   SessionSummary,
   SessionRecordingChunk,
@@ -33,8 +27,6 @@ export class MemoryStore implements TraceStore {
   private adminUsers = new Map<string, AdminUserRecord>();
   private adminUsersByEmail = new Map<string, string>();
   private adminSessions = new Map<string, AdminSessionRecord>();
-  private projectMemberships = new Map<string, ProjectMembershipRecord>();
-  private auditLogs = new Map<string, AuditLogRecord>();
   private sessionRecordings = new Map<string, SessionRecordingChunk>();
 
   async createProject(input: CreateProjectInput): Promise<ProjectRecord> {
@@ -52,6 +44,12 @@ export class MemoryStore implements TraceStore {
 
   async getProject(projectId: string): Promise<ProjectRecord | undefined> {
     return this.projects.get(projectId);
+  }
+
+  async listProjects(): Promise<ProjectRecord[]> {
+    return [...this.projects.values()].sort(
+      (left, right) => left.createdAt.localeCompare(right.createdAt) || left.projectId.localeCompare(right.projectId),
+    );
   }
 
   async updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectRecord | undefined> {
@@ -114,18 +112,6 @@ export class MemoryStore implements TraceStore {
     return googleSub ? this.adminUsers.get(googleSub) : undefined;
   }
 
-  async searchAdminUsers(input: { query: string; limit: number }): Promise<AdminUserRecord[]> {
-    const needle = input.query.toLowerCase();
-    return [...this.adminUsers.values()]
-      .filter((user) => {
-        if (needle === "") return true;
-        if (user.email.toLowerCase().includes(needle)) return true;
-        return user.name !== undefined && user.name.toLowerCase().includes(needle);
-      })
-      .sort((left, right) => left.email.localeCompare(right.email))
-      .slice(0, input.limit);
-  }
-
   async createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord> {
     this.adminSessions.set(input.sessionIdHash, input);
     return input;
@@ -143,144 +129,6 @@ export class MemoryStore implements TraceStore {
   async touchAdminSession(sessionIdHash: string, lastSeenAt: string): Promise<void> {
     const session = this.adminSessions.get(sessionIdHash);
     if (session) this.adminSessions.set(sessionIdHash, { ...session, lastSeenAt });
-  }
-
-  async addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord> {
-    const key = `${input.projectId}:${input.adminUserId}`;
-    if (this.projectMemberships.has(key)) throw new Error("project_member_exists");
-    this.projectMemberships.set(key, input);
-    return input;
-  }
-
-  async addProjectMembershipWithAudit(
-    membership: AddProjectMembershipInput,
-    auditLog: CreateAuditLogInput,
-  ): Promise<ProjectMembershipRecord> {
-    const key = `${membership.projectId}:${membership.adminUserId}`;
-    if (this.projectMemberships.has(key)) throw new Error("project_member_exists");
-
-    this.projectMemberships.set(key, membership);
-    this.appendAuditLog(auditLog);
-    return membership;
-  }
-
-  async updateProjectMembershipRoleWithAudit(input: {
-    projectId: string;
-    targetAdminUserId: string;
-    requestedByAdminUserId: string;
-    role: AdminRole;
-    auditLog?: ProjectMembershipAuditLogFactory;
-  }): Promise<ProjectMembershipRecord | undefined> {
-    const requester = this.projectMemberships.get(`${input.projectId}:${input.requestedByAdminUserId}`);
-    if (!requester || requester.role !== "owner") throw new Error("project_role_forbidden");
-
-    const key = `${input.projectId}:${input.targetAdminUserId}`;
-    const current = this.projectMemberships.get(key);
-    if (!current) return undefined;
-    if (current.role === input.role) return current;
-    if (input.targetAdminUserId === input.requestedByAdminUserId && current.role === "owner") {
-      throw new Error("self_owner_change_forbidden");
-    }
-    if (current.role === "owner" && input.role !== "owner" && this.ownerCount(input.projectId) <= 1) {
-      throw new Error("last_owner_forbidden");
-    }
-
-    const auditLog = input.auditLog?.(current);
-    const updated: ProjectMembershipRecord = { ...current, role: input.role };
-    this.projectMemberships.set(key, updated);
-    if (auditLog) this.appendAuditLog(auditLog);
-    return updated;
-  }
-
-  async removeProjectMembershipWithAudit(input: {
-    projectId: string;
-    targetAdminUserId: string;
-    requestedByAdminUserId: string;
-    auditLog: ProjectMembershipAuditLogFactory;
-  }): Promise<boolean> {
-    const requester = this.projectMemberships.get(`${input.projectId}:${input.requestedByAdminUserId}`);
-    if (!requester || requester.role !== "owner") throw new Error("project_role_forbidden");
-
-    const key = `${input.projectId}:${input.targetAdminUserId}`;
-    const current = this.projectMemberships.get(key);
-    if (!current) return false;
-    if (input.targetAdminUserId === input.requestedByAdminUserId) {
-      throw new Error("self_owner_change_forbidden");
-    }
-    if (current.role === "owner" && this.ownerCount(input.projectId) <= 1) {
-      throw new Error("last_owner_forbidden");
-    }
-
-    const auditLog = input.auditLog(current);
-    this.projectMemberships.delete(key);
-    this.appendAuditLog(auditLog);
-    return true;
-  }
-
-  async getProjectMembership(
-    projectId: string,
-    adminUserId: string,
-  ): Promise<ProjectMembershipRecord | undefined> {
-    return this.projectMemberships.get(`${projectId}:${adminUserId}`);
-  }
-
-  async listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]> {
-    return [...this.projectMemberships.values()].filter((membership) => membership.adminUserId === adminUserId);
-  }
-
-  async listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]> {
-    return Array.from(this.projectMemberships.values()).filter((membership) => membership.projectId === projectId);
-  }
-
-  async createAuditLog(input: CreateAuditLogInput): Promise<void> {
-    this.appendAuditLog(input);
-  }
-
-  private appendAuditLog(input: CreateAuditLogInput): void {
-    const auditLog: AuditLogRecord = {
-      auditLogId: `audit_${nanoid(10)}`,
-      ...(input.adminUserId === undefined ? {} : { adminUserId: input.adminUserId }),
-      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
-      action: input.action,
-      metadata: input.metadata,
-      createdAt: input.createdAt,
-    };
-    this.auditLogs.set(auditLog.auditLogId, auditLog);
-  }
-
-  private ownerCount(projectId: string): number {
-    return Array.from(this.projectMemberships.values()).filter(
-      (membership) => membership.projectId === projectId && membership.role === "owner",
-    ).length;
-  }
-
-  async listAuditLogs(): Promise<AuditLogRecord[]> {
-    return [...this.auditLogs.values()];
-  }
-
-  async listProjectAuditLogs(input: {
-    projectId: string;
-    limit: number;
-    cursor?: { createdAt: string; auditLogId: string };
-  }): Promise<AuditLogRecord[]> {
-    const { cursor } = input;
-    return [...this.auditLogs.values()]
-      .filter((entry) => entry.projectId === input.projectId)
-      .filter((entry) => {
-        if (cursor === undefined) return true;
-        if (entry.createdAt < cursor.createdAt) return true;
-        return entry.createdAt === cursor.createdAt && entry.auditLogId < cursor.auditLogId;
-      })
-      .sort((left, right) => {
-        if (left.createdAt !== right.createdAt) {
-          // SQLite ORDER BY 는 BINARY collation(코드 유닛 비교)을 쓴다. localeCompare 는
-          // nanoid 알파벳(대소문자·_·-)의 순서를 다르게 매겨 두 스토어가 어긋난다.
-          return left.createdAt < right.createdAt ? 1 : -1;
-        }
-        if (left.auditLogId === right.auditLogId) return 0;
-        return left.auditLogId < right.auditLogId ? 1 : -1;
-      })
-      .slice(0, input.limit);
   }
 
   async saveBatch(batch: EventBatch): Promise<void> {

@@ -1,21 +1,13 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AdminAuthConfig } from "../auth/config.js";
 import { parseCookieHeader } from "../auth/cookies.js";
 import { verifyCsrfRequest } from "../auth/csrf.js";
 import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js";
-import type { AdminRole, AdminUserRecord, ProjectMembershipRecord, ProjectRecord, TraceStore } from "../store/types.js";
-import {
-  addProjectMemberSchema,
-  auditLogQuerySchema,
-  createProjectSchema,
-  memberCandidateSearchSchema,
-  updateProjectMemberRoleSchema,
-  updateProjectSchema,
-} from "./admin.js";
+import type { ProjectRecord, TraceStore } from "../store/types.js";
+import { createProjectSchema, updateProjectSchema } from "./admin.js";
 
 const projectParamsSchema = z.object({ projectId: z.string() });
-const projectMemberParamsSchema = z.object({ projectId: z.string(), adminUserId: z.string() });
 const sessionParamsSchema = z.object({ sessionId: z.string() });
 const projectQuerySchema = z.object({ projectId: z.string() });
 const recordingChunkParamsSchema = z.object({
@@ -50,20 +42,6 @@ export async function registerAdminProxyRoutes(
     if (!parsed.success) return reply.code(400).send({ error: "invalid_allowed_domains" });
 
     const project = await options.store.createProject(parsed.data);
-    const createdAt = new Date().toISOString();
-    await options.store.addProjectMembership({
-      projectId: project.projectId,
-      adminUserId: authenticated.adminUserId,
-      role: "owner",
-      createdAt,
-    });
-    await options.store.createAuditLog({
-      adminUserId: authenticated.adminUserId,
-      action: "project.created",
-      projectId: project.projectId,
-      createdAt,
-      metadata: { name: project.name },
-    });
     return reply.code(201).send({
       ...project,
       installSnippet: `<script src="https://cdn.trace.app/sdk.js" data-project-id="${project.projectId}"></script>`,
@@ -75,289 +53,12 @@ export async function registerAdminProxyRoutes(
     if ("error" in authenticated) return reply.code(401).send(authenticated);
 
     const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "project_settings");
+    const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
     }
 
-    return toProjectSettingsResponse(access.project, access.membership.role);
-  });
-
-  app.get("/admin/api/projects/:projectId/members", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "project_members");
-    if ("error" in access) {
-      return reply.code(access.statusCode).send({ error: access.error });
-    }
-
-    const memberships = await options.store.listProjectMemberships(projectId);
-    const members = await Promise.all(
-      memberships.map(async (membership) => {
-        const user = await options.store.getAdminUser(membership.adminUserId);
-        return toProjectMemberResponse(membership, user);
-      }),
-    );
-
-    return members.filter((member): member is ProjectMemberResponse => member !== undefined);
-  });
-
-  app.get("/admin/api/projects/:projectId/member-candidates", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "project_member_candidates");
-    if ("error" in access) {
-      return reply.code(access.statusCode).send({ error: access.error });
-    }
-    // 권한 검사를 schema 검증보다 먼저 둔다. owner 가 아닌 요청자에게
-    // limit 검증 결과를 흘리지 않는다.
-    if (access.membership.role !== "owner") {
-      return reply.code(403).send({ error: "project_role_forbidden" });
-    }
-
-    const parsed = memberCandidateSearchSchema.safeParse(request.query);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid_member_candidate_search" });
-
-    const [users, memberships] = await Promise.all([
-      options.store.searchAdminUsers(parsed.data),
-      options.store.listProjectMemberships(projectId),
-    ]);
-    const roleByAdminUserId = new Map(
-      memberships.map((membership) => [membership.adminUserId, membership.role]),
-    );
-
-    return users.map((user) => {
-      const candidate: ProjectMemberCandidateResponse = {
-        adminUserId: user.adminUserId,
-        email: user.email,
-      };
-      if (user.name !== undefined) candidate.name = user.name;
-      const role = roleByAdminUserId.get(user.adminUserId);
-      if (role !== undefined) candidate.membership = { role };
-      return candidate;
-    });
-  });
-
-  app.get("/admin/api/projects/:projectId/audit-logs", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "project_audit_logs");
-    if ("error" in access) {
-      return reply.code(access.statusCode).send({ error: access.error });
-    }
-    // 권한 검사를 schema 검증보다 먼저 둔다. owner 가 아닌 요청자에게
-    // limit·cursor 검증 결과를 흘리지 않는다.
-    if (access.membership.role !== "owner") {
-      return reply.code(403).send({ error: "project_role_forbidden" });
-    }
-
-    const parsed = auditLogQuerySchema.safeParse(request.query);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid_audit_log_query" });
-
-    const cursor = parsed.data.cursor === undefined
-      ? undefined
-      : parseAuditLogCursor(parsed.data.cursor);
-    if (parsed.data.cursor !== undefined && cursor === undefined) {
-      return reply.code(400).send({ error: "invalid_audit_log_query" });
-    }
-
-    // limit + 1 을 읽어 다음 페이지 존재를 별도 count 없이 판정한다.
-    const rows = await options.store.listProjectAuditLogs({
-      projectId,
-      limit: parsed.data.limit + 1,
-      ...(cursor === undefined ? {} : { cursor }),
-    });
-    const page = rows.slice(0, parsed.data.limit);
-    const hasMore = rows.length > parsed.data.limit;
-
-    const actors = await resolveAuditLogActors(options.store, page);
-    const entries = page.map((row) => {
-      const entry: ProjectAuditLogEntryResponse = {
-        auditLogId: row.auditLogId,
-        action: row.action,
-        createdAt: row.createdAt,
-        metadata: row.metadata,
-      };
-      if (row.adminUserId !== undefined) {
-        entry.actor = actors.get(row.adminUserId) ?? { adminUserId: row.adminUserId };
-      }
-      return entry;
-    });
-
-    const lastEntry = page[page.length - 1];
-    return hasMore && lastEntry !== undefined
-      ? { entries, nextCursor: encodeAuditLogCursor(lastEntry) }
-      : { entries };
-  });
-
-  app.post("/admin/api/projects/:projectId/members", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const csrf = verifyCsrfRequest({
-      method: request.method,
-      origin: request.headers.origin,
-      referer: request.headers.referer,
-      adminAppOrigin: options.config.adminAppOrigin,
-      csrfCookie: parseCookieHeader(request.headers.cookie).get(options.config.csrfCookieName),
-      csrfHeader: firstHeaderValue(request.headers["x-trace-csrf"]),
-    });
-    if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
-
-    const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "project_members");
-    if ("error" in access) {
-      return reply.code(access.statusCode).send({ error: access.error });
-    }
-    if (access.membership.role !== "owner") {
-      return reply.code(403).send({ error: "project_role_forbidden" });
-    }
-
-    const parsed = addProjectMemberSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid_project_member" });
-
-    const user = await options.store.getAdminUserByEmail(parsed.data.email);
-    if (!user) return reply.code(404).send({ error: "admin_user_not_found" });
-
-    const existing = await options.store.getProjectMembership(projectId, user.adminUserId);
-    if (existing) return reply.code(409).send({ error: "project_member_exists" });
-
-    const createdAt = new Date().toISOString();
-    let membership: ProjectMembershipRecord;
-    try {
-      membership = await options.store.addProjectMembershipWithAudit(
-        {
-          projectId,
-          adminUserId: user.adminUserId,
-          role: parsed.data.role,
-          createdAt,
-        },
-        {
-          adminUserId: authenticated.adminUserId,
-          action: "project.member_added",
-          projectId,
-          createdAt,
-          metadata: {
-            addedAdminUserId: user.adminUserId,
-            email: user.email,
-            role: parsed.data.role,
-          },
-        },
-      );
-    } catch (error) {
-      if (error instanceof Error && error.message === "project_member_exists") {
-        return reply.code(409).send({ error: "project_member_exists" });
-      }
-      throw error;
-    }
-
-    return reply.code(201).send(toProjectMemberResponse(membership, user));
-  });
-
-  app.patch("/admin/api/projects/:projectId/members/:adminUserId", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const csrf = verifyCsrfRequest({
-      method: request.method,
-      origin: request.headers.origin,
-      referer: request.headers.referer,
-      adminAppOrigin: options.config.adminAppOrigin,
-      csrfCookie: parseCookieHeader(request.headers.cookie).get(options.config.csrfCookieName),
-      csrfHeader: firstHeaderValue(request.headers["x-trace-csrf"]),
-    });
-    if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
-
-    const params = projectMemberParamsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(404).send({ error: "project_not_found" });
-    const body = updateProjectMemberRoleSchema.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: "invalid_project_member" });
-
-    const access = await getProjectAccess(options.store, params.data.projectId, authenticated, "project_members");
-    if ("error" in access) return reply.code(access.statusCode).send({ error: access.error });
-    if (access.membership.role !== "owner") return reply.code(403).send({ error: "project_role_forbidden" });
-
-    const targetUser = await options.store.getAdminUser(params.data.adminUserId);
-    if (!targetUser) return reply.code(404).send({ error: "project_member_not_found" });
-
-    try {
-      const updated = await options.store.updateProjectMembershipRoleWithAudit({
-        projectId: params.data.projectId,
-        targetAdminUserId: params.data.adminUserId,
-        requestedByAdminUserId: authenticated.adminUserId,
-        role: body.data.role,
-        auditLog: (current) => ({
-          adminUserId: authenticated.adminUserId,
-          projectId: params.data.projectId,
-          createdAt: new Date().toISOString(),
-          action: "project.member_role_updated",
-          metadata: {
-            targetAdminUserId: targetUser.adminUserId,
-            email: targetUser.email,
-            beforeRole: current.role,
-            afterRole: body.data.role,
-          },
-        }),
-      });
-      if (!updated) return reply.code(404).send({ error: "project_member_not_found" });
-      return reply.send(toProjectMemberResponse(updated, targetUser));
-    } catch (error) {
-      return sendProjectMemberMutationError(reply, error, "project_member_update_failed");
-    }
-  });
-
-  app.delete("/admin/api/projects/:projectId/members/:adminUserId", async (request, reply) => {
-    const authenticated = await authenticate(request, options);
-    if ("error" in authenticated) return reply.code(401).send(authenticated);
-
-    const csrf = verifyCsrfRequest({
-      method: request.method,
-      origin: request.headers.origin,
-      referer: request.headers.referer,
-      adminAppOrigin: options.config.adminAppOrigin,
-      csrfCookie: parseCookieHeader(request.headers.cookie).get(options.config.csrfCookieName),
-      csrfHeader: firstHeaderValue(request.headers["x-trace-csrf"]),
-    });
-    if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
-
-    const params = projectMemberParamsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(404).send({ error: "project_not_found" });
-
-    const access = await getProjectAccess(options.store, params.data.projectId, authenticated, "project_members");
-    if ("error" in access) return reply.code(access.statusCode).send({ error: access.error });
-    if (access.membership.role !== "owner") return reply.code(403).send({ error: "project_role_forbidden" });
-
-    const targetUser = await options.store.getAdminUser(params.data.adminUserId);
-    if (!targetUser) return reply.code(404).send({ error: "project_member_not_found" });
-
-    try {
-      const removed = await options.store.removeProjectMembershipWithAudit({
-        projectId: params.data.projectId,
-        targetAdminUserId: params.data.adminUserId,
-        requestedByAdminUserId: authenticated.adminUserId,
-        auditLog: (current) => ({
-          adminUserId: authenticated.adminUserId,
-          projectId: params.data.projectId,
-          createdAt: new Date().toISOString(),
-          action: "project.member_removed",
-          metadata: {
-            targetAdminUserId: targetUser.adminUserId,
-            email: targetUser.email,
-            role: current.role,
-          },
-        }),
-      });
-      if (!removed) return reply.code(404).send({ error: "project_member_not_found" });
-      return reply.code(204).send();
-    } catch (error) {
-      return sendProjectMemberMutationError(reply, error, "project_member_remove_failed");
-    }
+    return toProjectSettingsResponse(access.project);
   });
 
   app.patch("/admin/api/projects/:projectId", async (request, reply) => {
@@ -375,12 +76,9 @@ export async function registerAdminProxyRoutes(
     if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
 
     const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "project_settings");
+    const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
-    }
-    if (access.membership.role === "viewer") {
-      return reply.code(403).send({ error: "project_role_forbidden" });
     }
 
     const parsed = updateProjectSchema.safeParse(request.body);
@@ -395,26 +93,7 @@ export async function registerAdminProxyRoutes(
     });
     if (!updated) return reply.code(404).send({ error: "project_not_found" });
 
-    await options.store.createAuditLog({
-      adminUserId: authenticated.adminUserId,
-      action: "project.updated",
-      projectId,
-      createdAt: new Date().toISOString(),
-      metadata: {
-        before: {
-          name: access.project.name,
-          allowedDomains: access.project.allowedDomains,
-          replay: access.project.replay,
-        },
-        after: {
-          name: updated.name,
-          allowedDomains: updated.allowedDomains,
-          replay: updated.replay,
-        },
-      },
-    });
-
-    return toProjectSettingsResponse(updated, access.membership.role);
+    return toProjectSettingsResponse(updated);
   });
 
   app.get("/admin/api/projects/:projectId/sessions", async (request, reply) => {
@@ -422,7 +101,7 @@ export async function registerAdminProxyRoutes(
     if ("error" in authenticated) return reply.code(401).send(authenticated);
 
     const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "session_recording");
+    const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
     }
@@ -436,7 +115,7 @@ export async function registerAdminProxyRoutes(
     if ("error" in authenticated) return reply.code(401).send(authenticated);
 
     const { projectId } = projectParamsSchema.parse(request.params);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "page_stats");
+    const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
     }
@@ -451,7 +130,7 @@ export async function registerAdminProxyRoutes(
 
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const { projectId } = projectQuerySchema.parse(request.query);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "session_timeline");
+    const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
     }
@@ -465,7 +144,7 @@ export async function registerAdminProxyRoutes(
 
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const { projectId } = projectQuerySchema.parse(request.query);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "session_recording");
+    const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
     }
@@ -495,7 +174,7 @@ export async function registerAdminProxyRoutes(
     if (!params.success) return reply.code(400).send({ error: "invalid_chunk_seq" });
 
     const { projectId } = projectQuerySchema.parse(request.query);
-    const access = await getProjectAccess(options.store, projectId, authenticated, "session_recording");
+    const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
     }
@@ -529,167 +208,25 @@ async function authenticate(
 async function getProjectAccess(
   store: TraceStore,
   projectId: string,
-  authenticated: AuthenticatedAdmin,
-  resourceType: ProjectResourceType,
 ): Promise<ProjectAccess | ProjectAccessError> {
   const project = await store.getProject(projectId);
   if (!project) return { statusCode: 404, error: "project_not_found" };
-
-  const membership = await store.getProjectMembership(projectId, authenticated.adminUserId);
-  if (!membership) {
-    await auditProjectAccessDenied(store, projectId, authenticated, resourceType);
-    return { statusCode: 403, error: "project_access_denied" };
-  }
-
-  return { project, membership };
+  return { project };
 }
 
-type ProjectAccess = {
-  project: ProjectRecord;
-  membership: ProjectMembershipRecord;
-};
+type ProjectAccess = { project: ProjectRecord };
 
-type ProjectAccessError =
-  | { statusCode: 404; error: "project_not_found" }
-  | { statusCode: 403; error: "project_access_denied" };
-
-type ProjectResourceType =
-  | "project_settings"
-  | "project_members"
-  | "project_member_candidates"
-  | "project_audit_logs"
-  | "session_timeline"
-  | "session_recording"
-  | "page_stats";
-
-async function auditProjectAccessDenied(
-  store: TraceStore,
-  projectId: string,
-  authenticated: AuthenticatedAdmin,
-  resourceType: ProjectResourceType,
-): Promise<void> {
-  await store.createAuditLog({
-    adminUserId: authenticated.adminUserId,
-    action: "project.access_denied",
-    projectId,
-    createdAt: new Date().toISOString(),
-    metadata: { resourceType },
-  });
-}
-
-function sendProjectMemberMutationError(reply: FastifyReply, error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
-  if (message === "self_owner_change_forbidden") {
-    return reply.code(403).send({ error: "self_owner_change_forbidden" });
-  }
-  if (message === "last_owner_forbidden") {
-    return reply.code(403).send({ error: "last_owner_forbidden" });
-  }
-  if (message === "project_role_forbidden") {
-    return reply.code(403).send({ error: "project_role_forbidden" });
-  }
-  throw error;
-}
+type ProjectAccessError = { statusCode: 404; error: "project_not_found" };
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function toProjectSettingsResponse(
-  project: NonNullable<Awaited<ReturnType<TraceStore["getProject"]>>>,
-  role: NonNullable<Awaited<ReturnType<TraceStore["getProjectMembership"]>>>["role"],
-) {
+function toProjectSettingsResponse(project: ProjectRecord) {
   return {
     projectId: project.projectId,
     name: project.name,
     allowedDomains: project.allowedDomains,
     replay: project.replay,
-    role,
   };
-}
-
-type ProjectMemberResponse = {
-  adminUserId: string;
-  email: string;
-  name?: string;
-  role: AdminRole;
-  createdAt: string;
-};
-
-type ProjectMemberCandidateResponse = {
-  adminUserId: string;
-  email: string;
-  name?: string;
-  membership?: { role: AdminRole };
-};
-
-type ProjectAuditLogActorResponse = {
-  adminUserId: string;
-  email?: string;
-  name?: string;
-};
-
-type ProjectAuditLogEntryResponse = {
-  auditLogId: string;
-  action: string;
-  createdAt: string;
-  actor?: ProjectAuditLogActorResponse;
-  metadata: Record<string, unknown>;
-};
-
-function toProjectMemberResponse(
-  membership: ProjectMembershipRecord,
-  user: AdminUserRecord | undefined,
-): ProjectMemberResponse | undefined {
-  if (!user) return undefined;
-  const response: ProjectMemberResponse = {
-    adminUserId: membership.adminUserId,
-    email: user.email,
-    role: membership.role,
-    createdAt: membership.createdAt,
-  };
-  if (user.name !== undefined) response.name = user.name;
-  return response;
-}
-
-function encodeAuditLogCursor(entry: { createdAt: string; auditLogId: string }): string {
-  return `${entry.createdAt}|${entry.auditLogId}`;
-}
-
-function parseAuditLogCursor(
-  cursor: string,
-): { createdAt: string; auditLogId: string } | undefined {
-  const separator = cursor.indexOf("|");
-  if (separator <= 0 || separator === cursor.length - 1) return undefined;
-
-  const createdAt = cursor.slice(0, separator);
-  const auditLogId = cursor.slice(separator + 1);
-  if (Number.isNaN(Date.parse(createdAt))) return undefined;
-
-  return { createdAt, auditLogId };
-}
-
-async function resolveAuditLogActors(
-  store: TraceStore,
-  rows: Array<{ adminUserId?: string }>,
-): Promise<Map<string, ProjectAuditLogActorResponse>> {
-  const distinct = [...new Set(
-    rows
-      .map((row) => row.adminUserId)
-      .filter((adminUserId): adminUserId is string => adminUserId !== undefined),
-  )];
-
-  const resolved = await Promise.all(
-    distinct.map(async (adminUserId) => {
-      const user = await store.getAdminUser(adminUserId);
-      const actor: ProjectAuditLogActorResponse = { adminUserId };
-      if (user !== undefined) {
-        actor.email = user.email;
-        if (user.name !== undefined) actor.name = user.name;
-      }
-      return [adminUserId, actor] as const;
-    }),
-  );
-
-  return new Map(resolved);
 }

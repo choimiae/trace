@@ -9,17 +9,11 @@ import {
   normalizeAllowedDomains,
 } from "./types.js";
 import type {
-  AddProjectMembershipInput,
-  AdminRole,
   AdminSessionRecord,
   AdminUserRecord,
-  AuditLogRecord,
   CreateAdminSessionInput,
-  CreateAuditLogInput,
   CreateProjectInput,
   PageStats,
-  ProjectMembershipRecord,
-  ProjectMembershipAuditLogFactory,
   ProjectRecord,
   SessionSummary,
   SessionRecordingChunk,
@@ -90,8 +84,10 @@ export class SqliteStore implements TraceStore {
 
   async getProject(projectId: string): Promise<ProjectRecord | undefined> {
     const row = this.db.prepare(`SELECT * FROM projects WHERE project_id = ?`).get(projectId) as Row | undefined;
-    if (!row) return undefined;
+    return row ? this.toProjectRecord(row) : undefined;
+  }
 
+  private toProjectRecord(row: Row): ProjectRecord {
     return {
       projectId: row.project_id as string,
       name: row.name as string,
@@ -100,6 +96,13 @@ export class SqliteStore implements TraceStore {
       replay: parseReplayConfig(row.replay_config),
       createdAt: row.created_at as string,
     };
+  }
+
+  async listProjects(): Promise<ProjectRecord[]> {
+    const rows = this.db
+      .prepare(`SELECT * FROM projects ORDER BY created_at ASC, project_id ASC`)
+      .all() as Row[];
+    return rows.map((row) => this.toProjectRecord(row));
   }
 
   async updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectRecord | undefined> {
@@ -199,25 +202,6 @@ export class SqliteStore implements TraceStore {
     return row ? this.toAdminUserRecord(row) : undefined;
   }
 
-  async searchAdminUsers(input: { query: string; limit: number }): Promise<AdminUserRecord[]> {
-    const needle = input.query.toLowerCase();
-    // name 은 nullable 컬럼이다. COALESCE 로 감싸지 않으면 name 이 NULL 인 행에서
-    // LOWER(name) LIKE ? 가 NULL 이 되어 email 조건만 맞는 사용자가 탈락한다.
-    const rows = needle === ""
-      ? (this.db
-          .prepare(`SELECT * FROM admin_users ORDER BY email ASC LIMIT ?`)
-          .all(input.limit) as Row[])
-      : (this.db
-          .prepare(
-            `SELECT * FROM admin_users
-             WHERE LOWER(email) LIKE ? OR LOWER(COALESCE(name, '')) LIKE ?
-             ORDER BY email ASC LIMIT ?`,
-          )
-          .all(`%${needle}%`, `%${needle}%`, input.limit) as Row[]);
-
-    return rows.map((row) => this.toAdminUserRecord(row));
-  }
-
   async createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord> {
     this.db
       .prepare(
@@ -265,205 +249,6 @@ export class SqliteStore implements TraceStore {
     this.db
       .prepare(`UPDATE admin_sessions SET last_seen_at = ? WHERE session_id_hash = ?`)
       .run(lastSeenAt, sessionIdHash);
-  }
-
-  async addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord> {
-    const result = this.db
-      .prepare(
-        `INSERT INTO project_memberships (project_id, admin_user_id, role, created_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(project_id, admin_user_id) DO NOTHING`,
-      )
-      .run(input.projectId, input.adminUserId, input.role, input.createdAt);
-    if (result.changes === 0) throw new Error("project_member_exists");
-
-    return input;
-  }
-
-  async addProjectMembershipWithAudit(
-    membership: AddProjectMembershipInput,
-    auditLog: CreateAuditLogInput,
-  ): Promise<ProjectMembershipRecord> {
-    const addMembershipAndAudit = this.db.transaction(() => {
-      const result = this.db
-        .prepare(
-          `INSERT INTO project_memberships (project_id, admin_user_id, role, created_at)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(project_id, admin_user_id) DO NOTHING`,
-        )
-        .run(membership.projectId, membership.adminUserId, membership.role, membership.createdAt);
-      if (result.changes === 0) throw new Error("project_member_exists");
-
-      this.insertAuditLog(auditLog);
-    });
-
-    addMembershipAndAudit();
-    return membership;
-  }
-
-  async updateProjectMembershipRoleWithAudit(input: {
-    projectId: string;
-    targetAdminUserId: string;
-    requestedByAdminUserId: string;
-    role: AdminRole;
-    auditLog?: ProjectMembershipAuditLogFactory;
-  }): Promise<ProjectMembershipRecord | undefined> {
-    const updateMembershipAndAudit = this.db.transaction(() => {
-      const requester = this.getProjectMembershipSync(input.projectId, input.requestedByAdminUserId);
-      if (!requester || requester.role !== "owner") throw new Error("project_role_forbidden");
-
-      const current = this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
-      if (!current) return undefined;
-      if (current.role === input.role) return current;
-      if (input.targetAdminUserId === input.requestedByAdminUserId && current.role === "owner") {
-        throw new Error("self_owner_change_forbidden");
-      }
-      if (current.role === "owner" && input.role !== "owner" && this.ownerCountSync(input.projectId) <= 1) {
-        throw new Error("last_owner_forbidden");
-      }
-
-      this.db
-        .prepare(
-          `UPDATE project_memberships
-           SET role = @role
-           WHERE project_id = @projectId AND admin_user_id = @adminUserId`,
-        )
-        .run({ role: input.role, projectId: input.projectId, adminUserId: input.targetAdminUserId });
-      if (input.auditLog) this.insertAuditLog(input.auditLog(current));
-      return this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
-    });
-
-    return updateMembershipAndAudit();
-  }
-
-  async removeProjectMembershipWithAudit(input: {
-    projectId: string;
-    targetAdminUserId: string;
-    requestedByAdminUserId: string;
-    auditLog: ProjectMembershipAuditLogFactory;
-  }): Promise<boolean> {
-    const removeMembershipAndAudit = this.db.transaction(() => {
-      const requester = this.getProjectMembershipSync(input.projectId, input.requestedByAdminUserId);
-      if (!requester || requester.role !== "owner") throw new Error("project_role_forbidden");
-
-      const current = this.getProjectMembershipSync(input.projectId, input.targetAdminUserId);
-      if (!current) return false;
-      if (input.targetAdminUserId === input.requestedByAdminUserId) {
-        throw new Error("self_owner_change_forbidden");
-      }
-      if (current.role === "owner" && this.ownerCountSync(input.projectId) <= 1) {
-        throw new Error("last_owner_forbidden");
-      }
-
-      this.db
-        .prepare(
-          `DELETE FROM project_memberships
-           WHERE project_id = @projectId AND admin_user_id = @adminUserId`,
-        )
-        .run({ projectId: input.projectId, adminUserId: input.targetAdminUserId });
-      this.insertAuditLog(input.auditLog(current));
-      return true;
-    });
-
-    return removeMembershipAndAudit();
-  }
-
-  async getProjectMembership(
-    projectId: string,
-    adminUserId: string,
-  ): Promise<ProjectMembershipRecord | undefined> {
-    const row = this.db
-      .prepare(`SELECT * FROM project_memberships WHERE project_id = ? AND admin_user_id = ?`)
-      .get(projectId, adminUserId) as Row | undefined;
-
-    return row ? this.toMembership(row) : undefined;
-  }
-
-  async listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]> {
-    const rows = this.db
-      .prepare(`SELECT * FROM project_memberships WHERE admin_user_id = ?`)
-      .all(adminUserId) as Row[];
-
-    return rows.map((row) => this.toMembership(row));
-  }
-
-  async listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]> {
-    const rows = this.db
-      .prepare(`SELECT * FROM project_memberships WHERE project_id = ? ORDER BY created_at ASC`)
-      .all(projectId) as Row[];
-
-    return rows.map((row) => this.toMembership(row));
-  }
-
-  async createAuditLog(input: CreateAuditLogInput): Promise<void> {
-    this.insertAuditLog(input);
-  }
-
-  private insertAuditLog(input: CreateAuditLogInput): void {
-    this.db
-      .prepare(
-        `INSERT INTO audit_logs (audit_log_id, admin_user_id, action, project_id, created_at, metadata)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        `audit_${nanoid(10)}`,
-        input.adminUserId ?? null,
-        input.action,
-        input.projectId ?? null,
-        input.createdAt,
-        JSON.stringify(input.metadata ?? {}),
-      );
-  }
-
-  private toAuditLogRecord(row: Row): AuditLogRecord {
-    return compact({
-      auditLogId: row.audit_log_id as string,
-      adminUserId: row.admin_user_id as string | null,
-      action: row.action as string,
-      projectId: row.project_id as string | null,
-      createdAt: row.created_at as string,
-      metadata: JSON.parse(row.metadata as string) as Record<string, unknown>,
-    }) as AuditLogRecord;
-  }
-
-  async listAuditLogs(): Promise<AuditLogRecord[]> {
-    const rows = this.db.prepare(`SELECT * FROM audit_logs ORDER BY created_at`).all() as Row[];
-
-    return rows.map((row) => this.toAuditLogRecord(row));
-  }
-
-  async listProjectAuditLogs(input: {
-    projectId: string;
-    limit: number;
-    cursor?: { createdAt: string; auditLogId: string };
-  }): Promise<AuditLogRecord[]> {
-    const { cursor } = input;
-    const rows = cursor === undefined
-      ? (this.db
-          .prepare(
-            `SELECT * FROM audit_logs
-             WHERE project_id = ?
-             ORDER BY created_at DESC, audit_log_id DESC
-             LIMIT ?`,
-          )
-          .all(input.projectId, input.limit) as Row[])
-      : (this.db
-          .prepare(
-            `SELECT * FROM audit_logs
-             WHERE project_id = ?
-               AND (created_at < ? OR (created_at = ? AND audit_log_id < ?))
-             ORDER BY created_at DESC, audit_log_id DESC
-             LIMIT ?`,
-          )
-          .all(
-            input.projectId,
-            cursor.createdAt,
-            cursor.createdAt,
-            cursor.auditLogId,
-            input.limit,
-          ) as Row[]);
-
-    return rows.map((row) => this.toAuditLogRecord(row));
   }
 
   async saveBatch(batch: EventBatch): Promise<void> {
@@ -628,37 +413,6 @@ export class SqliteStore implements TraceStore {
   // 방금 받은 기록을 같은 요청 안에서 지워 버린다(과거 날짜).
   async deleteSessionRecordingsBefore(cutoff: string): Promise<number> {
     return this.db.prepare(`DELETE FROM session_recordings WHERE received_at < ?`).run(cutoff).changes;
-  }
-
-  private getProjectMembershipSync(projectId: string, adminUserId: string): ProjectMembershipRecord | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT project_id, admin_user_id, role, created_at
-         FROM project_memberships
-         WHERE project_id = @projectId AND admin_user_id = @adminUserId`,
-      )
-      .get({ projectId, adminUserId }) as Row | undefined;
-    return row ? this.toMembership(row) : undefined;
-  }
-
-  private ownerCountSync(projectId: string): number {
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) AS count
-         FROM project_memberships
-         WHERE project_id = @projectId AND role = 'owner'`,
-      )
-      .get({ projectId }) as { count: number };
-    return row.count;
-  }
-
-  private toMembership(row: Row): ProjectMembershipRecord {
-    return {
-      projectId: row.project_id as string,
-      adminUserId: row.admin_user_id as string,
-      role: row.role as AdminRole,
-      createdAt: row.created_at as string,
-    };
   }
 
   private toEvent(row: Row): TraceEvent {

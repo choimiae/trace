@@ -13,11 +13,11 @@ import {
 } from "../auth/google.js";
 import { createFixedWindowRateLimiter } from "../auth/rate-limit.js";
 import { buildClearedAuthCookies, createAdminSessionForUser, requireAdminSession } from "../auth/session.js";
-import type { AdminRole, TraceStore } from "../store/types.js";
+import type { TraceStore } from "../store/types.js";
 
 export interface AuthMeResponse {
   user: { adminUserId: string; email: string; name?: string; pictureUrl?: string };
-  projects: Array<{ projectId: string; role: AdminRole }>;
+  projects: Array<{ projectId: string }>;
   csrfToken: string;
   auth: { googleLogin: boolean; localLogin: boolean };
 }
@@ -78,13 +78,11 @@ export async function registerAuthRoutes(
       : undefined;
 
     if (!callback.success || !oauthState || oauthState.state !== callback.data.state || !stateStore.consume(callback.data.state)) {
-      await auditLoginFailure(options.store, "oauth_state_invalid");
       return reply.code(401).send({ error: "oauth_state_invalid" });
     }
 
     const clearedOauthCookie = clearOAuthStateCookie(options.config);
     if (callback.data.error) {
-      await auditLoginFailure(options.store, "oauth_denied", { providerError: callback.data.error });
       return reply.header("set-cookie", clearedOauthCookie).code(401).send({ error: "oauth_denied" });
     }
 
@@ -103,18 +101,11 @@ export async function registerAuthRoutes(
         now: new Date().toISOString(),
       });
       const session = await createAdminSessionForUser({ store: options.store, config: options.config, user });
-      await options.store.createAuditLog({
-        adminUserId: user.adminUserId,
-        action: "auth.login_success",
-        createdAt: new Date().toISOString(),
-        metadata: {},
-      });
 
       return reply
         .header("set-cookie", [clearedOauthCookie, session.cookie, session.csrfCookie])
         .redirect(options.config.adminAppOrigin);
     } catch {
-      await auditLoginFailure(options.store, "oauth_token_invalid");
       return reply.header("set-cookie", clearedOauthCookie).code(401).send({ error: "oauth_token_invalid" });
     }
   });
@@ -136,12 +127,6 @@ export async function registerAuthRoutes(
       now,
     });
     const session = await createAdminSessionForUser({ store: options.store, config: options.config, user });
-    await options.store.createAuditLog({
-      adminUserId: user.adminUserId,
-      action: "auth.login_success",
-      createdAt: new Date().toISOString(),
-      metadata: { provider: "local" },
-    });
 
     return reply
       .header("set-cookie", [session.cookie, session.csrfCookie])
@@ -164,7 +149,7 @@ export async function registerAuthRoutes(
     if (!csrfCookie) {
       reply.header("set-cookie", createCsrfCookie(options.config, csrfToken));
     }
-    const memberships = await options.store.listProjectMembershipsForUser(user.adminUserId);
+    const projects = await options.store.listProjects();
 
     return {
       user: {
@@ -173,7 +158,7 @@ export async function registerAuthRoutes(
         ...(user.name ? { name: user.name } : {}),
         ...(user.pictureUrl ? { pictureUrl: user.pictureUrl } : {}),
       },
-      projects: memberships.map(({ projectId, role }) => ({ projectId, role })),
+      projects: projects.map(({ projectId }) => ({ projectId })),
       csrfToken,
       auth: {
         googleLogin: options.config.googleOAuthEnabled,
@@ -201,12 +186,6 @@ export async function registerAuthRoutes(
     if (!csrf.ok) return reply.code(csrf.statusCode).send({ error: csrf.error });
 
     await options.store.revokeAdminSession(authenticated.session.sessionIdHash, new Date().toISOString());
-    await options.store.createAuditLog({
-      adminUserId: authenticated.adminUserId,
-      action: "auth.logout",
-      createdAt: new Date().toISOString(),
-      metadata: { sessionRevoked: true },
-    });
     return reply.header("set-cookie", buildClearedAuthCookies(options.config)).code(204).send();
   });
 }
@@ -243,13 +222,5 @@ function createCsrfCookie(config: AdminAuthConfig, csrfToken: string): string {
     sameSite: "Lax",
     path: "/",
     maxAge: config.sessionTtlSeconds,
-  });
-}
-
-async function auditLoginFailure(store: TraceStore, reason: string, metadata: Record<string, unknown> = {}): Promise<void> {
-  await store.createAuditLog({
-    action: "auth.login_failure",
-    createdAt: new Date().toISOString(),
-    metadata: { reason, ...metadata },
   });
 }

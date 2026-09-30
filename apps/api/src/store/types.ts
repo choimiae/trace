@@ -26,8 +26,6 @@ export function normalizeAllowedDomains(domains: string[]): string[] {
   return Array.from(new Set(domains.map((domain) => new URL(domain).origin)));
 }
 
-export type AdminRole = "owner" | "admin" | "viewer";
-
 export interface AdminUserRecord {
   adminUserId: string;
   googleSub: string;
@@ -50,22 +48,6 @@ export interface AdminSessionRecord {
   ipHash?: string;
 }
 
-export interface ProjectMembershipRecord {
-  projectId: string;
-  adminUserId: string;
-  role: AdminRole;
-  createdAt: string;
-}
-
-export interface AuditLogRecord {
-  auditLogId: string;
-  adminUserId?: string;
-  action: string;
-  projectId?: string;
-  createdAt: string;
-  metadata: Record<string, unknown>;
-}
-
 export interface UpsertAdminUserFromGoogleInput {
   googleSub: string;
   email: string;
@@ -76,23 +58,6 @@ export interface UpsertAdminUserFromGoogleInput {
 }
 
 export interface CreateAdminSessionInput extends AdminSessionRecord {}
-
-export interface AddProjectMembershipInput {
-  projectId: string;
-  adminUserId: string;
-  role: AdminRole;
-  createdAt: string;
-}
-
-export interface CreateAuditLogInput {
-  adminUserId?: string;
-  action: string;
-  projectId?: string;
-  createdAt: string;
-  metadata: Record<string, unknown>;
-}
-
-export type ProjectMembershipAuditLogFactory = (current: ProjectMembershipRecord) => CreateAuditLogInput;
 
 export interface StoredSession {
   sessionId: string;
@@ -157,43 +122,16 @@ export interface TraceStore {
   readonly isDurable?: boolean;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
+  /** `createdAt` 오름차순, 같으면 `projectId` 오름차순. */
+  listProjects(): Promise<ProjectRecord[]>;
   updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectRecord | undefined>;
   upsertAdminUserFromGoogle(input: UpsertAdminUserFromGoogleInput): Promise<AdminUserRecord>;
   getAdminUser(adminUserId: string): Promise<AdminUserRecord | undefined>;
   getAdminUserByEmail(email: string): Promise<AdminUserRecord | undefined>;
-  searchAdminUsers(input: { query: string; limit: number }): Promise<AdminUserRecord[]>;
   createAdminSession(input: CreateAdminSessionInput): Promise<AdminSessionRecord>;
   getAdminSession(sessionIdHash: string): Promise<AdminSessionRecord | undefined>;
   revokeAdminSession(sessionIdHash: string, revokedAt: string): Promise<void>;
   touchAdminSession(sessionIdHash: string, lastSeenAt: string): Promise<void>;
-  addProjectMembership(input: AddProjectMembershipInput): Promise<ProjectMembershipRecord>;
-  addProjectMembershipWithAudit(
-    membership: AddProjectMembershipInput,
-    auditLog: CreateAuditLogInput,
-  ): Promise<ProjectMembershipRecord>;
-  updateProjectMembershipRoleWithAudit(input: {
-    projectId: string;
-    targetAdminUserId: string;
-    requestedByAdminUserId: string;
-    role: AdminRole;
-    auditLog?: ProjectMembershipAuditLogFactory;
-  }): Promise<ProjectMembershipRecord | undefined>;
-  removeProjectMembershipWithAudit(input: {
-    projectId: string;
-    targetAdminUserId: string;
-    requestedByAdminUserId: string;
-    auditLog: ProjectMembershipAuditLogFactory;
-  }): Promise<boolean>;
-  getProjectMembership(projectId: string, adminUserId: string): Promise<ProjectMembershipRecord | undefined>;
-  listProjectMembershipsForUser(adminUserId: string): Promise<ProjectMembershipRecord[]>;
-  listProjectMemberships(projectId: string): Promise<ProjectMembershipRecord[]>;
-  createAuditLog(input: CreateAuditLogInput): Promise<void>;
-  listAuditLogs(): Promise<AuditLogRecord[]>;
-  listProjectAuditLogs(input: {
-    projectId: string;
-    limit: number;
-    cursor?: { createdAt: string; auditLogId: string };
-  }): Promise<AuditLogRecord[]>;
   saveBatch(batch: EventBatch): Promise<void>;
   deleteEventsBefore(cutoff: string): Promise<number>;
   getSessionTimeline(projectId: string, sessionId: string): Promise<TraceEvent[]>;

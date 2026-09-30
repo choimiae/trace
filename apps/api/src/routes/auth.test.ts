@@ -54,6 +54,24 @@ function fakeGoogleClient(): GoogleOAuthClient {
   };
 }
 
+async function setupLoggedIn() {
+  const store = new MemoryStore();
+  const app = createApp({ store, authConfig: config, googleOAuthClient: fakeGoogleClient() });
+  const start = await app.inject({ method: "GET", url: "/auth/google/start" });
+  const state = new URL(String(start.headers.location)).searchParams.get("state");
+  const oauthCookie = Array.isArray(start.headers["set-cookie"])
+    ? start.headers["set-cookie"][0] ?? ""
+    : String(start.headers["set-cookie"]);
+  const callback = await app.inject({
+    method: "GET",
+    url: `/auth/google/callback?code=code_1&state=${state}`,
+    headers: { cookie: oauthCookie.split(";")[0] },
+  });
+  const setCookies = Array.isArray(callback.headers["set-cookie"]) ? callback.headers["set-cookie"] : [String(callback.headers["set-cookie"])];
+  const loginCookie = setCookies.find((value) => value.includes("__trace_admin_session="))!.split(";")[0]!;
+  return { app, store, loginCookie };
+}
+
 describe("auth routes", () => {
   it("returns the enabled login options", async () => {
     const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
@@ -137,11 +155,6 @@ describe("auth routes", () => {
     expect(me.statusCode).toBe(200);
     expect(me.json().user.email).toBe("admin@example.com");
     expect(me.json().auth).toEqual({ googleLogin: false, localLogin: true });
-    expect(await store.listAuditLogs()).toContainEqual(expect.objectContaining({
-      action: "auth.login_success",
-      adminUserId: expect.stringMatching(/^admin_/),
-      metadata: { provider: "local" },
-    }));
   });
 
   it("does not expose local login when it is disabled", async () => {
@@ -183,6 +196,17 @@ describe("auth routes", () => {
     expect(me.json().csrfToken).toBeTruthy();
   });
 
+  it("/auth/me 는 모든 프로젝트를 역할 없이 돌려준다", async () => {
+    const { app, store, loginCookie } = await setupLoggedIn();
+    const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
+
+    const response = await app.inject({ method: "GET", url: "/auth/me", headers: { cookie: loginCookie } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().projects).toEqual([{ projectId: project.projectId }]);
+    await app.close();
+  });
+
   it("logs out with CSRF and clears auth cookies", async () => {
     const store = new MemoryStore();
     const app = createApp({ store, authConfig: config, googleOAuthClient: fakeGoogleClient() });
@@ -209,14 +233,9 @@ describe("auth routes", () => {
 
     expect(logout.statusCode).toBe(204);
     expect((await app.inject({ method: "GET", url: "/auth/me", headers: { cookie: sessionCookie } })).statusCode).toBe(401);
-    expect(await store.listAuditLogs()).toContainEqual(expect.objectContaining({
-      action: "auth.logout",
-      adminUserId: expect.stringMatching(/^admin_/),
-      metadata: { sessionRevoked: true },
-    }));
   });
 
-  it("consumes state, clears the cookie, and audits a Google access denial", async () => {
+  it("consumes state, and clears the cookie on a Google access denial", async () => {
     const store = new MemoryStore();
     const app = createApp({ store, authConfig: config, googleOAuthClient: fakeGoogleClient() });
     const start = await app.inject({ method: "GET", url: "/auth/google/start" });
@@ -235,10 +254,6 @@ describe("auth routes", () => {
     expect(denial.statusCode).toBe(401);
     expect(denial.json()).toEqual({ error: "oauth_denied" });
     expect(String(denial.headers["set-cookie"])).toContain("__trace_oauth=; Max-Age=0");
-    expect(await store.listAuditLogs()).toContainEqual(expect.objectContaining({
-      action: "auth.login_failure",
-      metadata: { reason: "oauth_denied", providerError: "access_denied" },
-    }));
     expect((await app.inject(request)).json()).toEqual({ error: "oauth_state_invalid" });
   });
 

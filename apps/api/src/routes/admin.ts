@@ -15,22 +15,3 @@ export const projectSettingsSchema = z.object({
 // 경로의 일이므로, 생성 라우트가 지킬 수 없는 필드를 검증하게 두지 않는다.
 export const createProjectSchema = projectSettingsSchema.omit({ replay: true });
 export const updateProjectSchema = projectSettingsSchema;
-
-export const addProjectMemberSchema = z.object({
-  email: z.string().trim().email().transform((email) => email.toLowerCase()),
-  role: z.enum(["admin", "viewer"]),
-});
-
-export const updateProjectMemberRoleSchema = z.object({
-  role: z.enum(["owner", "admin", "viewer"]),
-});
-
-export const memberCandidateSearchSchema = z.object({
-  query: z.string().trim().default(""),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-});
-
-export const auditLogQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  cursor: z.string().min(1).optional(),
-});
