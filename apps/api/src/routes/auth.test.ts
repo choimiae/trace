@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { createApp } from "../app.js";
 import { readOAuthStateCookie } from "../auth/google.js";
-import { MemoryStore } from "../store/memory-store.js";
+import { createTestStore } from "../store/test-store.js";
 import type { AdminAuthConfig } from "../auth/config.js";
 import type { GoogleOAuthClient } from "../auth/google.js";
 
@@ -55,7 +55,7 @@ function fakeGoogleClient(): GoogleOAuthClient {
 }
 
 async function setupLoggedIn() {
-  const store = new MemoryStore();
+  const store = createTestStore();
   const app = createApp({ store, authConfig: config, googleOAuthClient: fakeGoogleClient() });
   const start = await app.inject({ method: "GET", url: "/auth/google/start" });
   const state = new URL(String(start.headers.location)).searchParams.get("state");
@@ -74,7 +74,7 @@ async function setupLoggedIn() {
 
 describe("auth routes", () => {
   it("returns the enabled login options", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const app = createApp({ store: createTestStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
 
     const response = await app.inject({ method: "GET", url: "/auth/login-options" });
 
@@ -83,7 +83,7 @@ describe("auth routes", () => {
   });
 
   it("returns local login as the only option when Google OAuth is not configured", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: localLoginConfig });
+    const app = createApp({ store: createTestStore(), authConfig: localLoginConfig });
 
     const response = await app.inject({ method: "GET", url: "/auth/login-options" });
 
@@ -92,7 +92,7 @@ describe("auth routes", () => {
   });
 
   it("registers auth routes with the default Google client when auth config exists", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config });
+    const app = createApp({ store: createTestStore(), authConfig: config });
 
     const response = await app.inject({ method: "GET", url: "/auth/google/start" });
 
@@ -101,7 +101,7 @@ describe("auth routes", () => {
   });
 
   it("redirects Google login start and sets an OAuth state cookie", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const app = createApp({ store: createTestStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
 
     const response = await app.inject({ method: "GET", url: "/auth/google/start", headers: { origin: config.adminAppOrigin } });
 
@@ -117,7 +117,7 @@ describe("auth routes", () => {
   });
 
   it("exchanges callback code, creates session cookies, and redirects to the Admin app", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const app = createApp({ store: createTestStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
     const start = await app.inject({ method: "GET", url: "/auth/google/start", headers: { origin: config.adminAppOrigin } });
     const state = new URL(String(start.headers.location)).searchParams.get("state");
     const oauthCookie = Array.isArray(start.headers["set-cookie"])
@@ -136,7 +136,7 @@ describe("auth routes", () => {
   });
 
   it("creates a local admin session and redirects to the Admin app", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const app = createApp({ store, authConfig: localLoginConfig });
 
     const response = await app.inject({
@@ -158,7 +158,7 @@ describe("auth routes", () => {
   });
 
   it("does not expose local login when it is disabled", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const app = createApp({ store: createTestStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
 
     const response = await app.inject({ method: "GET", url: "/auth/local/start" });
 
@@ -167,7 +167,7 @@ describe("auth routes", () => {
   });
 
   it("does not expose Google login when Google OAuth is not configured", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: localLoginConfig });
+    const app = createApp({ store: createTestStore(), authConfig: localLoginConfig });
 
     const response = await app.inject({ method: "GET", url: "/auth/google/start" });
 
@@ -176,7 +176,7 @@ describe("auth routes", () => {
   });
 
   it("returns auth/me for a valid session and 401 without a session", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const app = createApp({ store: createTestStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
     const start = await app.inject({ method: "GET", url: "/auth/google/start" });
     const state = new URL(String(start.headers.location)).searchParams.get("state");
     const oauthCookie = Array.isArray(start.headers["set-cookie"])
@@ -208,7 +208,7 @@ describe("auth routes", () => {
   });
 
   it("logs out with CSRF and clears auth cookies", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const app = createApp({ store, authConfig: config, googleOAuthClient: fakeGoogleClient() });
     const start = await app.inject({ method: "GET", url: "/auth/google/start" });
     const state = new URL(String(start.headers.location)).searchParams.get("state");
@@ -236,7 +236,7 @@ describe("auth routes", () => {
   });
 
   it("consumes state, and clears the cookie on a Google access denial", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const app = createApp({ store, authConfig: config, googleOAuthClient: fakeGoogleClient() });
     const start = await app.inject({ method: "GET", url: "/auth/google/start" });
     const state = new URL(String(start.headers.location)).searchParams.get("state");
@@ -258,7 +258,7 @@ describe("auth routes", () => {
   });
 
   it("allows credentialed CORS only from the Admin origin on auth routes", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const app = createApp({ store: createTestStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
 
     const allowed = await app.inject({ method: "GET", url: "/auth/me", headers: { origin: config.adminAppOrigin } });
     const disallowed = await app.inject({ method: "GET", url: "/auth/me", headers: { origin: "https://evil.example.com" } });
@@ -270,14 +270,14 @@ describe("auth routes", () => {
   });
 
   it("rejects callback state mismatch", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const app = createApp({ store: createTestStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
     const response = await app.inject({ method: "GET", url: "/auth/google/callback?code=code_1&state=wrong" });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ error: "oauth_state_invalid" });
   });
 
   it("rejects a replayed OAuth callback", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
+    const app = createApp({ store: createTestStore(), authConfig: config, googleOAuthClient: fakeGoogleClient() });
     const start = await app.inject({ method: "GET", url: "/auth/google/start" });
     const state = new URL(String(start.headers.location)).searchParams.get("state");
     const oauthCookie = Array.isArray(start.headers["set-cookie"])
@@ -295,7 +295,7 @@ describe("auth routes", () => {
 
   it("rate limits Google login start requests", async () => {
     const app = createApp({
-      store: new MemoryStore(),
+      store: createTestStore(),
       authConfig: { ...config, loginRateLimitMax: 1 },
       googleOAuthClient: fakeGoogleClient(),
     });
@@ -308,7 +308,7 @@ describe("auth routes", () => {
 
   it("rate limits Google callback requests", async () => {
     const app = createApp({
-      store: new MemoryStore(),
+      store: createTestStore(),
       authConfig: { ...config, loginRateLimitMax: 1 },
       googleOAuthClient: fakeGoogleClient(),
     });

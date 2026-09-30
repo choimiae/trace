@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { MemoryStore } from "../store/memory-store.js";
+import type { SqliteStore } from "../store/sqlite-store.js";
+import { createTestStore } from "../store/test-store.js";
 
-async function createProject(store: MemoryStore) {
+async function createProject(store: SqliteStore) {
   return store.createProject({ name: "Demo", allowedDomains: ["https://demo.example.com"] });
 }
 
 describe("GET /v1/projects/:projectId/config", () => {
   it("리플레이가 꺼진 프로젝트는 false 를 돌려준다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await createProject(store);
     const app = createApp({ store });
 
@@ -22,7 +23,7 @@ describe("GET /v1/projects/:projectId/config", () => {
   });
 
   it("켜진 프로젝트는 마스킹 셀렉터를 함께 돌려준다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await createProject(store);
     await store.updateProject(project.projectId, {
       name: project.name,
@@ -45,7 +46,7 @@ describe("GET /v1/projects/:projectId/config", () => {
   // 꺼져 있는데 셀렉터가 나가면, 켤 생각이 없는 프로젝트의 내부 클래스 이름을
   // 공개 엔드포인트로 흘리는 것이 된다.
   it("꺼져 있으면 셀렉터를 내보내지 않는다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await createProject(store);
     await store.updateProject(project.projectId, {
       name: project.name,
@@ -65,7 +66,7 @@ describe("GET /v1/projects/:projectId/config", () => {
   // 셀렉터를 지웠는데 캐시된 설정으로 기록이 계속되면, 가려야 할 자리가
   // 원문으로 담긴다. 설정은 즉시 반영돼야 한다.
   it("설정을 캐시하지 않는다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await createProject(store);
     const app = createApp({ store });
 
@@ -78,7 +79,7 @@ describe("GET /v1/projects/:projectId/config", () => {
   });
 
   it("없는 프로젝트는 404 다", async () => {
-    const app = createApp({ store: new MemoryStore() });
+    const app = createApp({ store: createTestStore() });
 
     const response = await app.inject({ method: "GET", url: "/v1/projects/proj_missing/config" });
 
@@ -89,7 +90,7 @@ describe("GET /v1/projects/:projectId/config", () => {
   // 캐시된 404 가 굳으면, 나중에 프로젝트가 생기거나 오타가 고쳐져도 SDK 는
   // 계속 같은 404 를 받아 기록을 영영 시작하지 못한다 - 신호도 없이.
   it("없는 프로젝트의 404 도 캐시하지 않는다", async () => {
-    const app = createApp({ store: new MemoryStore() });
+    const app = createApp({ store: createTestStore() });
 
     const response = await app.inject({ method: "GET", url: "/v1/projects/proj_missing/config" });
 
@@ -97,7 +98,7 @@ describe("GET /v1/projects/:projectId/config", () => {
   });
 
   it("잘못된 형식의 projectId 도 404 이고 캐시하지 않는다", async () => {
-    const app = createApp({ store: new MemoryStore() });
+    const app = createApp({ store: createTestStore() });
 
     const response = await app.inject({
       method: "GET",

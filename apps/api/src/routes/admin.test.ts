@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { createAdminSessionForUser } from "../auth/session.js";
 import type { AdminAuthConfig } from "../auth/config.js";
-import { MemoryStore } from "../store/memory-store.js";
+import { createTestStore } from "../store/test-store.js";
 
 const authConfig: AdminAuthConfig = {
   googleClientId: "client.apps.googleusercontent.com",
@@ -24,7 +24,7 @@ const authConfig: AdminAuthConfig = {
 
 
 async function signedInStore() {
-  const store = new MemoryStore();
+  const store = createTestStore();
   const user = await store.upsertAdminUserFromGoogle({
     googleSub: "google_sub_1",
     email: "admin@example.com",
@@ -53,7 +53,7 @@ async function createAuthenticatedOwner() {
 // 허용 이메일 목록에 든 관리자를 여럿 만들고, 이메일로 로그인 쿠키를 발급한다.
 async function setupTwoAdmins(emails: string[]) {
   const config: AdminAuthConfig = { ...authConfig, allowedEmails: new Set(emails) };
-  const store = new MemoryStore();
+  const store = createTestStore();
   const app = createApp({ store, authConfig: config });
   const cookieFor = async (email: string) => {
     const user = await store.upsertAdminUserFromGoogle({
@@ -277,9 +277,8 @@ describe("admin bff routes", () => {
     expect(response.json()).toEqual({ error: "invalid_project_settings" });
   });
 
-
   it("rejects Admin BFF requests without a session cookie", async () => {
-    const app = createApp({ store: new MemoryStore(), authConfig });
+    const app = createApp({ store: createTestStore(), authConfig });
     const response = await app.inject({ method: "GET", url: "/admin/api/projects/proj_missing/sessions" });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ error: "admin_auth_required" });

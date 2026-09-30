@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { createAdminSessionForUser } from "../auth/session.js";
 import type { AdminAuthConfig } from "../auth/config.js";
-import { MemoryStore } from "../store/memory-store.js";
+import { createTestStore } from "../store/test-store.js";
 
 const authConfig: AdminAuthConfig = {
   googleClientId: "client.apps.googleusercontent.com",
@@ -24,7 +24,7 @@ const authConfig: AdminAuthConfig = {
 };
 
 async function signedInStore() {
-  const store = new MemoryStore();
+  const store = createTestStore();
   const user = await store.upsertAdminUserFromGoogle({
     googleSub: "google_sub_1",
     email: "admin@example.com",

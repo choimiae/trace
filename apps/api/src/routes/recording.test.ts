@@ -2,7 +2,8 @@ import { gzipSync } from "node:zlib";
 import { MAX_RECORDING_CHUNK_BYTES } from "@trace/shared/recording-limits";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { MemoryStore } from "../store/memory-store.js";
+import type { SqliteStore } from "../store/sqlite-store.js";
+import { createTestStore } from "../store/test-store.js";
 
 const ORIGIN = "https://demo.example.com";
 
@@ -12,11 +13,11 @@ const ORIGIN = "https://demo.example.com";
 // 본다 - 달력이 지나가도 이 파일은 같은 것을 검사한다.
 const NOW = new Date("2026-09-14T00:00:00.000Z");
 
-function createRecordingApp(store: MemoryStore, now: Date = NOW) {
+function createRecordingApp(store: SqliteStore, now: Date = NOW) {
   return createApp({ store, now: () => now });
 }
 
-async function replayProject(store: MemoryStore, enabled = true) {
+async function replayProject(store: SqliteStore, enabled = true) {
   const project = await store.createProject({ name: "Demo", allowedDomains: [ORIGIN] });
   await store.updateProject(project.projectId, {
     name: project.name,
@@ -54,7 +55,7 @@ function post(app: ReturnType<typeof createApp>, body: Buffer, sessionId = "sess
 
 describe("POST /v1/sessions/:sessionId/recording", () => {
   it("gzip 청크를 받아 보낸 바이트 그대로 저장한다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     const app = createRecordingApp(store);
     const body = chunkBody({ projectId: project.projectId });
@@ -73,7 +74,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   // rrweb 이벤트 모양은 버전에 묶여 있다. 서버가 내부 구조를 판정하면 rrweb 을
   // 올릴 때마다 멀쩡한 기록이 400 이 된다.
   it("rrweb 이벤트의 내부 구조를 보지 않는다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     const app = createRecordingApp(store);
 
@@ -86,7 +87,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   });
 
   it("리플레이가 꺼진 프로젝트의 기록을 거절한다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store, false);
     const app = createRecordingApp(store);
 
@@ -97,7 +98,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   });
 
   it("허용하지 않은 도메인을 거절한다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     const app = createRecordingApp(store);
 
@@ -113,7 +114,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   });
 
   it("없는 프로젝트는 404 다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const app = createRecordingApp(store);
 
     const response = await post(app, chunkBody({ projectId: "proj_missing" }));
@@ -122,7 +123,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   });
 
   it("gzip 이 아닌 본문을 400 으로 거절한다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     const app = createRecordingApp(store);
 
@@ -134,7 +135,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
 
   // 압축 폭탄. 이 가드가 없으면 2 MB 본문이 해제 중에 수 GB 로 부풀어 서버가 죽는다.
   it("압축 해제 결과가 상한을 넘으면 거절한다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     const app = createRecordingApp(store);
     const bomb = gzipSync(Buffer.alloc(64 * 1024 * 1024, 0x61));
@@ -149,7 +150,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   // 가드가 없으면 gzip 여부와 무관하게 임의로 큰 본문이 그대로 핸들러까지
   // 들어온다.
   it("본문이 상한을 넘으면 413 으로 거절한다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     await replayProject(store);
     const app = createRecordingApp(store);
 
@@ -170,7 +171,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   // 실패한다. 나중에 이 테스트를 413 확인으로 "단순화"하면 안 된다 - 그러면
   // 다시 회귀를 못 잡는다.
   it("2 MiB 본문은 bodyLimit 을 통과해 핸들러까지 들어온다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     await replayProject(store);
     const app = createRecordingApp(store);
 
@@ -181,7 +182,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   });
 
   it("세션 식별자 모양을 검증한다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     const app = createRecordingApp(store);
 
@@ -195,7 +196,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   // 창 밖 날짜를 적어 보낸 청크가 202 를 받고 같은 요청 안에서 지워져
   // 아무에게도 보고되지 않는 유실이 된다.
   it("보존 창 밖의 startedAt 을 적어 보내도 202 가 거짓이 되지 않는다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     const app = createRecordingApp(store);
 
@@ -213,7 +214,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   // 예전 fixture 가 2026-09-22 에 터지게 되어 있던 바로 그 모양을, 날짜를
   // 기다리는 대신 시계를 밀어서 지금 검사한다.
   it("시계가 흘러도 방금 받은 청크를 지우지 않는다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     // fixture 의 startedAt 보다 100일 넘게 뒤 - 7일 창의 한참 바깥이다.
     const app = createRecordingApp(store, new Date("2027-01-01T00:00:00.000Z"));
@@ -225,7 +226,7 @@ describe("POST /v1/sessions/:sessionId/recording", () => {
   });
 
   it("같은 seq 재전송은 한 번만 저장된다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await replayProject(store);
     const app = createRecordingApp(store);
     const body = chunkBody({ projectId: project.projectId });

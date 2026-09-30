@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { MemoryStore } from "../store/memory-store.js";
+import { createTestStore } from "../store/test-store.js";
 import { runSessionRecordingRetention } from "./recordings.js";
 
 async function storeWithChunks() {
-  const store = new MemoryStore();
+  const store = createTestStore();
   // startedAt 은 브라우저가 적어 보낸 값이라 보존 판정에 쓰지 않는다. 두 청크
   // 모두 같은 startedAt 을 두어, 판정이 receivedAt 으로만 갈린다는 것을 못박는다.
   const base = {

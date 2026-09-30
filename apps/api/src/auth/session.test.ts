@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildClearedAuthCookies, createAdminSessionForUser, requireAdminSession } from "./session.js";
 import type { AdminAuthConfig } from "./config.js";
-import { MemoryStore } from "../store/memory-store.js";
+import { createTestStore } from "../store/test-store.js";
 
 const config: AdminAuthConfig = {
   googleClientId: "client",
@@ -23,7 +23,7 @@ const config: AdminAuthConfig = {
 
 describe("admin sessions", () => {
   it("creates HttpOnly session and readable CSRF cookies", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const user = await store.upsertAdminUserFromGoogle({
       googleSub: "google_sub_1",
       email: "admin@example.com",
@@ -43,7 +43,7 @@ describe("admin sessions", () => {
   });
 
   it("rejects expired and revoked sessions", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const user = await store.upsertAdminUserFromGoogle({
       googleSub: "google_sub_1",
       email: "admin@example.com",
@@ -58,7 +58,7 @@ describe("admin sessions", () => {
   });
 
   it("rejects revoked sessions", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const user = await store.upsertAdminUserFromGoogle({
       googleSub: "google_sub_1",
       email: "admin@example.com",

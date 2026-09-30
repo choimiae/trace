@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemoryStore } from "../store/memory-store.js";
+import { createTestStore } from "../store/test-store.js";
 import { eventRetentionCutoff, runEventRetention } from "./events.js";
 
 describe("event retention", () => {
@@ -8,7 +8,7 @@ describe("event retention", () => {
   });
 
   it("does nothing when event retention is not configured", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({ name: "Demo", allowedDomains: [] });
     await store.saveBatch({
       projectId: project.projectId,
@@ -33,7 +33,7 @@ describe("event retention", () => {
   });
 
   it("deletes events older than the configured retention window", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({ name: "Demo", allowedDomains: [] });
     await store.saveBatch({
       projectId: project.projectId,

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 import { createApp } from "../app.js";
-import { MemoryStore } from "../store/memory-store.js";
+import type { SqliteStore } from "../store/sqlite-store.js";
+import { createTestStore } from "../store/test-store.js";
 import type { TraceStore } from "../store/types.js";
 import {
   SESSION_RECORDING_SWEEP_INTERVAL_MS,
@@ -10,8 +11,8 @@ import {
 
 const NOW = new Date("2026-09-14T00:00:00.000Z");
 
-async function storeWithOldChunk(): Promise<MemoryStore> {
-  const store = new MemoryStore();
+async function storeWithOldChunk(): Promise<SqliteStore> {
+  const store = createTestStore();
   await store.saveSessionRecordingChunk({
     projectId: "proj_1",
     sessionId: "sess_1",
@@ -24,7 +25,7 @@ async function storeWithOldChunk(): Promise<MemoryStore> {
   return store;
 }
 
-function remaining(store: MemoryStore) {
+function remaining(store: SqliteStore) {
   return store.listSessionRecordingChunks("proj_1", "sess_1");
 }
 

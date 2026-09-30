@@ -119,7 +119,6 @@ export interface PageStats {
 }
 
 export interface TraceStore {
-  readonly isDurable?: boolean;
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
   /** `createdAt` 오름차순, 같으면 `projectId` 오름차순. */
@@ -153,10 +152,4 @@ export interface TraceStore {
   listPageStats(projectId: string, limit: number): Promise<PageStats[]>;
   /** `receivedAt` 이 cutoff 이전인 청크를 지운다. startedAt 은 보지 않는다. */
   deleteSessionRecordingsBefore(cutoff: string): Promise<number>;
-}
-
-export function assertDeployableTraceStore(store: TraceStore, env: NodeJS.ProcessEnv): void {
-  if (env.NODE_ENV === "production" && store.isDurable !== true) {
-    throw new Error("DURABLE_TRACE_STORE_REQUIRED");
-  }
 }

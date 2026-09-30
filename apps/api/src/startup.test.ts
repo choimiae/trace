@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { prepareServerStartup } from "./startup.js";
-import { MemoryStore } from "./store/memory-store.js";
 
 const completeProductionEnv = {
   NODE_ENV: "production",
@@ -12,26 +11,20 @@ const completeProductionEnv = {
   ADMIN_ALLOWED_EMAILS: "admin@example.com",
 };
 
-function durableMemoryStore() {
-  return Object.assign(new MemoryStore(), { isDurable: true });
-}
-
 describe("server startup", () => {
   it("requires Admin OAuth configuration in production", () => {
-    expect(() => prepareServerStartup({ store: durableMemoryStore(), env: { NODE_ENV: "production" } }))
+    expect(() => prepareServerStartup({ env: { NODE_ENV: "production" } }))
       .toThrow("ADMIN_OAUTH_CONFIG_REQUIRED");
   });
 
   it("rejects partial Admin OAuth configuration in production", () => {
     expect(() => prepareServerStartup({
-      store: durableMemoryStore(),
       env: { ...completeProductionEnv, GOOGLE_REDIRECT_URI: "" },
     })).toThrow("ADMIN_OAUTH_CONFIG_REQUIRED");
   });
 
   it("rejects local-only Admin auth configuration in production", () => {
     expect(() => prepareServerStartup({
-      store: durableMemoryStore(),
       env: {
         NODE_ENV: "production",
         LOCAL_ADMIN_LOGIN: "true",
@@ -44,15 +37,9 @@ describe("server startup", () => {
 
   it("returns event retention config from startup env", () => {
     const startup = prepareServerStartup({
-      store: durableMemoryStore(),
       env: { ...completeProductionEnv, EVENT_RETENTION_DAYS: "30" },
     });
 
     expect(startup.eventRetentionConfig).toEqual({ eventRetentionDays: 30 });
-  });
-
-  it("runs the durable store guard even when Admin OAuth configuration is missing", () => {
-    expect(() => prepareServerStartup({ store: new MemoryStore(), env: { NODE_ENV: "production" } }))
-      .toThrow("DURABLE_TRACE_STORE_REQUIRED");
   });
 });

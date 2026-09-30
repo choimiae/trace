@@ -1,6 +1,5 @@
 // SQLite 스키마. tsc가 .sql 파일을 dist로 복사하지 않으므로 문자열 상수로 둔다.
-// REFERENCES 절을 넣지 않는다. MemoryStore가 참조 무결성을 검사하지 않으므로
-// 두 구현체의 동작을 같게 유지하려면 SQLite도 강제하지 않아야 한다.
+// REFERENCES 절은 넣지 않는다. 보존 스윕이 테이블마다 따로 지운다.
 export const SQLITE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
   project_id TEXT PRIMARY KEY,

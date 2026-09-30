@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { TraceEvent } from "@trace/shared";
-import { MemoryStore } from "./memory-store.js";
+import { createTestStore } from "./test-store.js";
 import { SqliteStore } from "./sqlite-store.js";
-import { assertDeployableTraceStore, type TraceStore } from "./types.js";
+import type { TraceStore } from "./types.js";
 
 interface StoreUnderTest {
   store: TraceStore;
@@ -12,7 +11,6 @@ interface StoreUnderTest {
 function describeTraceStoreContract(
   name: string,
   createStore: () => StoreUnderTest,
-  expectedDurable: boolean,
 ) {
   describe(`${name} TraceStore 계약`, () => {
     let current: StoreUnderTest | undefined;
@@ -92,20 +90,6 @@ function describeTraceStoreContract(
       await expect(store.getAdminUserByEmail("missing@example.com")).resolves.toBeUndefined();
     });
 
-    it("배포 가능 여부를 isDurable로 판정한다", () => {
-      const store = open();
-
-      expect(store.isDurable).toBe(expectedDurable);
-      if (expectedDurable) {
-        expect(() => assertDeployableTraceStore(store, { NODE_ENV: "production" })).not.toThrow();
-      } else {
-        expect(() => assertDeployableTraceStore(store, { NODE_ENV: "production" })).toThrow(
-          "DURABLE_TRACE_STORE_REQUIRED",
-        );
-      }
-      expect(() => assertDeployableTraceStore(store, { NODE_ENV: "development" })).not.toThrow();
-    });
-
     it("세션을 저장하고 폐기한다", async () => {
       const store = open();
       const user = await store.upsertAdminUserFromGoogle({
@@ -127,7 +111,7 @@ function describeTraceStoreContract(
       expect((await store.getAdminSession("hash_1"))?.revokedAt).toBe("2026-08-25T00:10:00.000Z");
     });
 
-    it("모든 프로젝트를 만든 순서대로 돌려준다", async () => {
+    it("createdAt 오름차순, 같으면 projectId 오름차순으로 모든 프로젝트를 돌려준다", async () => {
       const store = open();
       const first = await store.createProject({ name: "첫째", allowedDomains: ["https://a.example.com"] });
       // createdAt 이 같은 밀리초면 projectId(무작위) 순이 되므로 시각을 벌려 둔다.
@@ -903,12 +887,10 @@ function describeTraceStoreContract(
   });
 }
 
-describeTraceStoreContract("MemoryStore", () => ({ store: new MemoryStore() }), false);
 describeTraceStoreContract(
   "SqliteStore",
   () => {
     const store = new SqliteStore(":memory:");
     return { store, dispose: () => store.close() };
   },
-  true,
 );

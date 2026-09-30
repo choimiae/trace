@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { MemoryStore } from "../store/memory-store.js";
+import { createTestStore } from "../store/test-store.js";
 
 describe("ingestion routes", () => {
   function batchPayload(projectId: string, events: unknown[]) {
@@ -16,7 +16,7 @@ describe("ingestion routes", () => {
   }
 
   it("모르는 종류의 이벤트는 버리고 나머지를 저장한다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
     const app = createApp({ store });
 
@@ -38,7 +38,7 @@ describe("ingestion routes", () => {
   });
 
   it("남는 이벤트가 없어도 202 로 받는다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
     const app = createApp({ store });
 
@@ -57,7 +57,7 @@ describe("ingestion routes", () => {
   });
 
   it("화면 맥락과 오류 필드는 저장하지 않는다", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
     const app = createApp({ store });
 
@@ -82,7 +82,7 @@ describe("ingestion routes", () => {
   });
 
   it("accepts a valid raw batch from an allowed domain and stores sanitized events", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],
@@ -126,7 +126,7 @@ describe("ingestion routes", () => {
   });
 
   it("does not store unsafe raw identifiers or element labels", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],
@@ -173,7 +173,7 @@ describe("ingestion routes", () => {
   });
 
   it("preserves each event's sanitized URL path within a mixed-page batch", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],
@@ -223,7 +223,7 @@ describe("ingestion routes", () => {
     // SDK 는 window.innerWidth/innerHeight 를 무조건 보낸다. 숨은 iframe 이나
     // 레이아웃 전에는 0 이고, 브라우저 확대 상태에서는 소수가 될 수 있다.
     // 어느 쪽도 배치 전체를 400 으로 떨어뜨려서는 안 된다.
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],
@@ -294,7 +294,7 @@ describe("ingestion routes", () => {
   });
 
   it("rejects events from a disallowed domain", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],
@@ -330,7 +330,7 @@ describe("ingestion routes", () => {
   });
 
   it("prunes old events after storing a batch when event retention is configured", async () => {
-    const store = new MemoryStore();
+    const store = createTestStore();
     const project = await store.createProject({
       name: "Demo",
       allowedDomains: ["https://demo.example.com"],

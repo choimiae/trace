@@ -41,7 +41,6 @@ function parseReplayConfig(value: unknown): ReplayConfig {
 }
 
 export class SqliteStore implements TraceStore {
-  readonly isDurable = true;
   private readonly db: Database.Database;
 
   constructor(filePath: string) {

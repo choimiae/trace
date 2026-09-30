@@ -10,7 +10,7 @@ loadLocalEnvFiles();
 
 const port = Number(process.env.PORT ?? 4000);
 const store = new SqliteStore(process.env.TRACE_DB_PATH ?? "./trace.db");
-const startup = prepareServerStartup({ store, env: process.env });
+const startup = prepareServerStartup({ env: process.env });
 await runEventRetention(store, startup.eventRetentionConfig);
 await runSessionRecordingRetention(store, startup.sessionRecordingRetentionConfig);
 
