@@ -81,6 +81,32 @@ describe("ingestion routes", () => {
     await app.close();
   });
 
+  it("스크롤 도달 metadata 만 남기고 나머지 키와 범위 밖 점수는 버린다", async () => {
+    const store = createTestStore();
+    const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
+    const app = createApp({ store });
+    const base = { sessionId: "sess_1", pageId: "page_1", timestamp: "2026-09-30T00:00:00.000Z", type: "scroll", urlPath: "/quote" };
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://app.example.com" },
+      payload: batchPayload(project.projectId, [
+        { ...base, eventId: "evt_1", metadata: { metric: "scroll_depth", score: 50, eventName: "x_y" } },
+        { ...base, eventId: "evt_2", metadata: { metric: "scroll_depth", score: 500 } },
+        { ...base, eventId: "evt_3", metadata: { eventName: "report_export" } },
+      ]),
+    });
+
+    const events = await store.getSessionTimeline(project.projectId, "sess_1");
+    expect(events.map((event) => event.metadata)).toEqual([
+      { metric: "scroll_depth", score: 50 },
+      { metric: "scroll_depth" },
+      {},
+    ]);
+    await app.close();
+  });
+
   it("accepts a valid raw batch from an allowed domain and stores sanitized events", async () => {
     const store = createTestStore();
     const project = await store.createProject({
@@ -122,7 +148,7 @@ describe("ingestion routes", () => {
     const events = await store.getSessionTimeline(project.projectId, "sess_1");
     expect(events[0]?.urlPath).toBe("/users/:id/settings");
     expect(events[0]?.urlQueryRedacted).toBe("?redacted_param_1=[redacted]&tab=[redacted]");
-    expect(events[0]?.metadata).toEqual({ eventName: "member_invite_started" });
+    expect(events[0]?.metadata).toEqual({});
   });
 
   it("does not store unsafe raw identifiers or element labels", async () => {

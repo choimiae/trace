@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eventBatchSchema } from "./events.js";
-import { isSafeTraceIdentifier, isSensitiveField, redactMetadata, redactPatterns, redactText, redactUrl } from "./privacy.js";
+import { isSafeTraceIdentifier, isSensitiveField, redactPatterns, redactText, redactUrl } from "./privacy.js";
 
 describe("privacy redaction", () => {
   it("redacts emails, phone numbers, and long numeric values from text", () => {
@@ -54,68 +54,14 @@ describe("privacy redaction", () => {
             sessionId: "sess_123",
             pageId: "page_1",
             timestamp: "2026-08-24T00:00:00.000Z",
-            type: "custom_event",
+            type: "click",
             urlPath: redactedUrl.urlPath,
             urlQueryRedacted: redactedUrl.urlQueryRedacted,
-            metadata: redactMetadata({
-              eventName: "report_export_clicked",
-              feature: "report_export",
-              email: "choi@example.com",
-            }),
+            metadata: {},
           },
         ],
       }),
     ).not.toThrow();
-  });
-
-  it("keeps only allowlisted metadata that satisfies the stored event contract", () => {
-    expect(
-      redactMetadata({
-        eventName: "report_export_clicked",
-        feature: "report_export",
-        target: "permission_button",
-        source: "manual",
-        status: "success",
-        method: "POST",
-        durationMs: 1234,
-        email: "choi@example.com",
-        name: "Alice",
-        nested: { phone: "010-1234-5678" },
-        token: "sk_live_abcdef",
-        message: "TypeError",
-      }),
-    ).toEqual({
-      eventName: "report_export_clicked",
-      feature: "report_export",
-      target: "permission_button",
-      source: "manual",
-      status: "success",
-      method: "POST",
-      durationMs: 1234,
-    });
-  });
-
-  it("maps a safe raw custom event name to the stored eventName field", () => {
-    expect(redactMetadata({ name: "member_invite_started", email: "choi@example.com" })).toEqual({
-      eventName: "member_invite_started",
-    });
-  });
-
-  it("drops unsafe analytics identifiers and out-of-range metadata values", () => {
-    expect(
-      redactMetadata({
-        eventName: "sk_live_abcdef",
-        feature: "alice",
-        target: "user_42_click",
-        metric: "metric_123456789",
-        source: "browser",
-        status: "failed_with_email",
-        method: "TRACE",
-        durationMs: 600001,
-        responseMs: -1,
-        score: 101,
-      }),
-    ).toEqual({});
   });
 
   it("rejects trace identifiers with sensitive token-like segments after the prefix", () => {

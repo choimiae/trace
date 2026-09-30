@@ -2,9 +2,9 @@ import {
   eventBatchSchema,
   isSafeElementRole,
   isSafeElementSelectorHash,
+  eventTypeSchema,
   isSafeTraceIdentifier,
   isoDateStringSchema,
-  redactMetadata,
   redactText,
   redactUrl,
 } from "@trace/shared";
@@ -16,9 +16,8 @@ import type { EventRetentionConfig } from "../retention/config.js";
 import { runEventRetention } from "../retention/events.js";
 import type { TraceStore } from "../store/types.js";
 
-// 제품 재정의(2026-09-30)에서 남긴 이벤트 종류. 옛 SDK 가 보내는 다른 종류는
-// 배치를 떨어뜨리지 않고 버린다 — 수집 API 는 거절이 아니라 정리한다.
-const KEPT_EVENT_TYPES: ReadonlySet<string> = new Set(["page_view", "page_leave", "click", "scroll"]);
+// 계약이 받는 종류가 아니면 배치를 떨어뜨리지 않고 버린다 — 수집 API 는 거절이 아니라 정리한다.
+const KEPT_EVENT_TYPES: ReadonlySet<string> = new Set<string>(eventTypeSchema.options);
 
 const rawTraceEventSchema = z.object({
   eventId: z.string().min(1),
@@ -126,8 +125,17 @@ function sanitizeEvent(
     ...(event.y === undefined ? {} : { y: event.y }),
     ...(viewportX === undefined ? {} : { viewportX }),
     ...(viewportY === undefined ? {} : { viewportY }),
-    metadata: redactMetadata(event.metadata),
+    metadata: sanitizeMetadata(event.metadata),
   };
+}
+
+// 계약이 받는 metadata 는 스크롤 도달(metric·score)뿐이다. 그 밖의 키와 범위 밖 값은
+// 배치를 떨어뜨리지 않고 버린다 — 옛 SDK 가 보내는 eventName 등이 여기서 사라진다.
+function sanitizeMetadata(metadata: Record<string, unknown>): TraceEvent["metadata"] {
+  const { metric, score } = metadata;
+  if (metric !== "scroll_depth") return {};
+  if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 100) return { metric };
+  return { metric, score };
 }
 
 // 측정 불가한 값(0·음수·비유한·숫자 아님)은 필드를 버리고, 소수는 반올림해 살린다.

@@ -50,10 +50,6 @@ const DYNAMIC_PARENT_PATH_SEGMENTS = new Set([
   "user",
   "users",
 ]);
-const SAFE_SOURCE_VALUES = new Set(["auto", "manual", "sdk"]);
-const SAFE_STATUS_VALUES = new Set(["success", "failure", "timeout", "cancelled"]);
-const SAFE_METHOD_VALUES = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
-const ANALYTICS_METADATA_KEYS = new Set(["eventName", "feature", "target", "errorType", "metric"]);
 
 export interface RedactedUrl {
   origin: string;
@@ -61,8 +57,6 @@ export interface RedactedUrl {
   urlQueryRedacted: string;
   urlQueryKeys: string[];
 }
-
-export type SafeMetadata = Record<string, string | number>;
 
 // 패턴 치환만 한다. 길이 자르기는 부르는 쪽이 정한다 — 리플레이는 화면 본문을
 // 그대로 재생해야 해서 자르면 안 되고, 이벤트 필드는 계약 상한(120)이 있다.
@@ -156,45 +150,6 @@ export function isSafeElementRole(value: string): boolean {
   return SAFE_ELEMENT_ROLE_PATTERN.test(value) && !containsSensitiveText(value);
 }
 
-export function redactMetadata(metadata: Record<string, unknown>): SafeMetadata {
-  const safeMetadata: SafeMetadata = {};
-
-  for (const [key, value] of Object.entries(metadata)) {
-    const storedKey = key === "name" ? "eventName" : key;
-
-    if (ANALYTICS_METADATA_KEYS.has(storedKey) && typeof value === "string" && isSafeAnalyticsIdentifier(value)) {
-      safeMetadata[storedKey] = value;
-      continue;
-    }
-
-    if (storedKey === "source" && typeof value === "string" && SAFE_SOURCE_VALUES.has(value)) {
-      safeMetadata.source = value;
-      continue;
-    }
-
-    if (storedKey === "status" && typeof value === "string" && SAFE_STATUS_VALUES.has(value)) {
-      safeMetadata.status = value;
-      continue;
-    }
-
-    if (storedKey === "method" && typeof value === "string" && SAFE_METHOD_VALUES.has(value)) {
-      safeMetadata.method = value;
-      continue;
-    }
-
-    if ((storedKey === "durationMs" || storedKey === "responseMs") && isSafeDuration(value)) {
-      safeMetadata[storedKey] = value;
-      continue;
-    }
-
-    if (storedKey === "score" && typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100) {
-      safeMetadata.score = value;
-    }
-  }
-
-  return safeMetadata;
-}
-
 export function isSensitiveField(element: Pick<HTMLInputElement, "tagName" | "type" | "name" | "id">): boolean {
   const tagName = element.tagName.toLowerCase();
   const type = element.type?.toLowerCase() ?? "";
@@ -252,27 +207,4 @@ function hasSensitiveIdentifierSegments(value: string): boolean {
       (segment === "sk" && nextSegment === "live")
     );
   });
-}
-
-function isSafeAnalyticsIdentifier(value: string): boolean {
-  return /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(value) && value.length <= 64 && !hasSensitiveAnalyticsIdentifierSegments(value);
-}
-
-function hasSensitiveAnalyticsIdentifierSegments(value: string): boolean {
-  const segments = value.split("_");
-
-  return segments.some((segment, index) => {
-    const nextSegment = segments[index + 1];
-
-    return (
-      SENSITIVE_ANALYTICS_IDENTIFIER_SEGMENTS.has(segment) ||
-      /\d{9,}/.test(segment) ||
-      (segment === "sk" && nextSegment === "live") ||
-      (segment === "user" && nextSegment !== undefined && /^\d+$/.test(nextSegment))
-    );
-  });
-}
-
-function isSafeDuration(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 600000;
 }
