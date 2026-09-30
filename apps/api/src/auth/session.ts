@@ -73,6 +73,12 @@ export async function requireAdminSession(
     return { error: "admin_auth_required" };
   }
 
+  // 허용 목록이 유일한 접근 게이트다. 목록에서 빠진 관리자의 기존 세션은 다음 요청에서 끊는다.
+  const user = await input.store.getAdminUser(session.adminUserId);
+  if (!user || !input.config.allowedEmails.has(user.email.toLowerCase())) {
+    return { error: "admin_auth_required" };
+  }
+
   await input.store.touchAdminSession(sessionIdHash, now.toISOString());
   return { adminUserId: session.adminUserId, session };
 }

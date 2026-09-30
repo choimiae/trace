@@ -345,3 +345,58 @@ describe("admin bff routes", () => {
     expect(crossed.json()).toEqual([]);
   });
 });
+
+describe("admin api 접근 통제", () => {
+  const routes: Array<{ method: "GET" | "POST" | "PATCH"; url: string; payload?: unknown }> = [
+    { method: "POST", url: "/admin/api/projects", payload: { name: "x", allowedDomains: ["https://a.example.com"] } },
+    { method: "GET", url: "/admin/api/projects/proj_x" },
+    { method: "PATCH", url: "/admin/api/projects/proj_x", payload: { name: "y" } },
+    { method: "GET", url: "/admin/api/projects/proj_x/sessions" },
+    { method: "GET", url: "/admin/api/projects/proj_x/page-stats" },
+    { method: "GET", url: "/admin/api/sessions/sess_x/timeline?projectId=proj_x" },
+    { method: "GET", url: "/admin/api/sessions/sess_x/recording?projectId=proj_x" },
+    { method: "GET", url: "/admin/api/sessions/sess_x/recording/chunks/0?projectId=proj_x" },
+  ];
+
+  it.each(routes)("세션 쿠키가 없으면 $method $url 은 401 이다", async ({ method, url, payload }) => {
+    const app = createApp({ store: createTestStore(), authConfig });
+    const response = await app.inject({ method, url, ...(payload ? { payload: payload as object } : {}) });
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "admin_auth_required" });
+  });
+
+  const writes = routes.filter((route) => route.method !== "GET");
+
+  it.each(writes)("CSRF 헤더가 없거나 틀리면 $method $url 은 403 이다", async ({ method, url, payload }) => {
+    const { app, project, headers } = await createAuthenticatedOwner();
+    const target = url.replace("proj_x", project.projectId);
+    const base = { method, url: target, payload: payload as object };
+
+    const missing = await app.inject({ ...base, headers: { cookie: headers.cookie, origin: headers.origin } });
+    expect(missing.statusCode).toBe(403);
+    expect(missing.json()).toEqual({ error: "csrf_token_invalid" });
+
+    const wrong = await app.inject({ ...base, headers: { ...headers, "x-trace-csrf": "wrong" } });
+    expect(wrong.statusCode).toBe(403);
+    expect(wrong.json()).toEqual({ error: "csrf_token_invalid" });
+  });
+
+  it.each(writes)("허용되지 않은 origin 이면 $method $url 은 403 이다", async ({ method, url, payload }) => {
+    const { app, project, headers } = await createAuthenticatedOwner();
+    const response = await app.inject({
+      method,
+      url: url.replace("proj_x", project.projectId),
+      payload: payload as object,
+      headers: { ...headers, origin: "https://evil.example.com" },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "csrf_origin_invalid" });
+  });
+
+  it.each(["timeline", "recording", "recording/chunks/0"])("projectId 쿼리가 없으면 %s 는 400 이다", async (suffix) => {
+    const { app, headers } = await createAuthenticatedOwner();
+    const response = await app.inject({ method: "GET", url: `/admin/api/sessions/sess_x/${suffix}`, headers });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_project_query" });
+  });
+});

@@ -77,6 +77,24 @@ describe("admin sessions", () => {
     })).toEqual({ error: "admin_auth_required" });
   });
 
+  it("허용 목록에서 빠진 관리자의 유효한 세션을 거부한다", async () => {
+    const store = createTestStore();
+    const user = await store.upsertAdminUserFromGoogle({
+      googleSub: "google_sub_1",
+      email: "Admin@Example.com",
+      emailVerified: true,
+      now: "2026-08-25T00:00:00.000Z",
+    });
+    const created = await createAdminSessionForUser({ store, config, user, now: new Date("2026-08-25T00:00:00.000Z") });
+    const cookieHeader = created.cookie.split(";")[0]!;
+    const now = new Date("2026-08-25T00:00:30.000Z");
+
+    expect("error" in await requireAdminSession({ store, config, cookieHeader, now })).toBe(false);
+
+    const removed = { ...config, allowedEmails: new Set(["other@example.com"]) };
+    expect(await requireAdminSession({ store, config: removed, cookieHeader, now })).toEqual({ error: "admin_auth_required" });
+  });
+
   it("clears session and CSRF cookies", () => {
     expect(buildClearedAuthCookies(config)).toEqual([
       "__trace_admin_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",

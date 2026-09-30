@@ -12,7 +12,7 @@ const authConfig: AdminAuthConfig = {
   adminAppOrigin: "http://localhost:5173",
   sessionSecret: "0123456789abcdef0123456789abcdef",
   cookieSecure: false,
-  allowedEmails: new Set(["admin@example.com"]),
+  allowedEmails: new Set(["admin@example.com", "viewer@example.com", "viewer-chunk@example.com", "viewer-list@example.com", "viewer-stats@example.com"]),
   googleOAuthEnabled: true,
   localAdminLoginEnabled: false,
   sessionTtlSeconds: 28800,

@@ -129,7 +129,9 @@ export async function registerAdminProxyRoutes(
     if ("error" in authenticated) return reply.code(401).send(authenticated);
 
     const { sessionId } = sessionParamsSchema.parse(request.params);
-    const { projectId } = projectQuerySchema.parse(request.query);
+    const query = projectQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: "invalid_project_query" });
+    const { projectId } = query.data;
     const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
@@ -143,7 +145,9 @@ export async function registerAdminProxyRoutes(
     if ("error" in authenticated) return reply.code(401).send(authenticated);
 
     const { sessionId } = sessionParamsSchema.parse(request.params);
-    const { projectId } = projectQuerySchema.parse(request.query);
+    const query = projectQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: "invalid_project_query" });
+    const { projectId } = query.data;
     const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
@@ -173,7 +177,9 @@ export async function registerAdminProxyRoutes(
     const params = recordingChunkParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_chunk_seq" });
 
-    const { projectId } = projectQuerySchema.parse(request.query);
+    const query = projectQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: "invalid_project_query" });
+    const { projectId } = query.data;
     const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
