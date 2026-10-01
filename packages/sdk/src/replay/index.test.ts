@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHECKPOINT_INTERVAL_MS } from "@trace/shared/recording-limits";
+import { REPLAY_SEQ_KEY } from "../storage.js";
 
 // 인자를 받는 것으로 선언해 둔다. `vi.fn(() => …)` 로 두면 호출 시그니처가
 // 무인자로 추론되어 `record.mock.calls[0]![0]` 이 tsc 에서 깨진다(빌드가
@@ -135,5 +136,44 @@ describe("startReplay", () => {
 
     expect(uploader.enqueue).toHaveBeenCalledWith([expect.objectContaining({ timestamp: 1 })]);
     expect(uploader.flush).toHaveBeenLastCalledWith({ keepalive: true });
+  });
+
+  describe("조각 번호 이어 가기", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 202 })));
+      sessionStorage.clear();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      sessionStorage.clear();
+    });
+
+    // 마스킹 함수들이 건드리지 않는 Custom 이벤트(type 5)를 흘린다.
+    function emitOne(): void {
+      const options = record.mock.calls[0]![0] as { emit: (event: unknown) => void };
+      options.emit({ type: 5, timestamp: Date.now(), data: { tag: "probe", payload: {} } });
+    }
+
+    it("앞 페이지가 남긴 번호 다음부터 매기고 다음 번호를 남긴다", () => {
+      sessionStorage.setItem(REPLAY_SEQ_KEY, JSON.stringify({ sessionId: "sess_1", next: 5 }));
+
+      startReplay(config);
+      emitOne();
+      vi.advanceTimersByTime(10_000);
+
+      expect(JSON.parse(sessionStorage.getItem(REPLAY_SEQ_KEY)!)).toEqual({ sessionId: "sess_1", next: 6 });
+    });
+
+    it("다른 세션이 남긴 번호는 이어 받지 않는다", () => {
+      sessionStorage.setItem(REPLAY_SEQ_KEY, JSON.stringify({ sessionId: "sess_other", next: 9 }));
+
+      startReplay(config);
+      emitOne();
+      vi.advanceTimersByTime(10_000);
+
+      expect(JSON.parse(sessionStorage.getItem(REPLAY_SEQ_KEY)!)).toEqual({ sessionId: "sess_1", next: 1 });
+    });
   });
 });

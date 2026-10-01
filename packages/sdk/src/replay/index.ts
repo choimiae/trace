@@ -2,6 +2,7 @@ import { CHECKPOINT_INTERVAL_MS } from "@trace/shared/recording-limits";
 import { record } from "rrweb";
 import type { ReplayBootConfig } from "../replay-config.js";
 import { maskText, redactEventText, redactEventUrl, stripDataUris } from "./mask.js";
+import { readNextSeq, writeNextSeq } from "./seq-store.js";
 import { RecordingUploader, type RecordedEvent } from "./uploader.js";
 
 const SDK_VERSION = "0.1.0";
@@ -56,6 +57,10 @@ export function startReplay(
       endpoint: config.endpoint,
       projectId: config.projectId,
       sdkVersion: SDK_VERSION,
+      // 같은 탭에서 페이지를 새로 불러오면 세션이 이어진다. 번호도 이어서 매겨야
+      // 서버가 새 페이지의 조각을 앞 페이지 조각과 겹친 것으로 보고 버리지 않는다.
+      firstSeq: readNextSeq(config.sessionId),
+      onSeqClaimed: (next) => writeNextSeq(config.sessionId, next),
     });
 
   // 스냅샷에서 본 style 텍스트 노드의 id 를 세션 내내 들고 간다. rrweb 은

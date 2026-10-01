@@ -111,11 +111,16 @@ export class RecordingUploader {
       compress?: (bytes: Uint8Array) => Promise<Uint8Array>;
       fetcher?: Fetcher;
       currentUrl?: () => string;
+      /** 첫 조각 번호. 같은 세션의 앞 페이지가 쓴 번호 다음부터 잇는다. */
+      firstSeq?: number;
+      /** 번호를 하나 매길 때마다 다음 번호를 넘겨 부른다. 다음 페이지가 이어 가도록 저장하는 자리다. */
+      onSeqClaimed?: (nextSeq: number) => void;
     },
   ) {
     this.compress = options.compress ?? gzip;
     this.fetcher = options.fetcher ?? ((input, init) => fetch(input, init));
     this.currentUrl = options.currentUrl ?? (() => window.location.href);
+    this.nextSeq = options.firstSeq ?? 0;
   }
 
   get pendingCount(): number {
@@ -156,6 +161,14 @@ export class RecordingUploader {
     if (this.unclaimed.length > 0) {
       this.outstanding.push({ seq: this.nextSeq++, events: this.unclaimed, keepalive });
       this.unclaimed = [];
+      // 번호는 매긴 즉시 알린다. 페이지 이탈 flush 는 아래 await 를 마치기 전에
+      // 페이지가 사라질 수 있다 - 저장이 그 뒤에 있으면 다음 페이지가 같은 번호를
+      // 다시 쓰고, 서버의 (session_id, seq) INSERT OR IGNORE 가 그 조각을 버린다.
+      try {
+        this.options.onSeqClaimed?.(this.nextSeq);
+      } catch {
+        // 저장에 실패해도 올리는 일은 계속한다.
+      }
     }
 
     if (this.outstanding.length === 0) return true;

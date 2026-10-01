@@ -10,7 +10,7 @@ const MAX_PENDING_EVENTS = 20_000;
 
 function createUploader(
   fetcher: ReturnType<typeof vi.fn>,
-  overrides: Partial<{ currentUrl: () => string }> = {},
+  overrides: Partial<{ currentUrl: () => string; firstSeq: number; onSeqClaimed: (next: number) => void }> = {},
 ) {
   return new RecordingUploader({
     endpoint: "https://trace.example.com/v1/sessions/sess_1/recording",
@@ -19,6 +19,8 @@ function createUploader(
     compress: identity,
     fetcher: fetcher as never,
     currentUrl: overrides.currentUrl ?? (() => "https://demo.example.com/orders"),
+    ...(overrides.firstSeq === undefined ? {} : { firstSeq: overrides.firstSeq }),
+    ...(overrides.onSeqClaimed ? { onSeqClaimed: overrides.onSeqClaimed } : {}),
   });
 }
 
@@ -838,5 +840,47 @@ describe("RecordingUploader", () => {
       (bodyOf(call).events as RecordedEvent[]).some((e) => e.timestamp === 2),
     );
     expect(attemptedTail).toBe(true);
+  });
+
+  describe("페이지를 넘는 번호", () => {
+    it("firstSeq 부터 번호를 매긴다", async () => {
+      const fetcher = vi.fn(async () => ({ ok: true, status: 202 }));
+      const uploader = createUploader(fetcher, { firstSeq: 7 });
+
+      uploader.enqueue([event(1)]);
+      await uploader.flush();
+      uploader.enqueue([event(2)]);
+      await uploader.flush();
+
+      expect(bodyOf(fetcher.mock.calls[0]!).seq).toBe(7);
+      expect(bodyOf(fetcher.mock.calls[1]!).seq).toBe(8);
+    });
+
+    // 페이지 이탈 flush 는 전송을 기다리는 사이 페이지가 사라진다. 번호를 저장하는
+    // 일이 전송 뒤에 있으면 다음 페이지가 같은 번호를 다시 쓴다.
+    it("번호를 매기는 즉시, 전송을 기다리기 전에 onSeqClaimed 를 부른다", () => {
+      const fetcher = vi.fn(() => new Promise<never>(() => {}));
+      const onSeqClaimed = vi.fn();
+      const uploader = createUploader(fetcher, { firstSeq: 3, onSeqClaimed });
+
+      uploader.enqueue([event(1)]);
+      void uploader.flush({ keepalive: true });
+
+      expect(onSeqClaimed).toHaveBeenCalledWith(4);
+    });
+
+    it("onSeqClaimed 가 던져도 올린다", async () => {
+      const fetcher = vi.fn(async () => ({ ok: true, status: 202 }));
+      const uploader = createUploader(fetcher, {
+        onSeqClaimed: () => {
+          throw new Error("quota");
+        },
+      });
+
+      uploader.enqueue([event(1)]);
+      await uploader.flush();
+
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    });
   });
 });
