@@ -165,6 +165,20 @@ describe("page_view 제목", () => {
     expect(pageViewTitles()).toEqual(["대시보드", "청구"]);
   });
 
+  it("제목이 그대로면 page_view 를 건드리지 않는다", async () => {
+    document.title = "대시보드";
+    installCollectors(makeClient());
+
+    const style = document.createElement("style");
+    style.textContent = ".a { color: red }";
+    document.head.appendChild(style);
+    style.textContent = ".a { color: blue }";
+    await Promise.resolve();
+    style.remove();
+
+    expect(pageViewTitles()).toEqual(["대시보드"]);
+  });
+
   it("제목이 비워지면 덮어 둔 제목도 지운다", async () => {
     document.title = "대시보드";
     installCollectors(makeClient());

@@ -363,6 +363,7 @@ export class SqliteStore implements TraceStore {
         `SELECT e.session_id,
                 MIN(e.timestamp) AS started_at,
                 MAX(e.timestamp) AS last_seen_at,
+                -- 한 세션은 한 탭에서 오므로 방문자 ID 는 하나다. MIN 은 집계 문법을 맞추려는 것이다.
                 MIN(e.anonymous_user_id) AS anonymous_user_id,
                 COUNT(*)         AS event_count,
                 EXISTS(SELECT 1 FROM session_recordings r

@@ -87,8 +87,14 @@ export function installCollectors(client: TraceClient) {
   //
   // 큐에 있는 객체를 고치는 것이 맞다. flush 는 큐의 이벤트를 복사해 보내므로,
   // 이미 나간 page_view 는 여기서 고쳐도 아무 데도 닿지 않는다.
+  //
+  // 감시 범위가 document.head 전체라서 CSS-in-JS 가 <style> 글자를 고칠 때마다 콜백이 온다.
+  // 제목이 그대로면 마스킹 같은 일을 하지 않고 바로 나간다.
+  let lastSeenTitle = document.title;
   const titleObserver = new MutationObserver(() => {
     try {
+      if (document.title === lastSeenTitle) return;
+      lastSeenTitle = document.title;
       if (!lastPageView || lastPageView.urlPath !== currentPath()) return;
       const { titleMasked } = pageTitle();
       if (titleMasked) lastPageView.titleMasked = titleMasked;
