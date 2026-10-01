@@ -1,5 +1,6 @@
 import { TraceClient } from "./client.js";
 import { installCollectors } from "./collectors.js";
+import { Identity } from "./identity.js";
 import { autoInstall, type Consent, type InstallOptions } from "./install.js";
 import { loadReplay, stopReplay } from "./replay-loader.js";
 
@@ -7,13 +8,16 @@ let client: TraceClient | undefined;
 // 동의 상태를 여기에도 둔다. TraceClient 는 자기 큐만 막을 뿐이고, 리플레이는
 // 그 큐를 지나지 않는 별도 경로다.
 let consentState: Consent = "granted";
-let replayBoot: { projectId: string; sessionId: string; endpoint: string } | undefined;
+let replayTarget: { projectId: string; endpoint: string } | undefined;
 
 function startReplayIfAllowed(): void {
-  if (!replayBoot) return;
+  if (!client || !replayTarget) return;
   // 리플레이는 켜진 프로젝트에서만 켜진다. 실패해도 수집은 계속돼야 하므로
   // 기다리지 않고, loadReplay 는 절대 던지지 않는다.
-  void loadReplay({ ...replayBoot, isGranted: () => consentState === "granted" });
+  //
+  // 세션 ID 는 부를 때 읽는다. 동의 보류에서 grant() 가 오면 저장소에 있던 세션을
+  // 이어 받아 ID 가 바뀌므로, init 때 읽어 둔 값으로 올리면 리플레이만 다른 세션이 된다.
+  void loadReplay({ ...replayTarget, sessionId: client.sessionId, isGranted: () => consentState === "granted" });
 }
 
 export function init(options: { projectId: string; endpoint?: string; consent?: Consent }) {
@@ -23,9 +27,11 @@ export function init(options: { projectId: string; endpoint?: string; consent?: 
     projectId: options.projectId,
     endpoint,
     consent: consentState,
+    // 동의가 있을 때만 저장소를 읽고 쓴다. 보류면 grant() 가 TraceClient 를 거쳐 persist() 를 부른다.
+    identity: new Identity({ persist: consentState === "granted" }),
   });
   installCollectors(client);
-  replayBoot = { projectId: options.projectId, sessionId: client.sessionId, endpoint };
+  replayTarget = { projectId: options.projectId, endpoint };
   startReplayIfAllowed();
   return client;
 }

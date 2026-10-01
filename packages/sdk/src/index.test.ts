@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { consent, init } from "./index.js";
+import { REPLAY_SEQ_KEY, SESSION_KEY, VISITOR_KEY } from "./storage.js";
 
 const ENDPOINT = "https://trace.example.com/v1/events/batch";
 const CONFIG_URL = "https://trace.example.com/v1/projects/proj_1/config";
@@ -40,6 +41,8 @@ describe("init 의 동의 게이트", () => {
     delete window.__traceReplay;
     delete window.__traceReplayStop;
     vi.unstubAllGlobals();
+    sessionStorage.clear();
+    localStorage.clear();
   });
 
   // 가장 크게 수집하는 경로가 동의를 건너뛰고 있었다. data-consent="pending" 은
@@ -129,5 +132,69 @@ describe("window.trace", () => {
   it("track 을 두지 않는다", () => {
     expect(window.trace).toBeDefined();
     expect(Object.keys(window.trace!).sort()).toEqual(["consent", "init"]);
+  });
+});
+
+describe("init 의 세션 이어 가기", () => {
+  afterEach(() => {
+    consent.deny();
+    document.head.innerHTML = "";
+    delete window.__traceReplay;
+    delete window.__traceReplayStop;
+    vi.unstubAllGlobals();
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  function sentBatches(fetcher: ReturnType<typeof stubFetch>["fetcher"]) {
+    return fetcher.mock.calls
+      .filter((call) => call[0] === ENDPOINT)
+      .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as { sessionId: string; anonymousUserId: string });
+  }
+
+  // 새로고침은 스크립트를 처음부터 다시 실행한다. init 을 두 번 부르는 것으로 흉내 낸다.
+  it("새로고침해도 같은 세션과 방문자로 보낸다", async () => {
+    const { fetcher } = stubFetch();
+
+    await init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "granted" }).flush();
+    await init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "granted" }).flush();
+
+    const [first, second] = sentBatches(fetcher);
+    expect(second!.sessionId).toBe(first!.sessionId);
+    expect(second!.anonymousUserId).toBe(first!.anonymousUserId);
+  });
+
+  it("동의 보류 중에는 저장소에 쓰지 않는다", () => {
+    stubFetch();
+
+    init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "pending" });
+
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(localStorage.getItem(VISITOR_KEY)).toBeNull();
+  });
+
+  it("동의 보류에서 grant 하면 저장된 세션을 이어 받고 리플레이도 그 세션으로 올린다", async () => {
+    stubFetch();
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ sessionId: "sess_Stored12345", lastActivityAt: Date.now() }));
+
+    const client = init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "pending" });
+    consent.grant();
+    await settle();
+
+    expect(client.sessionId).toBe("sess_Stored12345");
+    expect(window.__traceReplay?.sessionId).toBe("sess_Stored12345");
+    expect(window.__traceReplay?.endpoint).toBe("https://trace.example.com/v1/sessions/sess_Stored12345/recording");
+  });
+
+  it("거부하면 Trace 가 저장소에 둔 키를 지운다", () => {
+    stubFetch();
+    init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "granted" });
+    sessionStorage.setItem(REPLAY_SEQ_KEY, JSON.stringify({ sessionId: "sess_x", next: 2 }));
+
+    consent.deny();
+
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(sessionStorage.getItem(REPLAY_SEQ_KEY)).toBeNull();
+    expect(localStorage.getItem(VISITOR_KEY)).toBeNull();
   });
 });

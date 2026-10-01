@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type TraceEvent } from "@trace/shared";
 import { installCollectors } from "./collectors.js";
 import { TraceClient } from "./client.js";
+import { Identity } from "./identity.js";
+import { SESSION_KEY, VISITOR_KEY } from "./storage.js";
 
 // 브라우저가 keepalive fetch 본문에 두는 한도(64 KiB)에서 다른 진행 중인 keepalive
 // 요청 몫을 뺀 값. client.ts 의 MAX_BATCH_BODY_BYTES 와 같은 값을 일부러 여기에도
@@ -265,5 +267,47 @@ describe("TraceClient", () => {
     const secondPayload = JSON.parse(String(second.body)) as { events: Array<{ eventId: string }> };
     expect(secondPayload.events.map((event) => event.eventId)).toEqual(["evt_0000000001"]);
     expect(client.queueLength).toBe(0);
+  });
+
+  describe("Identity", () => {
+    afterEach(() => {
+      sessionStorage.clear();
+      localStorage.clear();
+    });
+
+    it("이벤트를 큐에 넣을 때마다 마지막 활동 시각을 저장한다", () => {
+      let now = 1_000;
+      const identity = new Identity({ persist: true, now: () => now });
+      const client = new TraceClient({ projectId: "proj_1", endpoint: "https://trace.example.com/v1/events/batch", fetcher: vi.fn(), identity });
+
+      now = 5_000;
+      client.enqueue(client.createEvent({ eventId: "evt_touch1", type: "click", urlPath: "/", metadata: {} }));
+
+      expect(JSON.parse(sessionStorage.getItem(SESSION_KEY)!)).toEqual({ sessionId: client.sessionId, lastActivityAt: 5_000 });
+    });
+
+    it("배치에 identity 의 세션과 방문자 ID 를 싣는다", async () => {
+      const identity = new Identity({ persist: true });
+      const fetcher = vi.fn().mockResolvedValue({ ok: true });
+      const client = new TraceClient({ projectId: "proj_1", endpoint: "https://trace.example.com/v1/events/batch", fetcher, identity });
+
+      client.enqueue(client.createEvent({ eventId: "evt_ident1", type: "click", urlPath: "/", metadata: {} }));
+      await client.flush();
+
+      const payload = JSON.parse(String((fetcher.mock.calls[0] as [string, RequestInit])[1].body));
+      expect(payload.sessionId).toBe(identity.sessionId);
+      expect(payload.anonymousUserId).toBe(identity.anonymousUserId);
+      expect(payload.events[0].sessionId).toBe(identity.sessionId);
+    });
+
+    it("동의를 거부하면 저장한 ID 를 지운다", () => {
+      const identity = new Identity({ persist: true });
+      const client = new TraceClient({ projectId: "proj_1", endpoint: "https://trace.example.com/v1/events/batch", fetcher: vi.fn(), identity });
+
+      client.denyConsent();
+
+      expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+      expect(localStorage.getItem(VISITOR_KEY)).toBeNull();
+    });
   });
 });

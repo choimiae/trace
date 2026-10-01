@@ -1,6 +1,7 @@
 import { redactUrl } from "@trace/shared/privacy";
 import type { EventBatch, TraceEvent } from "@trace/shared";
 import { nanoid } from "nanoid";
+import { Identity } from "./identity.js";
 import type { Consent } from "./install.js";
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<{ ok: boolean; status?: number }>;
@@ -48,6 +49,8 @@ export interface TraceClientOptions {
   endpoint: string;
   fetcher?: Fetcher;
   consent?: Consent;
+  /** 세션·방문자 ID. 넘기지 않으면 저장하지 않는 메모리 ID 를 쓴다. */
+  identity?: Identity;
 }
 
 export class TraceClient {
@@ -55,11 +58,16 @@ export class TraceClient {
   private readonly endpoint: string;
   private readonly fetcher: Fetcher;
   private consent: Consent;
-  private readonly anonymousUserId = `anon_${nanoid(10)}`;
-  readonly sessionId = `sess_${nanoid(10)}`;
+  private readonly identity: Identity;
   private readonly pageId = `page_${nanoid(10)}`;
   private queue: TraceEvent[] = [];
   private enqueueListeners: Array<() => void> = [];
+
+  // 동의 보류에서 grant() 가 오면 저장된 세션을 이어 받아 바뀔 수 있다. 값을 들고
+  // 있지 말고 부를 때마다 읽는다.
+  get sessionId(): string {
+    return this.identity.sessionId;
+  }
 
   get queueLength(): number {
     return this.queue.length;
@@ -74,15 +82,18 @@ export class TraceClient {
     this.endpoint = options.endpoint;
     this.fetcher = options.fetcher ?? ((input, init) => fetch(input, init));
     this.consent = options.consent ?? "granted";
+    this.identity = options.identity ?? new Identity({ persist: false });
   }
 
   grantConsent() {
     this.consent = "granted";
+    this.identity.persist();
   }
 
   denyConsent() {
     this.consent = "denied";
     this.queue = [];
+    this.identity.forget();
   }
 
   createEvent(event: Omit<TraceEvent, "sessionId" | "pageId" | "timestamp"> & { timestamp?: string }): TraceEvent {
@@ -97,6 +108,7 @@ export class TraceClient {
   enqueue(event: TraceEvent) {
     if (this.consent !== "granted") return;
     this.queue.push(event);
+    this.identity.touch();
     for (const listener of this.enqueueListeners) listener();
   }
 
@@ -128,7 +140,7 @@ export class TraceClient {
     this.queue.splice(0, events.length);
     const batch: EventBatch = {
       projectId: this.projectId,
-      anonymousUserId: this.anonymousUserId,
+      anonymousUserId: this.identity.anonymousUserId,
       sessionId: this.sessionId,
       sentAt: new Date().toISOString(),
       sdkVersion: "0.1.0",
