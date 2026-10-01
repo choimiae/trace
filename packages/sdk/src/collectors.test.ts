@@ -122,3 +122,56 @@ describe("installCollectors", () => {
     expect(captured.some((event) => event.type === "js_error")).toBe(false);
   });
 });
+
+describe("page_view 제목", () => {
+  afterEach(() => {
+    document.title = "";
+  });
+
+  function pageViewTitles(): Array<string | undefined> {
+    return captured
+      .filter((event) => event.type === "page_view")
+      .map((event) => (event as { titleMasked?: string }).titleMasked);
+  }
+
+  it("화면 제목을 마스킹해 page_view 에 싣는다", () => {
+    document.title = "고객 choi@example.com 상세";
+
+    installCollectors(makeClient());
+
+    expect(pageViewTitles()).toEqual(["고객 [redacted] 상세"]);
+  });
+
+  // 계약은 빈 문자열을 막지 않지만 집계는 "제목이 없으면 경로" 로 물러선다.
+  // 빈 문자열이 들어가면 그 화면 이름이 빈칸이 된다.
+  it("제목이 비어 있으면 titleMasked 를 넣지 않는다", () => {
+    document.title = "   ";
+
+    installCollectors(makeClient());
+
+    expect(captured[0]).not.toHaveProperty("titleMasked");
+  });
+
+  it("라우팅 뒤에 바뀐 제목을 아직 나가지 않은 page_view 에 덮어 준다", async () => {
+    document.title = "대시보드";
+    installCollectors(makeClient());
+
+    // SPA 라우터의 순서다: 경로를 먼저 바꾸고, 렌더 뒤에 제목을 바꾼다.
+    window.history.pushState({}, "", "/billing");
+    document.title = "청구";
+    // MutationObserver 콜백은 마이크로태스크로 온다.
+    await Promise.resolve();
+
+    expect(pageViewTitles()).toEqual(["대시보드", "청구"]);
+  });
+
+  it("제목이 비워지면 덮어 둔 제목도 지운다", async () => {
+    document.title = "대시보드";
+    installCollectors(makeClient());
+
+    document.title = "";
+    await Promise.resolve();
+
+    expect(captured[0]).not.toHaveProperty("titleMasked");
+  });
+});

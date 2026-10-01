@@ -389,6 +389,12 @@ function navKeyFor(path) {
   return "/dashboard";
 }
 
+// 화면 이름이 제목에서 나온다. 실제 SPA 처럼 렌더할 때 제목을 바꾼다.
+function titleFor(path) {
+  const label = NAV.find((item) => item.path === navKeyFor(path))?.label ?? "대시보드";
+  return `${label} - Trace Demo SaaS`;
+}
+
 function renderChrome(path) {
   const navKey = navKeyFor(path);
 
@@ -416,6 +422,7 @@ function go(path) {
 function render() {
   const path = currentPath();
   renderChrome(path);
+  document.title = titleFor(path);
   document.getElementById("view").innerHTML = viewFor(path);
   window.scrollTo(0, 0);
   bindViewHandlers();
@@ -454,6 +461,7 @@ function bindViewHandlers() {
     renderChrome("/invoices");
     document.getElementById("view").innerHTML = viewFor("/invoices");
     bindViewHandlers();
+    document.title = titleFor("/invoices");
   });
 }
 
