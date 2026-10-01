@@ -254,10 +254,10 @@ export class SqliteStore implements TraceStore {
     const receivedAt = new Date().toISOString();
     const insert = this.db.prepare(
       `INSERT OR IGNORE INTO events
-         (event_id, project_id, session_id, page_id, timestamp, received_at, type, url_path, url_query_redacted,
+         (event_id, project_id, session_id, anonymous_user_id, page_id, timestamp, received_at, type, url_path, url_query_redacted,
           title_masked, element_selector_hash, element_role, element_text_masked_or_limited,
           x, y, viewport_x, viewport_y, metadata, element_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertAll = this.db.transaction((events: TraceEvent[]) => {
@@ -266,6 +266,7 @@ export class SqliteStore implements TraceStore {
           event.eventId,
           batch.projectId,
           event.sessionId,
+          batch.anonymousUserId,
           event.pageId,
           event.timestamp,
           receivedAt,
@@ -362,6 +363,7 @@ export class SqliteStore implements TraceStore {
         `SELECT e.session_id,
                 MIN(e.timestamp) AS started_at,
                 MAX(e.timestamp) AS last_seen_at,
+                MIN(e.anonymous_user_id) AS anonymous_user_id,
                 COUNT(*)         AS event_count,
                 EXISTS(SELECT 1 FROM session_recordings r
                         WHERE r.project_id = e.project_id AND r.session_id = e.session_id) AS has_recording
@@ -375,6 +377,7 @@ export class SqliteStore implements TraceStore {
 
     return rows.map((row) => ({
       sessionId: row.session_id as string,
+      anonymousUserId: row.anonymous_user_id as string,
       startedAt: row.started_at as string,
       lastSeenAt: row.last_seen_at as string,
       eventCount: row.event_count as number,

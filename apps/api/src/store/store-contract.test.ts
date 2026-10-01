@@ -597,6 +597,7 @@ function describeTraceStoreContract(
       expect(sessions.map((s) => s.sessionId)).toEqual(["sess_new", "sess_old"]);
       expect(sessions[0]).toEqual({
         sessionId: "sess_new",
+        anonymousUserId: "anon_1",
         startedAt: "2026-09-15T01:00:00.000Z",
         lastSeenAt: "2026-09-15T01:00:00.000Z",
         eventCount: 1,
@@ -604,11 +605,30 @@ function describeTraceStoreContract(
       });
       expect(sessions[1]).toEqual({
         sessionId: "sess_old",
+        anonymousUserId: "anon_1",
         startedAt: "2026-09-15T00:00:00.000Z",
         lastSeenAt: "2026-09-15T00:01:00.000Z",
         eventCount: 2,
         hasRecording: false,
       });
+    });
+
+    it("세션의 방문자 ID 를 돌려준다", async () => {
+      const store = open();
+      const project = await store.createProject({ name: "p", allowedDomains: ["https://demo.example.com"] });
+      await store.saveBatch({
+        projectId: project.projectId,
+        anonymousUserId: "anon_visitor1",
+        sessionId: "sess_v1",
+        sentAt: "2026-10-01T00:00:00.000Z",
+        sdkVersion: "0.1.0",
+        url: "https://demo.example.com/",
+        events: [{ eventId: "evt_v1", sessionId: "sess_v1", pageId: "page_1", timestamp: "2026-10-01T00:00:00.000Z", type: "page_view", urlPath: "/", metadata: {} }],
+      });
+
+      const [session] = await store.listSessions(project.projectId, 10);
+
+      expect(session?.anonymousUserId).toBe("anon_visitor1");
     });
 
     it("다른 프로젝트의 세션은 섞이지 않는다", async () => {

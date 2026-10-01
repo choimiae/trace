@@ -56,6 +56,45 @@ describe("ingestion routes", () => {
     await app.close();
   });
 
+  // 걷어낸 종류는 옛 SDK 가 보내는 모양 그대로 온다. 버릴 이벤트의 필드를 검사해
+  // 배치 전체를 400 으로 떨어뜨리면 같은 배치의 멀쩡한 클릭까지 잃는다.
+  it("버릴 종류의 이벤트는 필드가 계약과 달라도 배치를 떨어뜨리지 않는다", async () => {
+    const store = createTestStore();
+    const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://app.example.com" },
+      payload: batchPayload(project.projectId, [
+        { type: "js_error", timestamp: "어제", message: "x".repeat(2000) },
+        "not-an-object",
+        { eventId: "evt_2", sessionId: "sess_1", pageId: "page_1", timestamp: "2026-09-30T00:00:01.000Z", type: "click", urlPath: "/quote", metadata: {} },
+      ]),
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: 1 });
+    await app.close();
+  });
+
+  it("남길 종류의 이벤트가 계약과 다르면 지금처럼 400 이다", async () => {
+    const store = createTestStore();
+    const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
+    const app = createApp({ store });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/events/batch",
+      headers: { origin: "https://app.example.com" },
+      payload: batchPayload(project.projectId, [{ type: "click", timestamp: "어제" }]),
+    });
+
+    expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+
   it("화면 맥락과 오류 필드는 저장하지 않는다", async () => {
     const store = createTestStore();
     const project = await store.createProject({ name: "p", allowedDomains: ["https://app.example.com"] });
@@ -188,6 +227,8 @@ describe("ingestion routes", () => {
 
     expect(response.statusCode).toBe(202);
     const [session] = await store.listSessions(project.projectId, 10);
+    expect(session?.anonymousUserId).toMatch(/^anon_/);
+    expect(session?.anonymousUserId).not.toContain("choi");
     const [event] = await store.getSessionTimeline(project.projectId, session?.sessionId ?? "");
     expect(event?.eventId).toMatch(/^evt_/);
     expect(event?.sessionId).toMatch(/^sess_/);

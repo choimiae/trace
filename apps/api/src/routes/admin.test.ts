@@ -317,6 +317,7 @@ describe("admin bff routes", () => {
     const projectB = await store.createProject({ name: "B", allowedDomains: ["https://b.example.com"] });
     await store.saveBatch({
       projectId: projectA.projectId,
+      anonymousUserId: "anon_a",
       events: [{
         eventId: "evt_a1",
         sessionId: "sess_a",

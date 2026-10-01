@@ -19,6 +19,15 @@ import type { TraceStore } from "../store/types.js";
 // 계약이 받는 종류가 아니면 배치를 떨어뜨리지 않고 버린다 — 수집 API 는 거절이 아니라 정리한다.
 const KEPT_EVENT_TYPES: ReadonlySet<string> = new Set<string>(eventTypeSchema.options);
 
+// 종류부터 본다. 걷어낸 종류(js_error·custom 등)는 옛 SDK 가 보내는 모양 그대로
+// 오므로, 버릴 이벤트의 필드까지 검사하면 같은 배치의 멀쩡한 이벤트가 400 으로
+// 함께 떨어진다. 남길 종류만 필드를 검사한다 - 그쪽이 틀리면 지금처럼 400 이다.
+function isKeptEvent(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const type = (value as { type?: unknown }).type;
+  return typeof type === "string" && KEPT_EVENT_TYPES.has(type);
+}
+
 const rawTraceEventSchema = z.object({
   eventId: z.string().min(1),
   sessionId: z.string().min(1),
@@ -48,7 +57,7 @@ const rawEventBatchSchema = z.object({
   sentAt: isoDateStringSchema,
   sdkVersion: z.string().min(1),
   url: z.string().url(),
-  events: z.array(rawTraceEventSchema).min(1).max(100),
+  events: z.array(z.unknown()).min(1).max(100),
 });
 
 export async function registerIngestionRoutes(
@@ -71,7 +80,7 @@ export async function registerIngestionRoutes(
         return reply.code(403).send({ error: "domain_not_allowed" });
       }
 
-      const keptEvents = rawBatch.events.filter((event) => KEPT_EVENT_TYPES.has(event.type));
+      const keptEvents = rawBatch.events.filter(isKeptEvent).map((event) => rawTraceEventSchema.parse(event));
       if (keptEvents.length === 0) return reply.code(202).send({ accepted: 0 });
 
       const sessionId = sanitizeTraceIdentifier(rawBatch.sessionId, "sess");

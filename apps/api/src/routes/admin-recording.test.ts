@@ -270,6 +270,7 @@ describe("GET /admin/api/projects/:projectId/sessions", () => {
       sessions: [
         {
           sessionId: "sess_abc",
+          anonymousUserId: "anon_1",
           startedAt: "2026-09-15T00:00:00.000Z",
           lastSeenAt: "2026-09-15T00:00:00.000Z",
           eventCount: 1,

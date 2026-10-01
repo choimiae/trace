@@ -94,6 +94,8 @@ export interface SessionRecordingChunk {
 /** 한 세션을 요약한 값. 세션 목록 화면이 쓴다. 기록이 없는 세션도 들어간다. */
 export interface SessionSummary {
   sessionId: string;
+  /** 이 세션을 만든 브라우저의 익명 방문자 ID(`anon_…`). */
+  anonymousUserId: string;
   /** 가장 이른 이벤트의 timestamp. 브라우저 시계가 적은 값이라 표시용이다. */
   startedAt: string;
   /** 가장 늦은 이벤트의 timestamp. */
