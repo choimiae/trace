@@ -127,13 +127,15 @@ http://localhost:3000/?projectId=<projectId>
 
 | 항목 | 동작 |
 | --- | --- |
-| 쿠키, localStorage, sessionStorage | 사용하지 않습니다 |
-| 방문자 ID | 페이지를 열 때마다 새로 만들고 저장하지 않습니다. 새로고침하면 다른 ID가 됩니다 |
+| 쿠키 | 사용하지 않습니다|
+| sessionStorage | 탭 하나의 세션 ID와 마지막 활동 시각을 둡니다(`trace:session`). 리플레이를 켠 프로젝트는 녹화 조각 번호도 둡니다(`trace:replay-seq`). 같은 탭에서는 새로고침하거나 페이지를 새로 불러와도 세션이 이어지고, 30분 동안 활동이 없었으면 다음에 페이지를 불러올 때 새 세션을 시작합니다. 새 탭은 새 세션입니다. 브라우저의 탭 복제는 sessionStorage를 함께 복사하므로 복제한 탭이 원래 탭의 세션을 이어 쓰고, 리플레이를 켠 경우 두 탭의 조각 번호가 겹쳐 한쪽 조각이 저장되지 않을 수 있습니다 |
+| localStorage | 익명 방문자 ID를 둡니다(`trace:visitor`) |
+| 방문자 ID | 브라우저마다 `anon_`으로 시작하는 무작위 ID를 하나 만듭니다. 계정·이메일과 연결하지 않습니다. 저장소를 쓸 수 없는 브라우저(저장소 차단, 일부 사생활 보호 모드)에서는 페이지를 불러올 때마다 새로 만들고, 그때는 세션도 페이지 단위가 됩니다 |
 | IP 주소 | 저장하지 않습니다 |
 | URL 경로 | 식별자로 보이는 부분을 `:id`로 바꿉니다. `/users/alice/settings` -> `/users/:id/settings` |
 | URL 쿼리 | 값을 전부 `[redacted]`로 바꿉니다 |
 | 요소 텍스트 | 마스킹하고 120자로 제한합니다. 선택자는 해시로 저장합니다. **클릭한 요소의 글자를 태그 종류와 무관하게 저장합니다** — 화면에 보이는 사람 이름·고객명이 있으면 그것도 저장됩니다 |
-| 페이지 제목 | 지금은 수집하지 않습니다(이후 단계에서 다시 들어옵니다) |
+| 페이지 제목 | 화면에 들어올 때 `document.title`을 마스킹하고 120자로 제한해 기록합니다. 마스킹은 이메일·한국 휴대폰·9자리 이상 숫자만 지우므로 **제목에 든 사람 이름은 저장됩니다** |
 | 입력값 원문 | 수집하지 않습니다 |
 | 클릭 좌표, 화면 크기 | 수집합니다 |
 | 화면 이동 | 경로 기반 라우팅과 `#/`·`#!/` 해시 라우팅에서 페이지가 바뀔 때마다 경로를 기록합니다. 쿼리 값은 `[redacted]`로 바꿉니다. `#dashboard`처럼 슬래시 없는 해시는 페이지 내 앵커 이동과 구분할 수 없어 기록하지 않습니다 |
@@ -173,6 +175,10 @@ http://localhost:3000/?projectId=<projectId>
 ```js
 window.trace.consent.grant();
 ```
+
+동의를 기다리는 동안에는 이벤트를 보내지 않고 sessionStorage·localStorage를 읽지도 쓰지도 않습니다. `grant()`가 오면 그때부터 저장하고, 같은 탭에 이어 갈 세션이 남아 있으면 그 세션을 이어 받습니다. 배너가 동의를 기억해 페이지마다 곧바로 `grant()`를 부르는 사이트도 새로고침을 넘어 한 세션으로 이어집니다.
+
+동의를 거두면 `window.trace.consent.deny()`를 부르세요. 수집과 리플레이 녹화를 멈추고 Trace가 저장소에 둔 키(`trace:session`, `trace:replay-seq`, `trace:visitor`)를 지웁니다.
 
 ## 환경변수
 
@@ -222,3 +228,4 @@ npm run test --workspace @trace/api -- src/routes/auth.test.ts src/routes/admin.
 
 - 설계: `docs/superpowers/specs/2026-09-30-behavior-analytics-redefinition-design.md`
 - 계획(① 걷어내기): `docs/superpowers/plans/2026-09-30-simplify-stage1-removal.md`
+- 계획(② 수집 바꾸기): `docs/superpowers/plans/2026-10-01-collect-stage2-session-continuity.md`
