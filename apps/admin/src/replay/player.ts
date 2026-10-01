@@ -31,7 +31,10 @@ export interface ReplayPlayer {
  * 모르는 채로 다루기로 했으므로 여기서 `as never` 로 넘긴다.
  */
 export function createPlayer(mount: HTMLElement, firstEvents: unknown[]): ReplayPlayer {
-  const replayer = new Replayer(firstEvents as never[], { root: mount });
+  // 쉬는 구간을 건너뛴다. 세션이 새로고침과 페이지 이동을 넘어 30분 무활동까지
+  // 이어지므로 기록 안에 아무 일도 없는 구간이 길어진다 - 그대로 재생하면 그
+  // 시간만큼 화면이 멈춘 것처럼 보인다.
+  const replayer = new Replayer(firstEvents as never[], { root: mount, skipInactive: true });
 
   // rrweb 의 bare `Replayer` 는 원본 녹화 뷰포트 크기로 iframe 을 그린다 - 스스로
   // 맞추지 않는다(그건 rrweb-player 의 일). `getMetaData()` 는 startTime/endTime/
