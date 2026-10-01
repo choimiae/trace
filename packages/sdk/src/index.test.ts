@@ -186,6 +186,30 @@ describe("init 의 세션 이어 가기", () => {
     expect(window.__traceReplay?.endpoint).toBe("https://trace.example.com/v1/sessions/sess_Stored12345/recording");
   });
 
+  it("동의 → 거부 → 동의 하면 새 세션으로 다시 시작한다", async () => {
+    stubFetch();
+    const client = init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "granted" });
+    const before = client.sessionId;
+
+    consent.deny();
+    consent.grant();
+    await settle();
+
+    expect(client.sessionId).not.toBe(before);
+    expect(window.__traceReplay?.sessionId).toBe(client.sessionId);
+  });
+
+  it("거부 상태로 시작하면 앞 페이지가 남긴 키를 지운다", () => {
+    stubFetch();
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ sessionId: "sess_Stored12345", lastActivityAt: Date.now() }));
+    localStorage.setItem(VISITOR_KEY, "anon_Stored12345");
+
+    init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "denied" });
+
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(localStorage.getItem(VISITOR_KEY)).toBeNull();
+  });
+
   it("거부하면 Trace 가 저장소에 둔 키를 지운다", () => {
     stubFetch();
     init({ projectId: "proj_1", endpoint: ENDPOINT, consent: "granted" });

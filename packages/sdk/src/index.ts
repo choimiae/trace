@@ -17,7 +17,16 @@ function startReplayIfAllowed(): void {
   //
   // 세션 ID 는 부를 때 읽는다. 동의 보류에서 grant() 가 오면 저장소에 있던 세션을
   // 이어 받아 ID 가 바뀌므로, init 때 읽어 둔 값으로 올리면 리플레이만 다른 세션이 된다.
-  void loadReplay({ ...replayTarget, sessionId: client.sessionId, isGranted: () => consentState === "granted" });
+  //
+  // 설정을 기다리는 사이 거부 → 동의가 오면 세션 ID 가 새로 바뀐다. 그때 먼저 불린 호출이
+  // 옛 세션 ID 로 뒤늦게 시작하지 않도록, 부를 때의 세션과 같을 때만 동의로 본다.
+  const target = client;
+  const sessionId = target.sessionId;
+  void loadReplay({
+    ...replayTarget,
+    sessionId,
+    isGranted: () => consentState === "granted" && target.sessionId === sessionId,
+  });
 }
 
 export function init(options: { projectId: string; endpoint?: string; consent?: Consent }) {
@@ -30,6 +39,8 @@ export function init(options: { projectId: string; endpoint?: string; consent?: 
     // 동의가 있을 때만 저장소를 읽고 쓴다. 보류면 grant() 가 TraceClient 를 거쳐 persist() 를 부른다.
     identity: new Identity({ persist: consentState === "granted" }),
   });
+  // 앞 페이지에서 동의하며 남긴 키가 있으면 지운다 - 거부 상태는 저장소에 Trace 키가 없어야 한다.
+  if (consentState === "denied") client.denyConsent();
   installCollectors(client);
   replayTarget = { projectId: options.projectId, endpoint };
   startReplayIfAllowed();

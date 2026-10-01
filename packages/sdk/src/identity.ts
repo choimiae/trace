@@ -62,6 +62,11 @@ export class Identity {
     removeItem("session", SESSION_KEY);
     removeItem("session", REPLAY_SEQ_KEY);
     removeItem("local", VISITOR_KEY);
+    // ID 도 새로 받는다. 옛 ID 를 메모리에 두면 다시 동의할 때 persist() 가 그 ID 를 저장소에
+    // 되살려서 (a) 철회 전후 데이터가 같은 방문자로 묶이고, (b) 지운 리플레이 seq 는 0 부터
+    // 다시 세는데 세션 ID 는 그대로라 서버의 INSERT OR IGNORE 가 그 청크를 조용히 버린다.
+    this.sessionId = `sess_${nanoid(10)}`;
+    this.anonymousUserId = `anon_${nanoid(10)}`;
   }
 }
 

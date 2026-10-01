@@ -100,6 +100,23 @@ describe("Identity", () => {
     expect(sessionStorage.getItem("host-app")).toBe("keep");
   });
 
+  it("forget 뒤에는 새 세션·방문자 ID 를 쓴다", () => {
+    const identity = new Identity({ persist: true, now: () => T0 });
+    const { sessionId, anonymousUserId } = identity;
+
+    identity.forget();
+
+    expect(identity.sessionId).not.toBe(sessionId);
+    expect(identity.anonymousUserId).not.toBe(anonymousUserId);
+    expect(identity.sessionId).toMatch(/^sess_/);
+    expect(identity.anonymousUserId).toMatch(/^anon_/);
+
+    identity.persist();
+
+    expect(storedSession()).toEqual({ sessionId: identity.sessionId, lastActivityAt: T0 });
+    expect(localStorage.getItem(VISITOR_KEY)).toBe(identity.anonymousUserId);
+  });
+
   it.each([
     ["JSON 이 아님", "{not json"],
     ["접두사가 다름", JSON.stringify({ sessionId: "anon_Stored12345", lastActivityAt: T0 })],
