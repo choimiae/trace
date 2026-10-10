@@ -240,19 +240,20 @@ describe("GET /admin/api/projects/:projectId/sessions", () => {
   it("모든 세션을 최근 순으로 돌려준다", async () => {
     const { app, store, project, headers } = await createAuthenticatedOwner();
     // 기록이 없는 세션도 목록에 들어간다 - 기록 유무와 상관없이 흐름을 보려는 것이 이
-    // 화면의 목적이다.
+    // 화면의 목적이다. 목록은 기본 7일 안에 시작한 세션만 주므로 시각을 지금에 맞춘다.
+    const timestamp = new Date(Date.now() - 86_400_000).toISOString();
     await store.saveBatch({
       projectId: project.projectId,
       anonymousUserId: "anon_1",
       sessionId: "sess_abc",
-      sentAt: "2026-09-15T00:01:00.000Z",
+      sentAt: timestamp,
       sdkVersion: "0.1.0",
       url: "https://demo.example.com/settings",
       events: [{
         eventId: "evt_1",
         sessionId: "sess_abc",
         pageId: "page_1",
-        timestamp: "2026-09-15T00:00:00.000Z",
+        timestamp,
         type: "click",
         urlPath: "/settings",
         metadata: {},
@@ -267,16 +268,21 @@ describe("GET /admin/api/projects/:projectId/sessions", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
+      total: 1,
       sessions: [
         {
           sessionId: "sess_abc",
           anonymousUserId: "anon_1",
-          startedAt: "2026-09-15T00:00:00.000Z",
-          lastSeenAt: "2026-09-15T00:00:00.000Z",
+          startedAt: timestamp,
+          lastSeenAt: timestamp,
+          durationMs: 0,
           eventCount: 1,
+          screenCount: 0,
+          screens: [],
           hasRecording: false,
         },
       ],
+      names: {},
     });
     expect(response.headers["cache-control"]).toBe("no-store");
   });
@@ -290,7 +296,7 @@ describe("GET /admin/api/projects/:projectId/sessions", () => {
       headers,
     });
 
-    expect(response.json()).toEqual({ sessions: [] });
+    expect(response.json()).toEqual({ total: 0, sessions: [], names: {} });
   });
 
   it("인증이 없으면 401", async () => {
