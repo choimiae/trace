@@ -120,6 +120,17 @@ export interface PageStats {
   scrollReach: Array<{ depth: number; ratio: number }>;
 }
 
+/** 이동 흐름 화면의 경로 한 줄. */
+export interface RankedPath {
+  /** 시작 화면부터 최대 5개의 경로(urlPath). */
+  steps: string[];
+  /** 5개 화면 안에서 세션이 끝났는지. 화면은 끝에 "이탈"을 붙인다. */
+  exited: boolean;
+  sessions: number;
+  /** sessions ÷ 대상 세션 수. 0~1. */
+  ratio: number;
+}
+
 export interface TraceStore {
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
