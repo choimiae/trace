@@ -1,12 +1,13 @@
 import type Database from "better-sqlite3";
-import { FEATURES_SQL, SCREENS_SQL, SUMMARY_SQL, TITLES_SQL } from "./analytics-sql.js";
-import { compareText } from "./route.js";
-import type { FeatureUsage, ScreenUsage } from "./types.js";
+import { FEATURES_SQL, PAGE_VIEWS_SQL, SCREENS_SQL, SUMMARY_SQL, TITLES_SQL } from "./analytics-sql.js";
+import { collapseScreens, compareText, rankRoutes } from "./route.js";
+import type { FeatureUsage, PathRanking, ScreenUsage } from "./types.js";
 
 // 집계 SQL 을 실행해 관리자 화면이 쓰는 응답 모양으로 묶는다. SqliteStore 가 위임한다.
 
 export const SCREEN_LIMIT = 100;
 export const FEATURES_PER_SCREEN = 30;
+export const PATH_LIMIT = 20;
 /** 글자도 역할도 없는 요소의 이름. */
 export const UNNAMED_FEATURE = "이름 없는 요소";
 
@@ -68,6 +69,19 @@ export class Analytics {
     };
   }
 
+  pathRanking(projectId: string, since: string, start?: string): PathRanking {
+    const screensBySession = this.periodScreens(projectId, since);
+    const { totalSessions, paths } = rankRoutes(screensBySession.values(), start, PATH_LIMIT);
+    const seen = new Set<string>();
+    for (const screens of screensBySession.values()) for (const screen of screens) seen.add(screen);
+    return { totalSessions, paths, names: this.names(projectId, since, [...seen].sort(compareText)) };
+  }
+
+  /** 기간 세션마다 합친 화면 배열. page_view 가 없는 세션은 들어가지 않는다. */
+  private periodScreens(projectId: string, since: string): Map<string, string[]> {
+    return groupScreens(this.db.prepare(PAGE_VIEWS_SQL).all({ projectId, since }) as Row[]);
+  }
+
   /** 경로마다 기간 세션에서 가장 많이 나온 제목. 없으면 경로 그대로. */
   private names(projectId: string, since: string, urlPaths: Iterable<string>): Record<string, string> {
     const titles = new Map<string, string>();
@@ -79,4 +93,17 @@ export class Analytics {
     for (const urlPath of urlPaths) names[urlPath] = titles.get(urlPath) ?? urlPath;
     return names;
   }
+}
+
+/** session_id 순으로 정렬된 page_view 행을 세션마다 묶어 연달아 같은 화면을 합친다. */
+export function groupScreens(rows: Row[]): Map<string, string[]> {
+  const raw = new Map<string, string[]>();
+  for (const row of rows) {
+    const sessionId = row.session_id as string;
+    const urlPath = row.url_path as string;
+    const list = raw.get(sessionId);
+    if (list) list.push(urlPath);
+    else raw.set(sessionId, [urlPath]);
+  }
+  return new Map([...raw].map(([sessionId, urlPaths]) => [sessionId, collapseScreens(urlPaths)]));
 }

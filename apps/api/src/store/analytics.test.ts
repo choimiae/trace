@@ -240,3 +240,83 @@ describe("getFeatureUsage", () => {
     expect(after).toEqual(before);
   });
 });
+
+describe("getPathRanking", () => {
+  it("연달아 같은 화면을 합쳐 경로를 세고, 시작 화면으로 자른다", async () => {
+    const { store, projectId, save } = await setup();
+    await save("s1", "anon_1", [
+      view("/", T(0), "홈"),
+      view("/quote", T(1), "견적 목록"),
+      view("/quote", T(2), "견적 목록"), // 새로고침
+      view("/quote/new", T(3), "견적 등록"),
+    ]);
+    await save("s2", "anon_2", [view("/", T(10), "홈"), view("/quote", T(11), "견적 목록"), view("/quote/new", T(12), "견적 등록")]);
+    await save("s3", "anon_3", [view("/", T(20), "홈"), view("/pay", T(21))]);
+
+    expect(await store.getPathRanking(projectId, SINCE)).toEqual({
+      totalSessions: 3,
+      paths: [
+        { steps: ["/", "/quote", "/quote/new"], exited: true, sessions: 2, ratio: 2 / 3 },
+        { steps: ["/", "/pay"], exited: true, sessions: 1, ratio: 1 / 3 },
+      ],
+      names: { "/": "홈", "/quote": "견적 목록", "/quote/new": "견적 등록", "/pay": "/pay" },
+    });
+
+    const fromQuote = await store.getPathRanking(projectId, SINCE, "/quote");
+
+    expect(fromQuote.totalSessions).toBe(2);
+    expect(fromQuote.paths).toEqual([{ steps: ["/quote", "/quote/new"], exited: true, sessions: 2, ratio: 1 }]);
+  });
+
+  it("같은 밀리초의 page_view 는 저장한 순서로 놓는다", async () => {
+    const { store, projectId, save } = await setup();
+    await save("s1", "anon_1", [view("/b", T(0)), view("/a", T(0))]);
+
+    const { paths } = await store.getPathRanking(projectId, SINCE);
+
+    expect(paths.map((path) => path.steps)).toEqual([["/b", "/a"]]);
+  });
+
+  it("page_view 가 없는 세션은 경로 대상에서 빠진다", async () => {
+    const { store, projectId, save } = await setup();
+    await save("s1", "anon_1", [click("/a", T(0), "저장")]);
+    await save("s2", "anon_2", [view("/a", T(10))]);
+
+    const ranking = await store.getPathRanking(projectId, SINCE);
+
+    expect(ranking.totalSessions).toBe(1);
+    expect(ranking.paths).toEqual([{ steps: ["/a"], exited: true, sessions: 1, ratio: 1 }]);
+  });
+
+  it("기간 전에 시작한 세션은 빠진다", async () => {
+    const { store, projectId, save } = await setup();
+    await save("s_old", "anon_1", [view("/old", "2026-09-30T23:59:00.000Z"), view("/a", "2026-10-01T00:01:00.000Z")]);
+    await save("s1", "anon_2", [view("/a", T(0))]);
+
+    const ranking = await store.getPathRanking(projectId, SINCE);
+
+    expect(ranking.totalSessions).toBe(1);
+    expect(ranking.names).toEqual({ "/a": "/a" });
+  });
+
+  it("시작 화면이 어느 세션에도 없으면 비어 있다", async () => {
+    const { store, projectId, save } = await setup();
+    await save("s1", "anon_1", [view("/a", T(0))]);
+
+    expect(await store.getPathRanking(projectId, SINCE, "/zzz")).toEqual({
+      totalSessions: 0,
+      paths: [],
+      names: { "/a": "/a" },
+    });
+  });
+
+  it("경로는 20개까지 돌려준다", async () => {
+    const { store, projectId, save } = await setup();
+    for (let i = 0; i < 21; i++) await save(`s${i}`, `anon_${i}`, [view(`/p${String(i).padStart(2, "0")}`, T(i))]);
+
+    const ranking = await store.getPathRanking(projectId, SINCE);
+
+    expect(ranking.totalSessions).toBe(21);
+    expect(ranking.paths).toHaveLength(20);
+  });
+});

@@ -16,6 +16,7 @@ import type {
   CreateProjectInput,
   FeatureUsage,
   PageStats,
+  PathRanking,
   ProjectRecord,
   SessionSummary,
   SessionRecordingChunk,
@@ -314,6 +315,10 @@ export class SqliteStore implements TraceStore {
 
   async getFeatureUsage(projectId: string, since: string): Promise<FeatureUsage> {
     return this.analytics.featureUsage(projectId, since);
+  }
+
+  async getPathRanking(projectId: string, since: string, start?: string): Promise<PathRanking> {
+    return this.analytics.pathRanking(projectId, since, start);
   }
 
   async getSessionTimeline(projectId: string, sessionId: string): Promise<TraceEvent[]> {

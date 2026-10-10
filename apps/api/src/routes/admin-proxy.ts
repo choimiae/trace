@@ -6,7 +6,7 @@ import { verifyCsrfRequest } from "../auth/csrf.js";
 import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js";
 import type { ProjectRecord, TraceStore } from "../store/types.js";
 import { createProjectSchema, updateProjectSchema } from "./admin.js";
-import { parsePeriod } from "./aggregation-query.js";
+import { parsePathStart, parsePeriod } from "./aggregation-query.js";
 
 const projectParamsSchema = z.object({ projectId: z.string() });
 const sessionParamsSchema = z.object({ sessionId: z.string() });
@@ -125,6 +125,24 @@ export async function registerAdminProxyRoutes(
 
     const usage = await options.store.getFeatureUsage(projectId, period.since);
     return reply.header("cache-control", "no-store").send(usage);
+  });
+
+  app.get("/admin/api/projects/:projectId/paths", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const period = parsePeriod(request.query);
+    if (!period) return reply.code(400).send({ error: "invalid_period" });
+    const path = parsePathStart(request.query);
+    if (!path) return reply.code(400).send({ error: "invalid_path_start" });
+    const access = await getProjectAccess(options.store, projectId);
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+
+    const ranking = await options.store.getPathRanking(projectId, period.since, path.start);
+    return reply.header("cache-control", "no-store").send(ranking);
   });
 
   app.get("/admin/api/projects/:projectId/page-stats", async (request, reply) => {

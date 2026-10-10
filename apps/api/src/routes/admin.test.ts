@@ -463,3 +463,55 @@ describe("기능 사용 API", () => {
     expect(missing.json()).toEqual({ error: "project_not_found" });
   });
 });
+
+describe("이동 흐름 API", () => {
+  it("기간과 시작 화면으로 경로 순위를 돌려준다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+    await seedPageView(store, project.projectId, "sess_1", daysAgo(1), "/a");
+    await seedPageView(store, project.projectId, "sess_1", daysAgo(0.99), "/b");
+    await seedPageView(store, project.projectId, "sess_2", daysAgo(2), "/b");
+    await seedPageView(store, project.projectId, "sess_old", daysAgo(10), "/a");
+    const get = (query: string) =>
+      app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/paths${query}`, headers });
+
+    const [all, fromB, emptyStart] = await Promise.all([get(""), get("?start=%2Fb"), get("?start=")]);
+
+    expect(all.statusCode).toBe(200);
+    expect(all.headers["cache-control"]).toBe("no-store");
+    expect(all.json()).toEqual({
+      totalSessions: 2,
+      paths: [
+        { steps: ["/a", "/b"], exited: true, sessions: 1, ratio: 0.5 },
+        { steps: ["/b"], exited: true, sessions: 1, ratio: 0.5 },
+      ],
+      names: { "/a": "/a", "/b": "/b" },
+    });
+    expect(fromB.json().paths).toEqual([{ steps: ["/b"], exited: true, sessions: 2, ratio: 1 }]);
+    expect(emptyStart.json()).toEqual(all.json());
+  });
+
+  it("잘못된 기간은 invalid_period, start 가 둘이면 invalid_path_start 다", async () => {
+    const { app, project, headers } = await createAuthenticatedOwner();
+    const get = (query: string) =>
+      app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/paths${query}`, headers });
+
+    const [badDays, twoStarts] = await Promise.all([get("?days=2"), get("?start=%2Fa&start=%2Fb")]);
+
+    expect(badDays.statusCode).toBe(400);
+    expect(badDays.json()).toEqual({ error: "invalid_period" });
+    expect(twoStarts.statusCode).toBe(400);
+    expect(twoStarts.json()).toEqual({ error: "invalid_path_start" });
+  });
+
+  it("로그인하지 않으면 401, 없는 프로젝트는 404 다", async () => {
+    const { app, headers } = await createAuthenticatedOwner();
+
+    const [anonymous, missing] = await Promise.all([
+      app.inject({ method: "GET", url: "/admin/api/projects/proj_missing/paths" }),
+      app.inject({ method: "GET", url: "/admin/api/projects/proj_missing/paths", headers }),
+    ]);
+
+    expect(anonymous.statusCode).toBe(401);
+    expect(missing.statusCode).toBe(404);
+  });
+});

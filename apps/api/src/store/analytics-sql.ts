@@ -100,10 +100,21 @@ export const TITLES_SQL = `
    GROUP BY e.url_path, e.title_masked
    ORDER BY e.url_path, n DESC, e.title_masked`;
 
+// 경로 계산에 쓰는 page_view 세 열. 같은 밀리초면 저장한 순서(rowid)로 놓는다.
+// 클릭·스크롤은 읽지 않는다.
+export const PAGE_VIEWS_SQL = `
+  WITH ${PERIOD_SESSIONS}
+  SELECT e.session_id, e.url_path
+    FROM period_sessions ps
+   CROSS JOIN events e ON e.project_id = @projectId AND e.session_id = ps.session_id
+   WHERE e.type = 'page_view'
+   ORDER BY e.session_id, e.timestamp, e.rowid`;
+
 /** 기간 세션에서 출발하는 쿼리 전부. analytics-sql.test.ts 가 쿼리 계획을 확인한다. */
 export const PERIOD_QUERIES: Record<string, string> = {
   SUMMARY_SQL,
   SCREENS_SQL,
   FEATURES_SQL,
   TITLES_SQL,
+  PAGE_VIEWS_SQL,
 };

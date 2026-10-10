@@ -179,6 +179,16 @@ export interface FeatureUsageRow {
   visitors: number;
 }
 
+/** 이동 흐름 화면 응답. */
+export interface PathRanking {
+  /** 시작 화면으로 자른 뒤 남은 대상 세션 수. ratio 의 분모다. */
+  totalSessions: number;
+  /** 세션 수 순, 최대 20개. */
+  paths: RankedPath[];
+  /** 기간 세션에 나온 모든 경로의 화면 이름. 시작 화면 선택지로도 쓴다. */
+  names: Record<string, string>;
+}
+
 export interface TraceStore {
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
@@ -213,6 +223,8 @@ export interface TraceStore {
   listPageStats(projectId: string, limit: number): Promise<PageStats[]>;
   /** since 이후에 시작한 세션의 기능 사용. */
   getFeatureUsage(projectId: string, since: string): Promise<FeatureUsage>;
+  /** since 이후에 시작한 세션의 경로 순위. start 가 없으면 세션의 첫 화면부터 센다. */
+  getPathRanking(projectId: string, since: string, start?: string): Promise<PathRanking>;
   /** `receivedAt` 이 cutoff 이전인 청크를 지운다. startedAt 은 보지 않는다. */
   deleteSessionRecordingsBefore(cutoff: string): Promise<number>;
 }
