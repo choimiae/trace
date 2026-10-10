@@ -226,7 +226,9 @@ describe("ingestion routes", () => {
     });
 
     expect(response.statusCode).toBe(202);
-    const [session] = await store.listSessions(project.projectId, 10);
+    const {
+      sessions: [session],
+    } = await store.listSessions(project.projectId, { since: "1970-01-01T00:00:00.000Z", filter: { kind: "none" }, limit: 10 });
     expect(session?.anonymousUserId).toMatch(/^anon_/);
     expect(session?.anonymousUserId).not.toContain("choi");
     const [event] = await store.getSessionTimeline(project.projectId, session?.sessionId ?? "");

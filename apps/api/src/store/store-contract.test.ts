@@ -592,7 +592,11 @@ function describeTraceStoreContract(
         bytes: new Uint8Array([1, 2, 3]),
       });
 
-      const sessions = await store.listSessions(project.projectId, 50);
+      const { sessions } = await store.listSessions(project.projectId, {
+        since: "1970-01-01T00:00:00.000Z",
+        filter: { kind: "none" },
+        limit: 50,
+      });
 
       expect(sessions.map((s) => s.sessionId)).toEqual(["sess_new", "sess_old"]);
       expect(sessions[0]).toEqual({
@@ -600,7 +604,10 @@ function describeTraceStoreContract(
         anonymousUserId: "anon_1",
         startedAt: "2026-09-15T01:00:00.000Z",
         lastSeenAt: "2026-09-15T01:00:00.000Z",
+        durationMs: 0,
         eventCount: 1,
+        screenCount: 0,
+        screens: [],
         hasRecording: true,
       });
       expect(sessions[1]).toEqual({
@@ -608,7 +615,10 @@ function describeTraceStoreContract(
         anonymousUserId: "anon_1",
         startedAt: "2026-09-15T00:00:00.000Z",
         lastSeenAt: "2026-09-15T00:01:00.000Z",
+        durationMs: 60_000,
         eventCount: 2,
+        screenCount: 0,
+        screens: [],
         hasRecording: false,
       });
     });
@@ -626,7 +636,9 @@ function describeTraceStoreContract(
         events: [{ eventId: "evt_v1", sessionId: "sess_v1", pageId: "page_1", timestamp: "2026-10-01T00:00:00.000Z", type: "page_view", urlPath: "/", metadata: {} }],
       });
 
-      const [session] = await store.listSessions(project.projectId, 10);
+      const {
+        sessions: [session],
+      } = await store.listSessions(project.projectId, { since: "1970-01-01T00:00:00.000Z", filter: { kind: "none" }, limit: 10 });
 
       expect(session?.anonymousUserId).toBe("anon_visitor1");
     });
@@ -656,7 +668,12 @@ function describeTraceStoreContract(
       await store.saveBatch(batch(a.projectId, "sess_a"));
       await store.saveBatch(batch(b.projectId, "sess_b"));
 
-      expect((await store.listSessions(a.projectId, 50)).map((s) => s.sessionId)).toEqual(["sess_a"]);
+      const { sessions } = await store.listSessions(a.projectId, {
+        since: "1970-01-01T00:00:00.000Z",
+        filter: { kind: "none" },
+        limit: 50,
+      });
+      expect(sessions.map((s) => s.sessionId)).toEqual(["sess_a"]);
     });
 
     it("페이지별 방문·체류·이탈·스크롤 도달을 센다", async () => {

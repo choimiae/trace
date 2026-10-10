@@ -6,7 +6,7 @@ import { verifyCsrfRequest } from "../auth/csrf.js";
 import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js";
 import type { ProjectRecord, TraceStore } from "../store/types.js";
 import { createProjectSchema, updateProjectSchema } from "./admin.js";
-import { parsePathStart, parsePeriod } from "./aggregation-query.js";
+import { parsePathStart, parsePeriod, parseSessionFilter } from "./aggregation-query.js";
 
 const projectParamsSchema = z.object({ projectId: z.string() });
 const sessionParamsSchema = z.object({ sessionId: z.string() });
@@ -16,8 +16,8 @@ const recordingChunkParamsSchema = z.object({
   seq: z.coerce.number().int().min(0),
 });
 
-// 질의 파라미터를 받지 않는다. 페이지네이션이 필요할 만큼 쌓이는 것을 본 뒤에
-// 만든다.
+// 페이지 넘기기는 넣지 않는다. 화면은 total 로 "N개 중 최근 50개"를 보여준다.
+// 쌓이는 것을 본 뒤에 만든다.
 const SESSION_LIMIT = 50;
 const PAGE_STATS_LIMIT = 50;
 
@@ -102,13 +102,17 @@ export async function registerAdminProxyRoutes(
     if ("error" in authenticated) return reply.code(401).send(authenticated);
 
     const { projectId } = projectParamsSchema.parse(request.params);
+    const period = parsePeriod(request.query);
+    if (!period) return reply.code(400).send({ error: "invalid_period" });
+    const filter = parseSessionFilter(request.query);
+    if (!filter) return reply.code(400).send({ error: "invalid_session_filter" });
     const access = await getProjectAccess(options.store, projectId);
     if ("error" in access) {
       return reply.code(access.statusCode).send({ error: access.error });
     }
 
-    const sessions = await options.store.listSessions(projectId, SESSION_LIMIT);
-    return reply.header("cache-control", "no-store").send({ sessions });
+    const list = await options.store.listSessions(projectId, { since: period.since, filter, limit: SESSION_LIMIT });
+    return reply.header("cache-control", "no-store").send(list);
   });
 
   app.get("/admin/api/projects/:projectId/features", async (request, reply) => {

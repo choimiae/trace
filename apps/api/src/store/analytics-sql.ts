@@ -6,6 +6,8 @@
 // 조인 순서를 고정하는 문법이고, MATERIALIZED 는 기간 세션을 한 번만 계산하게 한다.
 // 쿼리 계획은 analytics-sql.test.ts 가 지킨다.
 
+import type { SessionFilter } from "./types.js";
+
 const PERIOD_SESSIONS = `
   candidates AS (
     -- events_project_timestamp_session 인덱스 하나로 끝난다(테이블을 읽지 않는다).
@@ -110,6 +112,58 @@ export const PAGE_VIEWS_SQL = `
    WHERE e.type = 'page_view'
    ORDER BY e.session_id, e.timestamp, e.rowid`;
 
+// 세션 목록. matched 는 필터를 건 기간 세션이고, total 은 LIMIT 전에 센다
+// (화면이 "180개 중 최근 50개"를 쓴다).
+function sessionsSql(condition: string): string {
+  return `
+  WITH ${PERIOD_SESSIONS},
+  matched AS (
+    SELECT ps.session_id FROM period_sessions ps ${condition}
+  ),
+  summary AS (
+    SELECT e.session_id,
+           MIN(e.timestamp) AS started_at,
+           MAX(e.timestamp) AS last_seen_at,
+           -- 한 세션은 한 탭에서 오므로 방문자 ID 는 하나다. MIN 은 집계 문법을 맞추려는 것이다.
+           MIN(e.anonymous_user_id) AS anonymous_user_id,
+           COUNT(*) AS event_count
+      FROM matched m
+     CROSS JOIN events e ON e.project_id = @projectId AND e.session_id = m.session_id
+     GROUP BY e.session_id
+  )
+  SELECT s.session_id, s.started_at, s.last_seen_at, s.anonymous_user_id, s.event_count,
+         ${elapsedMs("s.last_seen_at", "s.started_at")} AS duration_ms,
+         COUNT(*) OVER () AS total,
+         EXISTS (SELECT 1 FROM session_recordings r
+                  WHERE r.project_id = @projectId AND r.session_id = s.session_id) AS has_recording
+    FROM summary s
+   ORDER BY s.started_at DESC, s.session_id
+   LIMIT @limit`;
+}
+
+export const SESSIONS_SQL: Record<SessionFilter["kind"], string> = {
+  none: sessionsSql(""),
+  screen: sessionsSql(`
+     WHERE EXISTS (SELECT 1 FROM events f
+                    WHERE f.project_id = @projectId AND f.session_id = ps.session_id
+                      AND f.type = 'page_view' AND f.url_path = @urlPath)`),
+  feature: sessionsSql(`
+     WHERE EXISTS (SELECT 1 FROM events f
+                    WHERE f.project_id = @projectId AND f.session_id = ps.session_id
+                      AND f.type = 'click' AND f.url_path = @urlPath AND f.element_key = @elementKey)`),
+  // 경로 필터는 TypeScript(route.ts)가 고른 세션 ID 를 JSON 배열로 받는다.
+  path: sessionsSql(`
+     WHERE ps.session_id IN (SELECT value FROM json_each(@sessionIds))`),
+};
+
+// 목록에 실은 세션들의 page_view. 지나간 화면을 채운다.
+export const PAGE_VIEWS_OF_SQL = `
+  SELECT e.session_id, e.url_path
+    FROM events e
+   WHERE e.project_id = @projectId AND e.type = 'page_view'
+     AND e.session_id IN (SELECT value FROM json_each(@sessionIds))
+   ORDER BY e.session_id, e.timestamp, e.rowid`;
+
 /** 기간 세션에서 출발하는 쿼리 전부. analytics-sql.test.ts 가 쿼리 계획을 확인한다. */
 export const PERIOD_QUERIES: Record<string, string> = {
   SUMMARY_SQL,
@@ -117,4 +171,8 @@ export const PERIOD_QUERIES: Record<string, string> = {
   FEATURES_SQL,
   TITLES_SQL,
   PAGE_VIEWS_SQL,
+  "SESSIONS_SQL.none": SESSIONS_SQL.none,
+  "SESSIONS_SQL.screen": SESSIONS_SQL.screen,
+  "SESSIONS_SQL.feature": SESSIONS_SQL.feature,
+  "SESSIONS_SQL.path": SESSIONS_SQL.path,
 };

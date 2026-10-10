@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
-import { PERIOD_QUERIES } from "./analytics-sql.js";
+import { PAGE_VIEWS_OF_SQL, PERIOD_QUERIES } from "./analytics-sql.js";
 
 // 쓰지 않는 이름은 better-sqlite3 가 무시한다(빠진 이름은 던진다). 모든 쿼리에 같은 값을 넘긴다.
 const PARAMS = {
@@ -40,5 +40,9 @@ describe("집계 쿼리 계획", () => {
   it.each(Object.entries(PERIOD_QUERIES))("%s: 이벤트를 기간 세션에서부터 찾아간다", (_name, sql) => {
     // 이벤트 쪽에서 출발하면 (project_id=?) 하나로 프로젝트 전체를 돈다.
     expect(planOf(sql).filter((detail) => /^SEARCH (e|f|l|o) .*\(project_id=\?\)$/.test(detail))).toEqual([]);
+  });
+
+  it("PAGE_VIEWS_OF_SQL: 고른 세션만 인덱스로 찾는다", () => {
+    expect(planOf(PAGE_VIEWS_OF_SQL).filter((detail) => /^SCAN (events|e)\b/.test(detail))).toEqual([]);
   });
 });

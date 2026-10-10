@@ -18,7 +18,8 @@ import type {
   PageStats,
   PathRanking,
   ProjectRecord,
-  SessionSummary,
+  SessionList,
+  SessionListQuery,
   SessionRecordingChunk,
   TraceStore,
   UpdateProjectInput,
@@ -368,35 +369,8 @@ export class SqliteStore implements TraceStore {
     }));
   }
 
-  async listSessions(projectId: string, limit: number): Promise<SessionSummary[]> {
-    // 세션 테이블이 따로 없다. 이벤트를 session_id 로 묶어 세고, 기록 유무만
-    // session_recordings 를 한 번 더 본다.
-    const rows = this.db
-      .prepare(
-        `SELECT e.session_id,
-                MIN(e.timestamp) AS started_at,
-                MAX(e.timestamp) AS last_seen_at,
-                -- 한 세션은 한 탭에서 오므로 방문자 ID 는 하나다. MIN 은 집계 문법을 맞추려는 것이다.
-                MIN(e.anonymous_user_id) AS anonymous_user_id,
-                COUNT(*)         AS event_count,
-                EXISTS(SELECT 1 FROM session_recordings r
-                        WHERE r.project_id = e.project_id AND r.session_id = e.session_id) AS has_recording
-           FROM events e
-          WHERE e.project_id = ?
-          GROUP BY e.session_id
-          ORDER BY started_at DESC
-          LIMIT ?`,
-      )
-      .all(projectId, limit) as Row[];
-
-    return rows.map((row) => ({
-      sessionId: row.session_id as string,
-      anonymousUserId: row.anonymous_user_id as string,
-      startedAt: row.started_at as string,
-      lastSeenAt: row.last_seen_at as string,
-      eventCount: row.event_count as number,
-      hasRecording: (row.has_recording as number) === 1,
-    }));
+  async listSessions(projectId: string, query: SessionListQuery): Promise<SessionList> {
+    return this.analytics.sessions(projectId, query);
   }
 
   async getSessionRecordingChunk(

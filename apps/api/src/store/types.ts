@@ -100,7 +100,13 @@ export interface SessionSummary {
   startedAt: string;
   /** 가장 늦은 이벤트의 timestamp. */
   lastSeenAt: string;
+  /** lastSeenAt − startedAt (ms). */
+  durationMs: number;
   eventCount: number;
+  /** 연달아 나온 같은 화면을 합친 화면 수. page_view 가 없으면 0. */
+  screenCount: number;
+  /** 합친 화면의 앞 5개. screenCount 가 5 이하면 화면이 끝에 "이탈"을 붙인다. */
+  screens: string[];
   /** 이 세션에 리플레이 기록이 올라와 있는지. 재생 버튼을 띄울지 가른다. */
   hasRecording: boolean;
 }
@@ -189,6 +195,23 @@ export interface PathRanking {
   names: Record<string, string>;
 }
 
+export interface SessionListQuery {
+  /** 이 시각 이후에 시작한 세션만. */
+  since: string;
+  filter: SessionFilter;
+  limit: number;
+}
+
+/** 세션 목록 응답. */
+export interface SessionList {
+  /** 조건에 맞는 전체 세션 수. sessions 는 그중 최근 limit 개다. */
+  total: number;
+  /** 시작 시각 최근 순, 같으면 sessionId 순. */
+  sessions: SessionSummary[];
+  /** sessions 의 screens 에 나온 경로의 화면 이름. */
+  names: Record<string, string>;
+}
+
 export interface TraceStore {
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
@@ -218,7 +241,7 @@ export interface TraceStore {
    */
   getSessionRecordingChunk(projectId: string, sessionId: string, seq: number): Promise<SessionRecordingChunk | undefined>;
   /** `startedAt` 내림차순. 최근 세션이 먼저다. 기록 없는 세션도 포함한다. */
-  listSessions(projectId: string, limit: number): Promise<SessionSummary[]>;
+  listSessions(projectId: string, query: SessionListQuery): Promise<SessionList>;
   /** `views` 내림차순. 많이 본 페이지가 먼저다. */
   listPageStats(projectId: string, limit: number): Promise<PageStats[]>;
   /** since 이후에 시작한 세션의 기능 사용. */

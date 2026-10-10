@@ -2,6 +2,7 @@ import type { TraceEvent } from "@trace/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { elementKey } from "./element-key.js";
 import { SqliteStore } from "./sqlite-store.js";
+import type { SessionFilter } from "./types.js";
 
 const SINCE = "2026-10-01T00:00:00.000Z";
 const ALL_TIME = "1970-01-01T00:00:00.000Z";
@@ -318,5 +319,169 @@ describe("getPathRanking", () => {
 
     expect(ranking.totalSessions).toBe(21);
     expect(ranking.paths).toHaveLength(20);
+  });
+});
+
+describe("listSessions", () => {
+  const query = (filter: SessionFilter = { kind: "none" }, limit = 50) => ({ since: SINCE, filter, limit });
+
+  async function seedSessions() {
+    const fixture = await setup();
+    const { store, projectId, save } = fixture;
+    await save("s_old", "anon_0", [view("/", "2026-09-30T23:00:00.000Z", "홈")]);
+    await save("s1", "anon_1", [
+      view("/", T(0), "홈"),
+      view("/quote", T(1), "견적 목록"),
+      click("/quote", T(2), "신규 등록"),
+      view("/quote/new", T(3)),
+    ]);
+    await store.saveSessionRecordingChunk({
+      sessionId: "s1",
+      projectId,
+      seq: 0,
+      startedAt: T(0),
+      receivedAt: T(0),
+      eventCount: 1,
+      bytes: new Uint8Array([1]),
+    });
+    await save("s2", "anon_2", [
+      view("/", T(10), "홈"),
+      view("/quote", T(11)),
+      view("/quote", T(12)), // 새로고침
+      click("/quote", T(13), "검색"),
+    ]);
+    await save("s3", "anon_3", ["/pay", "/1", "/2", "/3", "/4", "/5"].map((urlPath, i) => view(urlPath, T(20 + i))));
+    return fixture;
+  }
+
+  it("필터가 없으면 기간 세션 전부를 최근 순으로 요약한다", async () => {
+    const { store, projectId } = await seedSessions();
+
+    const list = await store.listSessions(projectId, query());
+
+    expect(list.total).toBe(3);
+    expect(list.sessions.map((session) => session.sessionId)).toEqual(["s3", "s2", "s1"]);
+    expect(list.sessions[2]).toEqual({
+      sessionId: "s1",
+      anonymousUserId: "anon_1",
+      startedAt: T(0),
+      lastSeenAt: T(3),
+      durationMs: 180_000,
+      eventCount: 4,
+      screenCount: 3,
+      screens: ["/", "/quote", "/quote/new"],
+      hasRecording: true,
+    });
+    expect(list.sessions[1]).toMatchObject({ screenCount: 2, screens: ["/", "/quote"], hasRecording: false });
+    // 6개 화면 중 앞 5개만 싣는다.
+    expect(list.sessions[0]).toMatchObject({ screenCount: 6, screens: ["/pay", "/1", "/2", "/3", "/4"] });
+    // 실은 화면의 이름만 준다("/5" 는 없다).
+    expect(list.names).toEqual({
+      "/": "홈",
+      "/quote": "견적 목록",
+      "/quote/new": "/quote/new",
+      "/pay": "/pay",
+      "/1": "/1",
+      "/2": "/2",
+      "/3": "/3",
+      "/4": "/4",
+    });
+  });
+
+  it("화면 필터: 그 화면을 연 세션", async () => {
+    const { store, projectId } = await seedSessions();
+
+    const list = await store.listSessions(projectId, query({ kind: "screen", urlPath: "/quote" }));
+
+    expect(list.total).toBe(2);
+    expect(list.sessions.map((session) => session.sessionId)).toEqual(["s2", "s1"]);
+  });
+
+  it("기능 필터: 그 기능을 누른 세션", async () => {
+    const { store, projectId } = await seedSessions();
+
+    const list = await store.listSessions(
+      projectId,
+      query({ kind: "feature", urlPath: "/quote", elementKey: keyOf("신규 등록") }),
+    );
+
+    expect(list.sessions.map((session) => session.sessionId)).toEqual(["s1"]);
+  });
+
+  it("경로 필터: 경로 순위와 같은 규칙으로 자른 경로가 같은 세션", async () => {
+    const { store, projectId } = await seedSessions();
+
+    const fromStart = await store.listSessions(projectId, query({ kind: "path", steps: ["/", "/quote"], exited: true }));
+    const fromQuote = await store.listSessions(
+      projectId,
+      query({ kind: "path", start: "/quote", steps: ["/quote"], exited: true }),
+    );
+    const notExited = await store.listSessions(
+      projectId,
+      query({ kind: "path", steps: ["/pay", "/1", "/2", "/3", "/4"], exited: false }),
+    );
+
+    expect(fromStart.sessions.map((session) => session.sessionId)).toEqual(["s2"]);
+    expect(fromQuote.sessions.map((session) => session.sessionId)).toEqual(["s2"]);
+    expect(notExited.sessions.map((session) => session.sessionId)).toEqual(["s3"]);
+  });
+
+  it("경로 순위의 세션 수와 그 경로로 거른 세션 목록의 total 이 같다", async () => {
+    const { store, projectId } = await seedSessions();
+
+    for (const start of [undefined, "/", "/quote"]) {
+      const ranking = await store.getPathRanking(projectId, SINCE, start);
+      for (const path of ranking.paths) {
+        const list = await store.listSessions(
+          projectId,
+          query({ kind: "path", ...(start === undefined ? {} : { start }), steps: path.steps, exited: path.exited }),
+        );
+        expect(list.total).toBe(path.sessions);
+      }
+    }
+  });
+
+  it("limit 개만 싣고 total 은 전체 수다", async () => {
+    const { store, projectId } = await seedSessions();
+
+    const list = await store.listSessions(projectId, query({ kind: "none" }, 2));
+
+    expect(list.total).toBe(3);
+    expect(list.sessions.map((session) => session.sessionId)).toEqual(["s3", "s2"]);
+  });
+
+  it("시작 시각이 같으면 sessionId 순이다", async () => {
+    const { store, projectId, save } = await setup();
+    await save("sess_b", "anon_1", [view("/a", T(0))]);
+    await save("sess_a", "anon_2", [view("/a", T(0))]);
+
+    const list = await store.listSessions(projectId, query());
+
+    expect(list.sessions.map((session) => session.sessionId)).toEqual(["sess_a", "sess_b"]);
+  });
+
+  it("page_view 가 없는 세션은 화면 0개로 나온다", async () => {
+    const { store, projectId, save } = await setup();
+    await save("s1", "anon_1", [click("/a", T(0), "저장")]);
+
+    const list = await store.listSessions(projectId, query());
+
+    expect(list.sessions[0]).toMatchObject({ sessionId: "s1", screenCount: 0, screens: [] });
+    expect(list.names).toEqual({});
+  });
+
+  it("맞는 세션이 없으면 0 과 빈 배열이다", async () => {
+    const { store, projectId } = await seedSessions();
+
+    expect(await store.listSessions(projectId, query({ kind: "screen", urlPath: "/none" }))).toEqual({
+      total: 0,
+      sessions: [],
+      names: {},
+    });
+    expect(await store.listSessions(projectId, query({ kind: "path", steps: ["/none"], exited: true }))).toEqual({
+      total: 0,
+      sessions: [],
+      names: {},
+    });
   });
 });

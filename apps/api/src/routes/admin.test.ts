@@ -515,3 +515,76 @@ describe("이동 흐름 API", () => {
     expect(missing.statusCode).toBe(404);
   });
 });
+
+describe("세션 목록 API", () => {
+  it("기본 7일 안에 시작한 세션을 total·names 와 함께 돌려주고 옛 필드를 지킨다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+    await seedPageView(store, project.projectId, "sess_recent", daysAgo(2));
+    await seedPageView(store, project.projectId, "sess_old", daysAgo(10));
+
+    const response = await app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/sessions`, headers });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    const body = response.json();
+    expect(body.total).toBe(1);
+    expect(body.names).toEqual({ "/a": "/a" });
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions[0]).toMatchObject({
+      sessionId: "sess_recent",
+      eventCount: 1,
+      hasRecording: false,
+      screenCount: 1,
+      screens: ["/a"],
+    });
+    expect(body.sessions[0]).toHaveProperty("startedAt");
+    expect(body.sessions[0]).toHaveProperty("lastSeenAt");
+  });
+
+  it("인코딩한 경로 필터로 세션을 거른다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+    await seedPageView(store, project.projectId, "sess_1", daysAgo(1), "/quote/:id");
+    await seedPageView(store, project.projectId, "sess_1", daysAgo(0.99), "/견적");
+    await seedPageView(store, project.projectId, "sess_2", daysAgo(1), "/quote/:id");
+    const step = (value: string) => `step=${encodeURIComponent(value)}`;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/sessions?${step("/quote/:id")}&${step("/견적")}&exited=true`,
+      headers,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().sessions.map((session: { sessionId: string }) => session.sessionId)).toEqual(["sess_1"]);
+  });
+
+  it("화면 필터로 세션을 거른다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+    await seedPageView(store, project.projectId, "sess_1", daysAgo(1), "/a");
+    await seedPageView(store, project.projectId, "sess_2", daysAgo(1), "/b");
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/admin/api/projects/${project.projectId}/sessions?screen=%2Fb`,
+      headers,
+    });
+
+    expect(response.json().total).toBe(1);
+    expect(response.json().sessions[0].sessionId).toBe("sess_2");
+  });
+
+  it.each([
+    ["?screen=%2Fa&step=%2Fa", "invalid_session_filter"],
+    ["?featurePath=%2Fa", "invalid_session_filter"],
+    ["?start=%2Fa", "invalid_session_filter"],
+    ["?step=%2Fa&exited=yes", "invalid_session_filter"],
+    ["?days=2", "invalid_period"],
+  ])("%s 는 400 %s 다", async (query, error) => {
+    const { app, project, headers } = await createAuthenticatedOwner();
+
+    const response = await app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/sessions${query}`, headers });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error });
+  });
+});
