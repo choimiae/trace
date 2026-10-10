@@ -3,6 +3,7 @@ import { DEFAULT_REPLAY_CONFIG, replayConfigSchema } from "@trace/shared";
 import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { SQLITE_SCHEMA } from "../db/schema.sqlite.js";
+import { Analytics } from "./analytics.js";
 import { elementKey } from "./element-key.js";
 import { computePageStats } from "./page-stats.js";
 import {
@@ -13,6 +14,7 @@ import type {
   AdminUserRecord,
   CreateAdminSessionInput,
   CreateProjectInput,
+  FeatureUsage,
   PageStats,
   ProjectRecord,
   SessionSummary,
@@ -42,12 +44,14 @@ function parseReplayConfig(value: unknown): ReplayConfig {
 
 export class SqliteStore implements TraceStore {
   private readonly db: Database.Database;
+  private readonly analytics: Analytics;
 
   constructor(filePath: string) {
     this.db = new Database(filePath);
     if (filePath !== ":memory:") this.db.pragma("journal_mode = WAL");
     this.db.exec(SQLITE_SCHEMA);
     this.createDebugViews();
+    this.analytics = new Analytics(this.db);
   }
 
   close(): void {
@@ -306,6 +310,10 @@ export class SqliteStore implements TraceStore {
   async listPageStats(projectId: string, limit: number): Promise<PageStats[]> {
     const events = await this.loadEvents(projectId);
     return computePageStats(events, limit);
+  }
+
+  async getFeatureUsage(projectId: string, since: string): Promise<FeatureUsage> {
+    return this.analytics.featureUsage(projectId, since);
   }
 
   async getSessionTimeline(projectId: string, sessionId: string): Promise<TraceEvent[]> {

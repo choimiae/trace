@@ -6,6 +6,7 @@ import { verifyCsrfRequest } from "../auth/csrf.js";
 import { requireAdminSession, type AuthenticatedAdmin } from "../auth/session.js";
 import type { ProjectRecord, TraceStore } from "../store/types.js";
 import { createProjectSchema, updateProjectSchema } from "./admin.js";
+import { parsePeriod } from "./aggregation-query.js";
 
 const projectParamsSchema = z.object({ projectId: z.string() });
 const sessionParamsSchema = z.object({ sessionId: z.string() });
@@ -108,6 +109,22 @@ export async function registerAdminProxyRoutes(
 
     const sessions = await options.store.listSessions(projectId, SESSION_LIMIT);
     return reply.header("cache-control", "no-store").send({ sessions });
+  });
+
+  app.get("/admin/api/projects/:projectId/features", async (request, reply) => {
+    const authenticated = await authenticate(request, options);
+    if ("error" in authenticated) return reply.code(401).send(authenticated);
+
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const period = parsePeriod(request.query);
+    if (!period) return reply.code(400).send({ error: "invalid_period" });
+    const access = await getProjectAccess(options.store, projectId);
+    if ("error" in access) {
+      return reply.code(access.statusCode).send({ error: access.error });
+    }
+
+    const usage = await options.store.getFeatureUsage(projectId, period.since);
+    return reply.header("cache-control", "no-store").send(usage);
   });
 
   app.get("/admin/api/projects/:projectId/page-stats", async (request, reply) => {

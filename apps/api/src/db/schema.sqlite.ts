@@ -33,8 +33,11 @@ CREATE TABLE IF NOT EXISTS events (
   element_key TEXT
 );
 
-CREATE INDEX IF NOT EXISTS events_project_timestamp ON events (project_id, timestamp);
-CREATE INDEX IF NOT EXISTS events_project_session ON events (project_id, session_id);
+-- 기간 세션 후보를 시각 범위로 찾는다. session_id 까지 덮어야 SQLite 가 프로젝트
+-- 이벤트 전부를 도는 events_project_session_timestamp 대신 이 인덱스를 고른다.
+DROP INDEX IF EXISTS events_project_timestamp;
+DROP INDEX IF EXISTS events_project_session;
+CREATE INDEX IF NOT EXISTS events_project_timestamp_session ON events (project_id, timestamp, session_id);
 CREATE INDEX IF NOT EXISTS events_project_session_timestamp ON events (project_id, session_id, timestamp);
 
 CREATE TABLE IF NOT EXISTS admin_users (

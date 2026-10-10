@@ -401,3 +401,65 @@ describe("admin api 접근 통제", () => {
     expect(response.json()).toEqual({ error: "invalid_project_query" });
   });
 });
+
+const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+
+async function seedPageView(
+  store: ReturnType<typeof createTestStore>,
+  projectId: string,
+  sessionId: string,
+  timestamp: string,
+  urlPath = "/a",
+) {
+  await store.saveBatch({
+    projectId,
+    anonymousUserId: "anon_1",
+    sessionId,
+    sentAt: timestamp,
+    sdkVersion: "0.1.0",
+    url: "https://demo.example.com/",
+    events: [{ eventId: `evt_${sessionId}_${urlPath}`, sessionId, pageId: "page_1", timestamp, type: "page_view", urlPath, metadata: {} }],
+  });
+}
+
+describe("기능 사용 API", () => {
+  it("기본 7일, days 로 기간을 바꾼다", async () => {
+    const { app, store, project, headers } = await createAuthenticatedOwner();
+    await seedPageView(store, project.projectId, "sess_recent", daysAgo(2));
+    await seedPageView(store, project.projectId, "sess_old", daysAgo(10));
+    const get = (query: string) =>
+      app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/features${query}`, headers });
+
+    const [byDefault, week, month, day] = await Promise.all([get(""), get("?days=7"), get("?days=30"), get("?days=1")]);
+
+    expect(byDefault.statusCode).toBe(200);
+    expect(byDefault.headers["cache-control"]).toBe("no-store");
+    expect(byDefault.json().summary.sessions).toBe(1);
+    expect(week.json().summary.sessions).toBe(1);
+    expect(month.json().summary.sessions).toBe(2);
+    expect(day.json().summary.sessions).toBe(0);
+    expect(month.json().screens[0]).toMatchObject({ urlPath: "/a", name: "/a", views: 2 });
+  });
+
+  it.each(["?days=2", "?days=abc", "?days=7&days=30"])("잘못된 기간 %s 는 400 이다", async (query) => {
+    const { app, project, headers } = await createAuthenticatedOwner();
+
+    const response = await app.inject({ method: "GET", url: `/admin/api/projects/${project.projectId}/features${query}`, headers });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_period" });
+  });
+
+  it("로그인하지 않으면 401, 없는 프로젝트는 404 다", async () => {
+    const { app, headers } = await createAuthenticatedOwner();
+
+    const [anonymous, missing] = await Promise.all([
+      app.inject({ method: "GET", url: "/admin/api/projects/proj_missing/features" }),
+      app.inject({ method: "GET", url: "/admin/api/projects/proj_missing/features", headers }),
+    ]);
+
+    expect(anonymous.statusCode).toBe(401);
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: "project_not_found" });
+  });
+});

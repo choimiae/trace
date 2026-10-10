@@ -141,6 +141,44 @@ export type SessionFilter =
   /** 경로 순위와 같은 규칙으로 잘랐을 때 steps·exited 가 모두 같은 세션. */
   | { kind: "path"; start?: string; steps: string[]; exited: boolean };
 
+/** 기능 사용 화면 응답. */
+export interface FeatureUsage {
+  summary: {
+    /** 기간 세션의 서로 다른 방문자 수. */
+    visitors: number;
+    /** 기간 세션 수. */
+    sessions: number;
+    /** 세션마다 마지막 이벤트와 첫 이벤트의 시간 차의 평균(ms). 세션이 없으면 0. */
+    averageSessionMs: number;
+  };
+  /** 방문 수 순, 최대 100개. */
+  screens: ScreenUsage[];
+}
+
+export interface ScreenUsage {
+  urlPath: string;
+  /** 기간 세션에서 가장 많이 나온 제목. 없으면 경로. */
+  name: string;
+  /** page_view 수. 클릭만 있는 경로는 0. */
+  views: number;
+  visitors: number;
+  /** page-stats 와 같은 정의. 짝이 있는 방문이 하나도 없으면 없다 — 0 과 구분한다. */
+  averageDwellMs?: number;
+  /** 그 화면이 세션의 마지막 page_view 였던 비율. 0~1. */
+  exitRate: number;
+  /** 클릭 수 순, 최대 30개. */
+  features: FeatureUsageRow[];
+}
+
+export interface FeatureUsageRow {
+  elementKey: string;
+  /** 마스킹한 요소 글자. 없으면 역할. */
+  name: string;
+  role?: string;
+  clicks: number;
+  visitors: number;
+}
+
 export interface TraceStore {
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
@@ -173,6 +211,8 @@ export interface TraceStore {
   listSessions(projectId: string, limit: number): Promise<SessionSummary[]>;
   /** `views` 내림차순. 많이 본 페이지가 먼저다. */
   listPageStats(projectId: string, limit: number): Promise<PageStats[]>;
+  /** since 이후에 시작한 세션의 기능 사용. */
+  getFeatureUsage(projectId: string, since: string): Promise<FeatureUsage>;
   /** `receivedAt` 이 cutoff 이전인 청크를 지운다. startedAt 은 보지 않는다. */
   deleteSessionRecordingsBefore(cutoff: string): Promise<number>;
 }
