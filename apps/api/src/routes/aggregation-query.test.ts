@@ -72,6 +72,11 @@ describe("parseSessionFilter", () => {
     expect(parseSessionFilter({ step: "/a", exited: "false" })).toEqual({ kind: "path", steps: ["/a"], exited: false });
   });
 
+  it("빈 start 는 /paths 와 같이 시작 화면 없음(전체)으로 본다", () => {
+    expect(parseSessionFilter({ step: "/a", start: "" })).toEqual({ kind: "path", steps: ["/a"], exited: false });
+    expect(parseSessionFilter({ start: "" })).toEqual({ kind: "none" });
+  });
+
   it.each([
     ["화면과 경로를 섞음", { screen: "/a", step: "/a" }],
     ["화면과 기능을 섞음", { screen: "/a", featurePath: "/a", featureKey: "k" }],
@@ -84,7 +89,6 @@ describe("parseSessionFilter", () => {
     ["빈 step", { step: ["/a", ""] }],
     ["step 여섯", { step: ["/1", "/2", "/3", "/4", "/5", "/6"] }],
     ["exited 가 true·false 가 아님", { step: "/a", exited: "yes" }],
-    ["빈 start", { step: "/a", start: "" }],
     ["start 둘", { step: "/a", start: ["/a", "/b"] }],
   ])("%s 이면 잘못된 필터다", (_label, query) => {
     expect(parseSessionFilter(query)).toBeUndefined();

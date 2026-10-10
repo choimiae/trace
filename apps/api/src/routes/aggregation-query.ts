@@ -29,7 +29,8 @@ export function parsePathStart(query: unknown): { start?: string } | undefined {
 /** 세션 목록 필터. 하나만 걸 수 있다. */
 export function parseSessionFilter(query: unknown): SessionFilter | undefined {
   const q = asQuery(query);
-  const has = (key: string) => q[key] !== undefined;
+  // 빈 start 는 /paths 와 같이 "전체"(키가 없는 것)로 본다. 화면이 순위의 쿼리를 그대로 넘겨도 400 이 나지 않게 한다.
+  const has = (key: string) => q[key] !== undefined && !(key === "start" && q[key] === "");
   const wantsScreen = has("screen");
   const wantsFeature = has("featurePath") || has("featureKey");
   const wantsPath = has("step") || has("start") || has("exited");
