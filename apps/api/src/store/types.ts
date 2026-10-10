@@ -131,6 +131,16 @@ export interface RankedPath {
   ratio: number;
 }
 
+/** 세션 목록 필터. 하나만 건다. */
+export type SessionFilter =
+  | { kind: "none" }
+  /** 그 경로의 page_view 가 있는 세션. */
+  | { kind: "screen"; urlPath: string }
+  /** 그 (url_path, element_key) 의 click 이 있는 세션. */
+  | { kind: "feature"; urlPath: string; elementKey: string }
+  /** 경로 순위와 같은 규칙으로 잘랐을 때 steps·exited 가 모두 같은 세션. */
+  | { kind: "path"; start?: string; steps: string[]; exited: boolean };
+
 export interface TraceStore {
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   getProject(projectId: string): Promise<ProjectRecord | undefined>;
